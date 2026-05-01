@@ -112,7 +112,7 @@ export default function ProductForm() {
         if (error) throw error;
       } else {
         const insertRow = { ...payload, created_by: user?.id ?? null };
-        const { data, error } = await supabase.from("products").insert(insertRow).select("id").single();
+        const { data, error } = await supabase.from("products").insert([insertRow]).select("id").single();
         if (error) throw error;
         productId = data.id;
       }
