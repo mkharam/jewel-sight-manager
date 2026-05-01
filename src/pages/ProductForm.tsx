@@ -106,13 +106,16 @@ export default function ProductForm() {
     setSaving(true);
     try {
       let productId = id;
-      const payload = { ...parsed.data };
+      const payload = parsed.data;
       if (editing) {
         const { error } = await supabase.from("products").update({ ...payload, updated_by: user?.id }).eq("id", id!);
         if (error) throw error;
       } else {
-        const insertRow = { ...payload, created_by: user?.id ?? null };
-        const { data, error } = await supabase.from("products").insert([insertRow]).select("id").single();
+        const { data, error } = await supabase
+          .from("products")
+          .insert({ ...payload, name: payload.name, created_by: user?.id ?? null })
+          .select("id")
+          .single();
         if (error) throw error;
         productId = data.id;
       }
