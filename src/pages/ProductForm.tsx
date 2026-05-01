@@ -1,0 +1,298 @@
+import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { z } from "zod";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ArrowRight, Upload, X, Star } from "lucide-react";
+import { PRODUCT_STATUS, KARAT_OPTIONS, getImageUrl } from "@/lib/constants";
+import { toast } from "sonner";
+
+const schema = z.object({
+  name: z.string().trim().min(2, "الاسم قصير").max(150),
+  sku: z.string().trim().max(80).optional(),
+  category_id: z.string().uuid().nullable(),
+  branch_id: z.string().uuid().nullable(),
+  karat: z.string().max(20).nullable(),
+  item_type: z.string().max(50).nullable(),
+  weight_grams: z.number().nonnegative().nullable(),
+  ring_size: z.string().max(20).nullable(),
+  status: z.enum(["available","reserved","sold","in_transfer","damaged","lost"]),
+  cost_price: z.number().nonnegative().nullable(),
+  sale_price: z.number().nonnegative().nullable(),
+  promo_price: z.number().nonnegative().nullable(),
+  description: z.string().max(2000).nullable(),
+  internal_notes: z.string().max(2000).nullable(),
+});
+
+export default function ProductForm() {
+  const { id } = useParams<{ id: string }>();
+  const editing = id && id !== "new";
+  const navigate = useNavigate();
+  const { user, profile } = useAuth();
+
+  const [form, setForm] = useState({
+    name: "", sku: "", category_id: "", branch_id: "",
+    karat: "", item_type: "", weight_grams: "", ring_size: "",
+    status: "available" as keyof typeof PRODUCT_STATUS,
+    cost_price: "", sale_price: "", promo_price: "",
+    description: "", internal_notes: "",
+  });
+  const [existingImages, setExistingImages] = useState<{ id: string; storage_path: string; is_primary: boolean }[]>([]);
+  const [newFiles, setNewFiles] = useState<File[]>([]);
+  const [primaryIndex, setPrimaryIndex] = useState(0);
+  const [saving, setSaving] = useState(false);
+
+  const { data: branches } = useQuery({
+    queryKey: ["branches"],
+    queryFn: async () => (await supabase.from("branches").select("id,name").order("name")).data ?? [],
+  });
+  const { data: categories } = useQuery({
+    queryKey: ["categories"],
+    queryFn: async () => (await supabase.from("categories").select("id,name").order("sort_order")).data ?? [],
+  });
+
+  useEffect(() => {
+    if (!editing) {
+      if (profile?.branch_id) setForm((f) => ({ ...f, branch_id: profile.branch_id! }));
+      return;
+    }
+    (async () => {
+      const { data } = await supabase.from("products").select("*, images:product_images(id,storage_path,is_primary,sort_order)").eq("id", id!).maybeSingle();
+      if (!data) return;
+      setForm({
+        name: data.name ?? "", sku: data.sku ?? "",
+        category_id: data.category_id ?? "", branch_id: data.branch_id ?? "",
+        karat: data.karat ?? "", item_type: data.item_type ?? "",
+        weight_grams: data.weight_grams?.toString() ?? "",
+        ring_size: data.ring_size ?? "", status: data.status,
+        cost_price: data.cost_price?.toString() ?? "",
+        sale_price: data.sale_price?.toString() ?? "",
+        promo_price: data.promo_price?.toString() ?? "",
+        description: data.description ?? "", internal_notes: data.internal_notes ?? "",
+      });
+      setExistingImages(data.images ?? []);
+    })();
+  }, [editing, id, profile?.branch_id]);
+
+  const onFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    const valid = files.filter((f) => f.size <= 5 * 1024 * 1024 && f.type.startsWith("image/"));
+    if (valid.length < files.length) toast.error("بعض الملفات تجاوزت 5MB أو ليست صور");
+    setNewFiles((p) => [...p, ...valid].slice(0, 8));
+  };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = schema.safeParse({
+      name: form.name, sku: form.sku || undefined,
+      category_id: form.category_id || null, branch_id: form.branch_id || null,
+      karat: form.karat || null, item_type: form.item_type || null,
+      weight_grams: form.weight_grams ? parseFloat(form.weight_grams) : null,
+      ring_size: form.ring_size || null, status: form.status,
+      cost_price: form.cost_price ? parseFloat(form.cost_price) : null,
+      sale_price: form.sale_price ? parseFloat(form.sale_price) : null,
+      promo_price: form.promo_price ? parseFloat(form.promo_price) : null,
+      description: form.description || null, internal_notes: form.internal_notes || null,
+    });
+    if (!parsed.success) return toast.error(parsed.error.issues[0].message);
+
+    setSaving(true);
+    try {
+      let productId = id;
+      if (editing) {
+        const { error } = await supabase.from("products").update({ ...parsed.data, updated_by: user?.id }).eq("id", id!);
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase.from("products").insert({ ...parsed.data, created_by: user?.id }).select("id").single();
+        if (error) throw error;
+        productId = data.id;
+      }
+
+      // Upload new images
+      const totalImages = existingImages.length + newFiles.length;
+      for (let i = 0; i < newFiles.length; i++) {
+        const file = newFiles[i];
+        const ext = file.name.split(".").pop();
+        const path = `${productId}/${Date.now()}-${i}.${ext}`;
+        const { error: upErr } = await supabase.storage.from("product-images").upload(path, file);
+        if (upErr) throw upErr;
+        await supabase.from("product_images").insert({
+          product_id: productId!,
+          storage_path: path,
+          is_primary: totalImages === newFiles.length && i === primaryIndex,
+          sort_order: existingImages.length + i,
+          uploaded_by: user?.id,
+        });
+      }
+
+      await supabase.from("activity_log").insert({
+        actor_id: user?.id,
+        action: editing ? "update" : "create",
+        entity_type: "product",
+        entity_id: productId,
+        details: { name: parsed.data.name },
+      });
+
+      toast.success(editing ? "تم التحديث" : "تمت الإضافة");
+      navigate(`/products/${productId}`);
+    } catch (err: any) {
+      toast.error(err.message ?? "خطأ في الحفظ");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeExisting = async (imgId: string, path: string) => {
+    if (!confirm("حذف هذه الصورة؟")) return;
+    await supabase.storage.from("product-images").remove([path]);
+    await supabase.from("product_images").delete().eq("id", imgId);
+    setExistingImages((arr) => arr.filter((i) => i.id !== imgId));
+  };
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-4">
+      <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
+        <ArrowRight className="size-4 ml-1" /> رجوع
+      </Button>
+
+      <h1 className="text-2xl font-bold">{editing ? "تعديل قطعة" : "إضافة قطعة جديدة"}</h1>
+
+      <form onSubmit={submit} className="space-y-4">
+        <Card className="p-5 space-y-4">
+          <Field label="اسم القطعة *">
+            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required maxLength={150} />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="الفئة">
+              <Select value={form.category_id} onValueChange={(v) => setForm({ ...form, category_id: v })}>
+                <SelectTrigger><SelectValue placeholder="اختر..." /></SelectTrigger>
+                <SelectContent>
+                  {categories?.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="النوع (خاتم، سوار...)">
+              <Input value={form.item_type} onChange={(e) => setForm({ ...form, item_type: e.target.value })} maxLength={50} />
+            </Field>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="القيراط">
+              <Select value={form.karat} onValueChange={(v) => setForm({ ...form, karat: v })}>
+                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectContent>
+                  {KARAT_OPTIONS.map((k) => <SelectItem key={k} value={k}>{k}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="الوزن (غ)">
+              <Input type="number" step="0.001" value={form.weight_grams} onChange={(e) => setForm({ ...form, weight_grams: e.target.value })} dir="ltr" />
+            </Field>
+            <Field label="المقاس">
+              <Input value={form.ring_size} onChange={(e) => setForm({ ...form, ring_size: e.target.value })} maxLength={20} dir="ltr" />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="الفرع">
+              <Select value={form.branch_id} onValueChange={(v) => setForm({ ...form, branch_id: v })}>
+                <SelectTrigger><SelectValue placeholder="اختر..." /></SelectTrigger>
+                <SelectContent>
+                  {branches?.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="الحالة">
+              <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v as any })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(PRODUCT_STATUS).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+          <Field label="SKU (رمز داخلي اختياري)">
+            <Input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} maxLength={80} dir="ltr" />
+          </Field>
+        </Card>
+
+        <Card className="p-5 space-y-4">
+          <h2 className="font-bold">الأسعار</h2>
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="التكلفة"><Input type="number" step="0.01" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} dir="ltr" /></Field>
+            <Field label="سعر البيع"><Input type="number" step="0.01" value={form.sale_price} onChange={(e) => setForm({ ...form, sale_price: e.target.value })} dir="ltr" /></Field>
+            <Field label="سعر العرض"><Input type="number" step="0.01" value={form.promo_price} onChange={(e) => setForm({ ...form, promo_price: e.target.value })} dir="ltr" /></Field>
+          </div>
+        </Card>
+
+        <Card className="p-5 space-y-4">
+          <h2 className="font-bold">الوصف والملاحظات</h2>
+          <Field label="الوصف"><Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} maxLength={2000} /></Field>
+          <Field label="ملاحظات داخلية (للموظفين فقط)"><Textarea value={form.internal_notes} onChange={(e) => setForm({ ...form, internal_notes: e.target.value })} rows={2} maxLength={2000} /></Field>
+        </Card>
+
+        <Card className="p-5 space-y-4">
+          <h2 className="font-bold">الصور</h2>
+          {existingImages.length > 0 && (
+            <div className="grid grid-cols-4 gap-2">
+              {existingImages.map((img) => (
+                <div key={img.id} className="relative aspect-square rounded overflow-hidden bg-muted">
+                  <img src={getImageUrl(img.storage_path)!} className="w-full h-full object-cover" alt="" />
+                  {img.is_primary && <Star className="absolute top-1 right-1 size-4 fill-primary text-primary" />}
+                  <button type="button" onClick={() => removeExisting(img.id, img.storage_path)} className="absolute top-1 left-1 size-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center">
+                    <X className="size-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {newFiles.length > 0 && (
+            <div className="grid grid-cols-4 gap-2">
+              {newFiles.map((f, i) => (
+                <div key={i} className={`relative aspect-square rounded overflow-hidden bg-muted ring-2 ${i === primaryIndex ? "ring-primary" : "ring-transparent"}`}>
+                  <img src={URL.createObjectURL(f)} className="w-full h-full object-cover" alt="" />
+                  <button type="button" onClick={() => setPrimaryIndex(i)} className="absolute top-1 right-1 size-6 rounded-full bg-card flex items-center justify-center" title="جعلها رئيسية">
+                    <Star className={`size-3 ${i === primaryIndex ? "fill-primary text-primary" : ""}`} />
+                  </button>
+                  <button type="button" onClick={() => setNewFiles((arr) => arr.filter((_, j) => j !== i))} className="absolute top-1 left-1 size-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center">
+                    <X className="size-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <label className="block">
+            <input type="file" multiple accept="image/*" onChange={onFiles} className="hidden" />
+            <div className="border-2 border-dashed border-border rounded-xl p-6 text-center cursor-pointer hover:bg-muted/50 transition">
+              <Upload className="size-6 mx-auto mb-2 text-muted-foreground" />
+              <p className="text-sm font-medium">اضغط لإضافة صور (حتى 8 صور، 5MB لكل صورة)</p>
+            </div>
+          </label>
+        </Card>
+
+        <div className="flex gap-2 sticky bottom-20 md:bottom-4">
+          <Button type="submit" disabled={saving} className="flex-1 bg-gold-gradient text-primary-foreground shadow-gold" size="lg">
+            {saving ? "جارٍ الحفظ..." : editing ? "تحديث" : "إضافة القطعة"}
+          </Button>
+          <Button type="button" variant="outline" size="lg" onClick={() => navigate(-1)}>إلغاء</Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs font-semibold">{label}</Label>
+      {children}
+    </div>
+  );
+}
