@@ -1,0 +1,208 @@
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Search as SearchIcon, Plus, SlidersHorizontal, X } from "lucide-react";
+import ProductCard from "@/components/ProductCard";
+import { PRODUCT_STATUS, KARAT_OPTIONS, ProductStatus } from "@/lib/constants";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Label } from "@/components/ui/label";
+
+interface Filters {
+  q: string;
+  karat: string;
+  branchId: string;
+  categoryId: string;
+  status: string;
+  minWeight: string;
+  maxWeight: string;
+}
+
+const initialFilters: Filters = {
+  q: "", karat: "all", branchId: "all", categoryId: "all", status: "all", minWeight: "", maxWeight: "",
+};
+
+export default function ProductSearch() {
+  const [filters, setFilters] = useState<Filters>(initialFilters);
+  const [debounced, setDebounced] = useState(filters);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(filters), 250);
+    return () => clearTimeout(t);
+  }, [filters]);
+
+  const { data: branches } = useQuery({
+    queryKey: ["branches"],
+    queryFn: async () => (await supabase.from("branches").select("id,name").order("name")).data ?? [],
+  });
+
+  const { data: categories } = useQuery({
+    queryKey: ["categories"],
+    queryFn: async () => (await supabase.from("categories").select("id,name").order("sort_order")).data ?? [],
+  });
+
+  const { data: products, isLoading } = useQuery({
+    queryKey: ["products", debounced],
+    queryFn: async () => {
+      let q = supabase
+        .from("products")
+        .select("id,name,karat,weight_grams,ring_size,sale_price,promo_price,status,branch:branches(name),category:categories(name),images:product_images(storage_path,is_primary)")
+        .order("created_at", { ascending: false })
+        .limit(120);
+
+      if (debounced.q) q = q.or(`name.ilike.%${debounced.q}%,sku.ilike.%${debounced.q}%,description.ilike.%${debounced.q}%`);
+      if (debounced.karat !== "all") q = q.eq("karat", debounced.karat);
+      if (debounced.branchId !== "all") q = q.eq("branch_id", debounced.branchId);
+      if (debounced.categoryId !== "all") q = q.eq("category_id", debounced.categoryId);
+      if (debounced.status !== "all") q = q.eq("status", debounced.status as ProductStatus);
+      if (debounced.minWeight) q = q.gte("weight_grams", parseFloat(debounced.minWeight));
+      if (debounced.maxWeight) q = q.lte("weight_grams", parseFloat(debounced.maxWeight));
+
+      const { data, error } = await q;
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const activeFilterCount = useMemo(() => {
+    let n = 0;
+    if (filters.karat !== "all") n++;
+    if (filters.branchId !== "all") n++;
+    if (filters.categoryId !== "all") n++;
+    if (filters.status !== "all") n++;
+    if (filters.minWeight) n++;
+    if (filters.maxWeight) n++;
+    return n;
+  }, [filters]);
+
+  return (
+    <div className="space-y-4">
+      {/* Hero search */}
+      <div className="bg-gold-soft rounded-2xl p-5 md:p-8 shadow-card">
+        <h2 className="text-2xl md:text-3xl font-extrabold mb-1">ابحث عن أي قطعة فوراً</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          ابحث بالاسم، الوصف، الفئة، الوزن أو القيراط — عبر كل الفروع.
+        </p>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <SearchIcon className="absolute right-3 top-1/2 -translate-y-1/2 size-5 text-muted-foreground" />
+            <Input
+              placeholder="مثال: خاتم ألماس، سلسلة 21K، سوار..."
+              value={filters.q}
+              onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
+              className="pr-10 h-12 text-base bg-card"
+            />
+          </div>
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="lg" className="relative h-12">
+                <SlidersHorizontal className="size-4 ml-1" />
+                فلترة
+                {activeFilterCount > 0 && (
+                  <span className="absolute -top-1 -right-1 size-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-full sm:max-w-md overflow-y-auto">
+              <SheetHeader>
+                <SheetTitle>فلترة المنتجات</SheetTitle>
+              </SheetHeader>
+              <div className="space-y-4 mt-6">
+                <FilterField label="الفئة">
+                  <Select value={filters.categoryId} onValueChange={(v) => setFilters((f) => ({ ...f, categoryId: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">كل الفئات</SelectItem>
+                      {categories?.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </FilterField>
+                <FilterField label="القيراط">
+                  <Select value={filters.karat} onValueChange={(v) => setFilters((f) => ({ ...f, karat: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">كل القيراطات</SelectItem>
+                      {KARAT_OPTIONS.map((k) => <SelectItem key={k} value={k}>{k}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </FilterField>
+                <FilterField label="الفرع">
+                  <Select value={filters.branchId} onValueChange={(v) => setFilters((f) => ({ ...f, branchId: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">كل الفروع</SelectItem>
+                      {branches?.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </FilterField>
+                <FilterField label="الحالة">
+                  <Select value={filters.status} onValueChange={(v) => setFilters((f) => ({ ...f, status: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">كل الحالات</SelectItem>
+                      {Object.entries(PRODUCT_STATUS).map(([k, v]) => (
+                        <SelectItem key={k} value={k}>{v.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FilterField>
+                <div className="grid grid-cols-2 gap-3">
+                  <FilterField label="وزن من (غ)">
+                    <Input type="number" step="0.001" value={filters.minWeight} onChange={(e) => setFilters((f) => ({ ...f, minWeight: e.target.value }))} />
+                  </FilterField>
+                  <FilterField label="وزن إلى (غ)">
+                    <Input type="number" step="0.001" value={filters.maxWeight} onChange={(e) => setFilters((f) => ({ ...f, maxWeight: e.target.value }))} />
+                  </FilterField>
+                </div>
+                <Button variant="outline" className="w-full" onClick={() => setFilters(initialFilters)}>
+                  <X className="size-4 ml-1" /> مسح الفلاتر
+                </Button>
+              </div>
+            </SheetContent>
+          </Sheet>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          {isLoading ? "جارٍ..." : `${products?.length ?? 0} نتيجة`}
+        </p>
+        <Link to="/products/new">
+          <Button size="sm" className="bg-gold-gradient text-primary-foreground shadow-gold">
+            <Plus className="size-4 ml-1" /> إضافة قطعة
+          </Button>
+        </Link>
+      </div>
+
+      {isLoading ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="aspect-square rounded-xl bg-muted animate-pulse" />
+          ))}
+        </div>
+      ) : products && products.length > 0 ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          {products.map((p: any) => <ProductCard key={p.id} product={p} />)}
+        </div>
+      ) : (
+        <div className="text-center py-16 bg-muted/30 rounded-xl">
+          <p className="text-muted-foreground">لا توجد نتائج. جرّب تعديل البحث أو إضافة منتج جديد.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs font-semibold">{label}</Label>
+      {children}
+    </div>
+  );
+}
