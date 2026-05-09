@@ -40,6 +40,24 @@ function extractImages(html: string): string[] {
   return out;
 }
 
+function extractPrimaryImages(html: string): string[] {
+  const found = new Set<string>();
+  const ogRe1 = /<meta[^>]+property=["'](?:og:image(?::url)?|twitter:image)["'][^>]+content=["']([^"']+)["']/gi;
+  const ogRe2 = /<meta[^>]+content=["']([^"']+)["'][^>]+property=["'](?:og:image(?::url)?|twitter:image)["']/gi;
+  for (const m of html.matchAll(ogRe1)) found.add(m[1]);
+  for (const m of html.matchAll(ogRe2)) found.add(m[1]);
+  return Array.from(found).map((u) => u.trim().replace(/&amp;/g, "&")).filter((u) => /^https?:\/\//i.test(u)).slice(0, 1);
+}
+
+function isInstagramPermalink(url: string): boolean {
+  try {
+    const path = new URL(url).pathname;
+    return /^\/(p|reel|tv)\/[^/]+/i.test(path);
+  } catch {
+    return false;
+  }
+}
+
 function extractTitle(html: string): string | null {
   const m = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)
     ?? html.match(/<title>([^<]+)<\/title>/i);
@@ -58,6 +76,8 @@ Deno.serve(async (req) => {
     }
 
     const isSocial = /facebook\.com|fb\.com|instagram\.com/i.test(url);
+    const isInstagram = /instagram\.com/i.test(url);
+    const isSingleInstagramPost = isInstagram && isInstagramPermalink(url);
     let images: string[] = [];
     let title: string | null = null;
     let usedMethod = "";
@@ -75,7 +95,7 @@ Deno.serve(async (req) => {
         });
         if (r.ok) {
           const html = await r.text();
-          images = extractImages(html);
+          images = isSingleInstagramPost ? extractPrimaryImages(html) : extractImages(html);
           title = extractTitle(html);
           usedMethod = "direct-fb-ua";
         } else {
@@ -94,7 +114,7 @@ Deno.serve(async (req) => {
           });
           if (r.ok) {
             const html = await r.text();
-            images = extractImages(html);
+            images = isSingleInstagramPost ? extractPrimaryImages(html) : extractImages(html);
             title = title ?? extractTitle(html);
             usedMethod = "direct-browser-ua";
           } else {
@@ -107,15 +127,14 @@ Deno.serve(async (req) => {
     }
 
     // Strategy 2: Firecrawl with scroll actions to load more posts (esp. Instagram infinite scroll)
-    const isInstagram = /instagram\.com/i.test(url);
-    const shouldUseFirecrawl = !images.length || (isInstagram && images.length < 30);
+    const shouldUseFirecrawl = !images.length || (isInstagram && !isSingleInstagramPost && images.length < 30);
     if (shouldUseFirecrawl) {
       const FIRECRAWL_API_KEY = Deno.env.get("FIRECRAWL_API_KEY");
       if (FIRECRAWL_API_KEY) {
         try {
           // Build scroll actions to trigger infinite-scroll loading
           const actions: any[] = [];
-          if (isSocial) {
+          if (isSocial && !isSingleInstagramPost) {
             for (let i = 0; i < 8; i++) {
               actions.push({ type: "scroll", direction: "down" });
               actions.push({ type: "wait", milliseconds: 1500 });
@@ -139,15 +158,17 @@ Deno.serve(async (req) => {
           const fcData = await fcRes.json();
           if (fcRes.ok) {
             const html = fcData?.data?.rawHtml ?? fcData?.rawHtml ?? "";
-            const fcImages = extractImages(html);
+            const fcImages = isSingleInstagramPost ? extractPrimaryImages(html) : extractImages(html);
             // Merge with previously found
             const merged = new Set(images);
             for (const i of fcImages) merged.add(i);
             const links: string[] = fcData?.data?.links ?? fcData?.links ?? [];
-            for (const l of links) {
-              if (typeof l === "string" && /\.(jpe?g|png|webp)(\?|$)/i.test(l)) merged.add(l);
+            if (!isSingleInstagramPost) {
+              for (const l of links) {
+                if (typeof l === "string" && /\.(jpe?g|png|webp)(\?|$)/i.test(l)) merged.add(l);
+              }
             }
-            images = Array.from(merged).slice(0, 120);
+            images = Array.from(merged).slice(0, isSingleInstagramPost ? 1 : 120);
             title = title ?? fcData?.data?.metadata?.title ?? fcData?.metadata?.title ?? null;
             usedMethod = usedMethod ? `${usedMethod}+firecrawl-scroll` : "firecrawl-scroll";
           } else {
