@@ -25,6 +25,9 @@ type Item = {
   fileType?: string;
 };
 
+const AI_CREDITS_EXHAUSTED = "AI_CREDITS_EXHAUSTED";
+const AI_RATE_LIMITED = "AI_RATE_LIMITED";
+
 const KARATS = ["18K", "21K", "22K", "24K", "ألماس", "فضة"];
 
 export default function ImportSocial() {
@@ -103,8 +106,9 @@ export default function ImportSocial() {
   const analyzeAll = async (list: Item[]) => {
     const concurrency = 3;
     let idx = 0;
+    let stopReason: string | null = null;
     const worker = async () => {
-      while (idx < list.length) {
+      while (idx < list.length && !stopReason) {
         const i = idx++;
         setItems((prev) => prev.map((it, j) => j === i ? { ...it, status: "analyzing" } : it));
         try {
@@ -118,6 +122,12 @@ export default function ImportSocial() {
           }
           const { data, error } = await supabase.functions.invoke("social-analyze-image", { body });
           if (error) throw error;
+          if (data?.aiBlocked) {
+            stopReason = data.code === AI_CREDITS_EXHAUSTED
+              ? "نفد رصيد AI. تم إيقاف التحليل، والصور التي رُفعت قبل الخطأ بقيت محفوظة."
+              : "تم تجاوز حد AI مؤقتاً. تم إيقاف التحليل، حاول لاحقاً.";
+            throw new Error(stopReason);
+          }
           if (data?.skipped) throw new Error(data.error ?? "تم تخطي الصورة");
           if (data?.error && !data?.storagePath) throw new Error(data.error);
           setItems((prev) => prev.map((it, j) => j === i ? {
@@ -137,6 +147,15 @@ export default function ImportSocial() {
       }
     };
     await Promise.all(Array.from({ length: concurrency }, worker));
+    if (stopReason) {
+      setItems((prev) => prev.map((it) => it.status === "pending" ? {
+        ...it,
+        status: "error",
+        include: false,
+        error: stopReason ?? "تم إيقاف التحليل",
+      } : it));
+      toast.error(stopReason);
+    }
   };
 
   const updateItem = (i: number, patch: Partial<Item>) => {
