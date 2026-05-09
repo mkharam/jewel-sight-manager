@@ -1,11 +1,11 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Search, Package, MessageCircle, Upload, LogOut, Sparkles, Settings } from "lucide-react";
+import { Search, Package, MessageCircle, Upload, LogOut, Sparkles, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-const navItems = [
+const baseNav = [
   { to: "/", label: "البحث", icon: Search, end: true },
   { to: "/products", label: "المنتجات", icon: Package },
   { to: "/inquiries", label: "الاستفسارات", icon: MessageCircle },
@@ -14,6 +14,9 @@ const navItems = [
 
 export default function AppLayout() {
   const { profile, roles } = useAuth();
+  const navItems = roles.includes("admin")
+    ? [...baseNav, { to: "/staff", label: "الموظفون", icon: Users }]
+    : baseNav;
   const navigate = useNavigate();
 
   const signOut = async () => {
@@ -78,7 +81,7 @@ export default function AppLayout() {
 
       {/* Mobile bottom nav */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-card/95 backdrop-blur">
-        <div className="grid grid-cols-4 h-16">
+        <div className={cn("grid h-16", navItems.length === 5 ? "grid-cols-5" : "grid-cols-4")}>
           {navItems.map((item) => (
             <NavLink
               key={item.to}
