@@ -26,7 +26,7 @@ type StaffUser = {
 const ROLE_LABEL = { admin: "مدير عام", manager: "مدير فرع", employee: "موظف" } as const;
 
 export default function Staff() {
-  const { user, roles, loading } = useAuth();
+  const { user, roles, loading, rolesLoading } = useAuth();
   const isAdmin = roles.includes("admin");
 
   const [users, setUsers] = useState<StaffUser[]>([]);
@@ -63,10 +63,12 @@ export default function Staff() {
   };
 
   useEffect(() => {
-    if (!loading && isAdmin) load();
-  }, [loading, isAdmin]);
+    if (!loading && !rolesLoading && isAdmin) load();
+  }, [loading, rolesLoading, isAdmin]);
 
-  if (loading) return null;
+  if (loading || rolesLoading) {
+    return <div className="text-center py-12 text-muted-foreground">جارٍ التحميل...</div>;
+  }
   if (!isAdmin) return <Navigate to="/" replace />;
 
   const resetForm = () => {

@@ -8,6 +8,7 @@ export interface AuthState {
   session: Session | null;
   user: User | null;
   loading: boolean;
+  rolesLoading: boolean;
   roles: AppRole[];
   profile: { full_name: string; branch_id: string | null } | null;
 }
@@ -15,6 +16,7 @@ export interface AuthState {
 export function useAuth(): AuthState {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [rolesLoading, setRolesLoading] = useState(true);
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [profile, setProfile] = useState<AuthState["profile"]>(null);
 
@@ -22,17 +24,22 @@ export function useAuth(): AuthState {
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
       if (s?.user) {
-        // Defer DB fetches to avoid deadlocks
+        setRolesLoading(true);
         setTimeout(() => loadUserData(s.user.id), 0);
       } else {
         setRoles([]);
         setProfile(null);
+        setRolesLoading(false);
       }
     });
 
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
-      if (s?.user) loadUserData(s.user.id);
+      if (s?.user) {
+        loadUserData(s.user.id);
+      } else {
+        setRolesLoading(false);
+      }
       setLoading(false);
     });
 
@@ -40,18 +47,27 @@ export function useAuth(): AuthState {
   }, []);
 
   async function loadUserData(userId: string) {
-    const [{ data: rolesData }, { data: profileData }] = await Promise.all([
-      supabase.from("user_roles").select("role").eq("user_id", userId),
-      supabase.from("profiles").select("full_name, branch_id").eq("id", userId).maybeSingle(),
-    ]);
-    setRoles((rolesData ?? []).map((r) => r.role as AppRole));
-    setProfile(profileData ?? null);
+    try {
+      const [{ data: rolesData }, { data: profileData }] = await Promise.all([
+        supabase.from("user_roles").select("role").eq("user_id", userId),
+        supabase.from("profiles").select("full_name, branch_id").eq("id", userId).maybeSingle(),
+      ]);
+      const list = (rolesData ?? []).map((r) => r.role as AppRole);
+      // sort so admin > manager > employee — first item used for display
+      const order: Record<AppRole, number> = { admin: 0, manager: 1, employee: 2 };
+      list.sort((a, b) => order[a] - order[b]);
+      setRoles(list);
+      setProfile(profileData ?? null);
+    } finally {
+      setRolesLoading(false);
+    }
   }
 
   return {
     session,
     user: session?.user ?? null,
     loading,
+    rolesLoading,
     roles,
     profile,
   };
