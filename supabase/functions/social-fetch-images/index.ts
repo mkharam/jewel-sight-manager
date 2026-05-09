@@ -201,11 +201,24 @@ Deno.serve(async (req) => {
       });
     }
 
+    const totalFound = images.length;
+    let skipped = 0;
+    if (excludeKeys.size) {
+      images = images.filter((u) => {
+        const key = u.replace(/&amp;/g, "&").split("?")[0];
+        if (excludeKeys.has(key)) { skipped++; return false; }
+        return true;
+      });
+    }
+    images = images.slice(0, 200);
+
     return new Response(JSON.stringify({
       images,
       sourceTitle: title,
       sourceUrl: url,
       method: usedMethod,
+      totalFound,
+      skipped,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
