@@ -127,6 +127,17 @@ export default function ProductSearch() {
                 className="pr-10 h-12 text-base bg-card border-0 shadow-card"
               />
           </div>
+          <ImageSearchButton
+            categories={categories ?? undefined}
+            onApply={({ categoryId, karat, q }) =>
+              setFilters((f) => ({
+                ...f,
+                categoryId: categoryId ?? f.categoryId,
+                karat: karat ?? f.karat,
+                q: q ?? f.q,
+              }))
+            }
+          />
           <Sheet>
             <SheetTrigger asChild>
               <Button variant="outline" size="lg" className="relative h-12">
