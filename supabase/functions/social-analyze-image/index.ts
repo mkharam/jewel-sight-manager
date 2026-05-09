@@ -5,9 +5,9 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    const { imageUrl, categories } = await req.json();
-    if (!imageUrl) {
-      return new Response(JSON.stringify({ error: "imageUrl مطلوب" }), {
+    const { imageUrl, imageBase64, contentType: ctIn, categories } = await req.json();
+    if (!imageUrl && !imageBase64) {
+      return new Response(JSON.stringify({ error: "imageUrl أو imageBase64 مطلوب" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -30,17 +30,25 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Fetch image bytes server-side (bypass CORS)
-    const imgRes = await fetch(imageUrl, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; LamaaBot/1.0)" },
-    });
-    if (!imgRes.ok) {
-      return new Response(JSON.stringify({ error: `تعذّر جلب الصورة (${imgRes.status})` }), {
-        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    let buf: Uint8Array;
+    let contentType: string;
+    if (imageBase64) {
+      contentType = ctIn || "image/jpeg";
+      const bin = atob(imageBase64);
+      buf = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+    } else {
+      const imgRes = await fetch(imageUrl, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; LamaaBot/1.0)" },
       });
+      if (!imgRes.ok) {
+        return new Response(JSON.stringify({ error: `تعذّر جلب الصورة (${imgRes.status})` }), {
+          status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      contentType = imgRes.headers.get("content-type") ?? "image/jpeg";
+      buf = new Uint8Array(await imgRes.arrayBuffer());
     }
-    const contentType = imgRes.headers.get("content-type") ?? "image/jpeg";
-    const buf = new Uint8Array(await imgRes.arrayBuffer());
     if (buf.byteLength < 2000) {
       return new Response(JSON.stringify({
         skipped: true,

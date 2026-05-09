@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Download, Save, Sparkles, X } from "lucide-react";
+import { Loader2, Download, Save, Sparkles, X, FolderUp } from "lucide-react";
 import { toast } from "sonner";
 
 type Item = {
@@ -21,6 +21,8 @@ type Item = {
   karat: string;
   description: string;
   error?: string;
+  fileBase64?: string;
+  fileType?: string;
 };
 
 const KARATS = ["18K", "21K", "22K", "24K", "ألماس", "فضة"];
@@ -106,9 +108,15 @@ export default function ImportSocial() {
         const i = idx++;
         setItems((prev) => prev.map((it, j) => j === i ? { ...it, status: "analyzing" } : it));
         try {
-          const { data, error } = await supabase.functions.invoke("social-analyze-image", {
-            body: { imageUrl: list[i].imageUrl, categories: categories ?? [] },
-          });
+          const it = list[i];
+          const body: Record<string, unknown> = { categories: categories ?? [] };
+          if (it.fileBase64) {
+            body.imageBase64 = it.fileBase64;
+            body.contentType = it.fileType || "image/jpeg";
+          } else {
+            body.imageUrl = it.imageUrl;
+          }
+          const { data, error } = await supabase.functions.invoke("social-analyze-image", { body });
           if (error) throw error;
           if (data?.skipped) throw new Error(data.error ?? "تم تخطي الصورة");
           if (data?.error && !data?.storagePath) throw new Error(data.error);
@@ -174,6 +182,41 @@ export default function ImportSocial() {
     if (ok) setItems([]);
   };
 
+  const handleBulkFiles = async (files: FileList | null) => {
+    if (!files || !files.length) return;
+    const arr = Array.from(files).filter((f) => f.type.startsWith("image/")).slice(0, 200);
+    if (!arr.length) return toast.error("اختر صوراً (JPG/PNG/WEBP)");
+    setItems([]);
+    setSourceTitle(`📁 ${arr.length} صورة من المجلد`);
+    const newItems: Item[] = await Promise.all(
+      arr.map(
+        (f) =>
+          new Promise<Item>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const dataUrl = String(reader.result || "");
+              const base64 = dataUrl.split(",")[1] ?? "";
+              resolve({
+                imageUrl: dataUrl,
+                fileBase64: base64,
+                fileType: f.type,
+                status: "pending",
+                include: true,
+                name: "",
+                category: "",
+                karat: "",
+                description: "",
+              });
+            };
+            reader.readAsDataURL(f);
+          })
+      )
+    );
+    setItems(newItems);
+    toast.success(`تم تحميل ${newItems.length} صورة، جارٍ التحليل...`);
+    analyzeAll(newItems);
+  };
+
   const readyCount = items.filter((it) => it.include && it.status === "ready").length;
 
   return (
@@ -205,6 +248,25 @@ export default function ImportSocial() {
         <p className="text-xs text-muted-foreground">
           ⚠️ الحسابات الخاصة لا تعمل. للحصول على نتائج أفضل: استخدم رابط منشور عام أو ألبوم صور عام.
         </p>
+
+        <div className="border-t border-border pt-3">
+          <label className="flex flex-col sm:flex-row sm:items-center gap-2 cursor-pointer">
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => handleBulkFiles(e.target.files)}
+            />
+            <span className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-secondary px-4 py-2 text-sm font-medium hover:bg-secondary/80">
+              <FolderUp className="size-4" />
+              رفع مجلد صور من الجهاز (حتى 200)
+            </span>
+            <span className="text-xs text-muted-foreground">
+              مفيد بعد تنزيل صور بـ gallery-dl. الصور تُحلَّل بالـ AI مثل الرابط تماماً.
+            </span>
+          </label>
+        </div>
       </Card>
 
       {sourceTitle && (
