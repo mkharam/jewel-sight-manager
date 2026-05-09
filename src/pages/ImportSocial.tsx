@@ -108,9 +108,15 @@ export default function ImportSocial() {
         const i = idx++;
         setItems((prev) => prev.map((it, j) => j === i ? { ...it, status: "analyzing" } : it));
         try {
-          const { data, error } = await supabase.functions.invoke("social-analyze-image", {
-            body: { imageUrl: list[i].imageUrl, categories: categories ?? [] },
-          });
+          const it = list[i];
+          const body: Record<string, unknown> = { categories: categories ?? [] };
+          if (it.fileBase64) {
+            body.imageBase64 = it.fileBase64;
+            body.contentType = it.fileType || "image/jpeg";
+          } else {
+            body.imageUrl = it.imageUrl;
+          }
+          const { data, error } = await supabase.functions.invoke("social-analyze-image", { body });
           if (error) throw error;
           if (data?.skipped) throw new Error(data.error ?? "تم تخطي الصورة");
           if (data?.error && !data?.storagePath) throw new Error(data.error);
