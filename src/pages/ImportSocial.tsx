@@ -182,6 +182,41 @@ export default function ImportSocial() {
     if (ok) setItems([]);
   };
 
+  const handleBulkFiles = async (files: FileList | null) => {
+    if (!files || !files.length) return;
+    const arr = Array.from(files).filter((f) => f.type.startsWith("image/")).slice(0, 200);
+    if (!arr.length) return toast.error("اختر صوراً (JPG/PNG/WEBP)");
+    setItems([]);
+    setSourceTitle(`📁 ${arr.length} صورة من المجلد`);
+    const newItems: Item[] = await Promise.all(
+      arr.map(
+        (f) =>
+          new Promise<Item>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const dataUrl = String(reader.result || "");
+              const base64 = dataUrl.split(",")[1] ?? "";
+              resolve({
+                imageUrl: dataUrl,
+                fileBase64: base64,
+                fileType: f.type,
+                status: "pending",
+                include: true,
+                name: "",
+                category: "",
+                karat: "",
+                description: "",
+              });
+            };
+            reader.readAsDataURL(f);
+          })
+      )
+    );
+    setItems(newItems);
+    toast.success(`تم تحميل ${newItems.length} صورة، جارٍ التحليل...`);
+    analyzeAll(newItems);
+  };
+
   const readyCount = items.filter((it) => it.include && it.status === "ready").length;
 
   return (
