@@ -26,7 +26,7 @@ type StaffUser = {
 const ROLE_LABEL = { admin: "مدير عام", manager: "مدير فرع", employee: "موظف" } as const;
 
 export default function Staff() {
-  const { user, roles, loading } = useAuth();
+  const { user, roles, loading, rolesLoading } = useAuth();
   const isAdmin = roles.includes("admin");
 
   const [users, setUsers] = useState<StaffUser[]>([]);
