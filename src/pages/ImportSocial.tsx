@@ -163,6 +163,7 @@ export default function ImportSocial() {
           storage_path: it.storagePath!,
           is_primary: true,
           uploaded_by: user.id,
+          source_url: it.imageUrl,
         });
         if (e2) { failed++; continue; }
         ok++;
