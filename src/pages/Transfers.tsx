@@ -233,8 +233,25 @@ function NewTransferDialog({ branches, myBranchId, presetProductId, presetProduc
   const { user } = useAuth();
   const [productId, setProductId] = useState<string | null>(presetProductId);
   const [productName, setProductName] = useState(presetProductName ?? "");
-  const [fromBranch, setFromBranch] = useState<string>(myBranchId ?? "");
-  const [toBranch, setToBranch] = useState<string>("");
+  // إذا جاء من صفحة منتج → from = فرع المنتج (يُجلب لاحقاً)؛ وإلا → from = فرع الموظف
+  const [fromBranch, setFromBranch] = useState<string>(presetProductId ? "" : (myBranchId ?? ""));
+  const [toBranch, setToBranch] = useState<string>(presetProductId && myBranchId ? myBranchId : "");
+
+  // اجلب فرع المنتج المُمرَّر من رابط
+  useEffect(() => {
+    if (!presetProductId) return;
+    (async () => {
+      const { data } = await supabase
+        .from("products")
+        .select("branch_id")
+        .eq("id", presetProductId)
+        .maybeSingle();
+      if (data?.branch_id) {
+        setFromBranch(data.branch_id);
+        if (myBranchId && data.branch_id !== myBranchId) setToBranch(myBranchId);
+      }
+    })();
+  }, [presetProductId, myBranchId]);
   const [reason, setReason] = useState("");
   const [customer, setCustomer] = useState("");
   const [notes, setNotes] = useState("");
