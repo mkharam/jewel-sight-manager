@@ -184,7 +184,7 @@ export default function ImportSocial() {
 
   const handleBulkFiles = async (files: FileList | null) => {
     if (!files || !files.length) return;
-    const arr = Array.from(files).filter((f) => f.type.startsWith("image/")).slice(0, 200);
+    const arr = Array.from(files).filter((f) => f.type.startsWith("image/"));
     if (!arr.length) return toast.error("اختر صوراً (JPG/PNG/WEBP)");
     setItems([]);
     setSourceTitle(`📁 ${arr.length} صورة من المجلد`);
