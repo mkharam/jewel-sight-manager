@@ -11,8 +11,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY missing");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY missing");
 
     const catList = (categories ?? []).map((c: any) => c.name).join("، ");
 
@@ -26,48 +26,47 @@ Deno.serve(async (req) => {
   "description": "وصف موجز بالعربية بسطر واحد"
 }`;
 
-    const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          { role: "system", content: systemPrompt },
-          {
+    const aiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{
             role: "user",
-            content: [
-              { type: "text", text: "حلّل هذه القطعة:" },
-              { type: "image_url", image_url: { url: `data:${mimeType ?? "image/jpeg"};base64,${imageBase64}` } },
+            parts: [
+              { text: "حلّل هذه القطعة:" },
+              { inlineData: { mimeType: mimeType ?? "image/jpeg", data: imageBase64 } },
             ],
-          },
-        ],
-        tools: [{
-          type: "function",
-          function: {
-            name: "return_attrs",
-            description: "Return jewelry attributes",
-            parameters: {
-              type: "object",
-              properties: {
-                category: { type: "string" },
-                karat: { type: "string" },
-                keywords: { type: "array", items: { type: "string" } },
-                description: { type: "string" },
+          }],
+          tools: [{
+            functionDeclarations: [{
+              name: "return_attrs",
+              description: "Return jewelry attributes",
+              parameters: {
+                type: "object",
+                properties: {
+                  category: { type: "string" },
+                  karat: { type: "string" },
+                  keywords: { type: "array", items: { type: "string" } },
+                  description: { type: "string" },
+                },
+                required: ["keywords", "description"],
               },
-              required: ["keywords", "description"],
-            },
-          },
-        }],
-        tool_choice: { type: "function", function: { name: "return_attrs" } },
-      }),
-    });
+            }],
+          }],
+          toolConfig: { functionCallingConfig: { mode: "ANY", allowedFunctionNames: ["return_attrs"] } },
+        }),
+      }
+    );
 
     if (!aiRes.ok) {
       const t = await aiRes.text();
       console.error("AI error", aiRes.status, t);
-      const status = aiRes.status === 429 || aiRes.status === 402 ? aiRes.status : 500;
-      const msg = aiRes.status === 429 ? "تم تجاوز الحد، حاول لاحقاً"
-        : aiRes.status === 402 ? "نفدت الرصيد، يرجى الشحن"
+      const status = aiRes.status === 429 || aiRes.status === 403 ? aiRes.status : 500;
+      const msg = aiRes.status === 429 ? "تم تجاوز الحد اليومي لـ Gemini، حاول غداً"
+        : aiRes.status === 403 ? "مفتاح Gemini غير صالح"
         : "تعذّر تحليل الصورة";
       return new Response(JSON.stringify({ error: msg }), {
         status, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -75,8 +74,8 @@ Deno.serve(async (req) => {
     }
 
     const data = await aiRes.json();
-    const args = data?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
-    const parsed = args ? JSON.parse(args) : {};
+    const args = data?.candidates?.[0]?.content?.parts?.find((p: any) => p.functionCall)?.functionCall?.args;
+    const parsed = args ?? {};
 
     return new Response(JSON.stringify(parsed), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
