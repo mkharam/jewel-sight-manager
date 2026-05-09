@@ -196,6 +196,7 @@ export default function ProductSearch() {
             </SheetContent>
           </Sheet>
         </div>
+        </div>
       </div>
 
       <div className="flex items-center justify-between">
