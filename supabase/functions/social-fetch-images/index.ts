@@ -68,7 +68,14 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    const { url } = await req.json();
+    const { url, excludeUrls } = await req.json();
+    const excludeKeys = new Set<string>(
+      Array.isArray(excludeUrls)
+        ? excludeUrls
+            .filter((u: unknown): u is string => typeof u === "string")
+            .map((u: string) => u.replace(/&amp;/g, "&").split("?")[0])
+        : []
+    );
     if (!url || typeof url !== "string") {
       return new Response(JSON.stringify({ error: "url مطلوب" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -168,7 +175,7 @@ Deno.serve(async (req) => {
                 if (typeof l === "string" && /\.(jpe?g|png|webp)(\?|$)/i.test(l)) merged.add(l);
               }
             }
-            images = Array.from(merged).slice(0, isSingleInstagramPost ? 1 : 120);
+            images = Array.from(merged).slice(0, isSingleInstagramPost ? 1 : 400);
             title = title ?? fcData?.data?.metadata?.title ?? fcData?.metadata?.title ?? null;
             usedMethod = usedMethod ? `${usedMethod}+firecrawl-scroll` : "firecrawl-scroll";
           } else {
@@ -194,11 +201,24 @@ Deno.serve(async (req) => {
       });
     }
 
+    const totalFound = images.length;
+    let skipped = 0;
+    if (excludeKeys.size) {
+      images = images.filter((u) => {
+        const key = u.replace(/&amp;/g, "&").split("?")[0];
+        if (excludeKeys.has(key)) { skipped++; return false; }
+        return true;
+      });
+    }
+    images = images.slice(0, 200);
+
     return new Response(JSON.stringify({
       images,
       sourceTitle: title,
       sourceUrl: url,
       method: usedMethod,
+      totalFound,
+      skipped,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

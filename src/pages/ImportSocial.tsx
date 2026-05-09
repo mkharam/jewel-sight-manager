@@ -51,14 +51,34 @@ export default function ImportSocial() {
     setItems([]);
     setSourceTitle(null);
     try {
+      // جلب كل الروابط المستوردة سابقاً للتخطّي
+      const excludeUrls: string[] = [];
+      const pageSize = 1000;
+      for (let from = 0; ; from += pageSize) {
+        const { data, error } = await supabase
+          .from("product_images")
+          .select("source_url")
+          .not("source_url", "is", null)
+          .range(from, from + pageSize - 1);
+        if (error) break;
+        const rows = data ?? [];
+        for (const r of rows) if (r.source_url) excludeUrls.push(r.source_url);
+        if (rows.length < pageSize) break;
+      }
+
       const { data, error } = await supabase.functions.invoke("social-fetch-images", {
-        body: { url: url.trim() },
+        body: { url: url.trim(), excludeUrls },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       const imgs: string[] = data?.images ?? [];
+      const skipped = data?.skipped ?? 0;
       if (!imgs.length) {
-        toast.error(data?.warning ?? "لم نجد أي صور مناسبة في هذا الرابط");
+        toast.error(
+          skipped
+            ? `كل الصور (${skipped}) تم استيرادها مسبقاً`
+            : (data?.warning ?? "لم نجد أي صور مناسبة في هذا الرابط")
+        );
         return;
       }
       setSourceTitle(data?.sourceTitle ?? null);
@@ -67,7 +87,9 @@ export default function ImportSocial() {
         name: "", category: "", karat: "", description: "",
       }));
       setItems(newItems);
-      toast.success(`تم العثور على ${imgs.length} صورة، جارٍ التحليل...`);
+      toast.success(
+        `${imgs.length} صورة جديدة` + (skipped ? ` (تم تخطّي ${skipped} مستوردة سابقاً)` : "") + "، جارٍ التحليل..."
+      );
       analyzeAll(newItems);
     } catch (e: any) {
       toast.error(e?.message ?? "فشل سحب الصور");
@@ -141,6 +163,7 @@ export default function ImportSocial() {
           storage_path: it.storagePath!,
           is_primary: true,
           uploaded_by: user.id,
+          source_url: it.imageUrl,
         });
         if (e2) { failed++; continue; }
         ok++;
