@@ -542,6 +542,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_branch_manager: {
+        Args: { _branch_id: string; _user_id: string }
+        Returns: boolean
+      }
       is_manager_or_admin: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {

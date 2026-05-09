@@ -48,7 +48,9 @@ interface Transfer {
 interface Branch { id: string; name: string }
 
 export default function Transfers() {
-  const { user, profile } = useAuth();
+  const { user, profile, roles } = useAuth();
+  const isAdmin = roles.includes("admin");
+  const isManager = roles.includes("manager");
   const [params] = useSearchParams();
   const presetProductId = params.get("product");
   const presetProductName = params.get("name");
@@ -146,6 +148,7 @@ export default function Transfers() {
               key={t.id}
               t={t}
               myBranchId={profile?.branch_id ?? null}
+              canEdit={isAdmin || (isManager && (t.from_branch_id === profile?.branch_id || t.to_branch_id === profile?.branch_id))}
               onUpdate={updateStatus}
             />
           ))}
@@ -155,8 +158,8 @@ export default function Transfers() {
   );
 }
 
-function TransferRow({ t, myBranchId, onUpdate }: {
-  t: Transfer; myBranchId: string | null;
+function TransferRow({ t, myBranchId, canEdit, onUpdate }: {
+  t: Transfer; myBranchId: string | null; canEdit: boolean;
   onUpdate: (t: Transfer, s: TransferStatus) => void;
 }) {
   const meta = STATUS_META[t.status];
@@ -164,13 +167,13 @@ function TransferRow({ t, myBranchId, onUpdate }: {
   const isFromMe = t.from_branch_id === myBranchId;
   const isToMe = t.to_branch_id === myBranchId;
 
-  const actions: { label: string; status: TransferStatus; variant?: any; show: boolean }[] = [
+  const actions: { label: string; status: TransferStatus; variant?: any; show: boolean }[] = canEdit ? [
     { label: "موافقة", status: "approved", show: t.status === "pending" && (isFromMe || !myBranchId) },
     { label: "رفض", status: "rejected", variant: "outline", show: t.status === "pending" && (isFromMe || !myBranchId) },
     { label: "أرسلت", status: "in_transit", show: t.status === "approved" && (isFromMe || !myBranchId) },
     { label: "تأكيد الاستلام", status: "received", show: t.status === "in_transit" && (isToMe || !myBranchId) },
     { label: "إلغاء", status: "cancelled", variant: "outline", show: ["pending", "approved"].includes(t.status) },
-  ];
+  ] : [];
 
   return (
     <Card className="p-3 sm:p-4 space-y-3">
