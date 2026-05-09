@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeftRight, Plus, Check, X, Truck, PackageCheck, Clock, Search } from "lucide-react";
+import { ArrowLeftRight, Plus, Check, X, Truck, PackageCheck, Clock, Search, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/constants";
 
@@ -48,7 +48,8 @@ interface Transfer {
 interface Branch { id: string; name: string }
 
 export default function Transfers() {
-  const { user, profile } = useAuth();
+  const { user, profile, roles } = useAuth();
+  const isAdmin = roles.includes("admin");
   const [params] = useSearchParams();
   const presetProductId = params.get("product");
   const presetProductName = params.get("name");
@@ -146,7 +147,8 @@ export default function Transfers() {
               key={t.id}
               t={t}
               myBranchId={profile?.branch_id ?? null}
-              canEdit={true}
+              canEdit={isAdmin || t.from_branch_id === profile?.branch_id || t.to_branch_id === profile?.branch_id}
+              isAdmin={isAdmin}
               onUpdate={updateStatus}
             />
           ))}
@@ -156,8 +158,8 @@ export default function Transfers() {
   );
 }
 
-function TransferRow({ t, myBranchId, canEdit, onUpdate }: {
-  t: Transfer; myBranchId: string | null; canEdit: boolean;
+function TransferRow({ t, myBranchId, canEdit, isAdmin, onUpdate }: {
+  t: Transfer; myBranchId: string | null; canEdit: boolean; isAdmin: boolean;
   onUpdate: (t: Transfer, s: TransferStatus) => void;
 }) {
   const meta = STATUS_META[t.status];
@@ -166,11 +168,17 @@ function TransferRow({ t, myBranchId, canEdit, onUpdate }: {
   const isToMe = t.to_branch_id === myBranchId;
 
   const actions: { label: string; status: TransferStatus; variant?: any; show: boolean }[] = canEdit ? [
-    { label: "موافقة", status: "approved", show: t.status === "pending" && (isFromMe || !myBranchId) },
-    { label: "رفض", status: "rejected", variant: "outline", show: t.status === "pending" && (isFromMe || !myBranchId) },
-    { label: "أرسلت", status: "in_transit", show: t.status === "approved" && (isFromMe || !myBranchId) },
-    { label: "تأكيد الاستلام", status: "received", show: t.status === "in_transit" && (isToMe || !myBranchId) },
-    { label: "إلغاء", status: "cancelled", variant: "outline", show: ["pending", "approved"].includes(t.status) },
+    // قبول الطلب من فرع الإرسال
+    { label: "قبول", status: "approved", show: t.status === "pending" && (isFromMe || isAdmin) },
+    // إرسال القطعة
+    { label: "أرسلت", status: "in_transit", show: t.status === "approved" && (isFromMe || isAdmin) },
+    // استلام في الفرع المستقبل
+    { label: "تأكيد الاستلام", status: "received", show: t.status === "in_transit" && (isToMe || isAdmin) },
+    // إلغاء
+    { label: "إلغاء", status: "cancelled", variant: "outline", show: ["pending", "approved", "in_transit"].includes(t.status) },
+    // تراجع في حالة الخطأ — يرجع للحالة السابقة
+    { label: "تراجع (إعادة فتح)", status: "pending", variant: "outline", show: t.status === "cancelled" || t.status === "rejected" },
+    { label: "تراجع عن الإرسال", status: "approved", variant: "outline", show: t.status === "in_transit" && (isFromMe || isAdmin) },
   ] : [];
 
   return (
@@ -225,8 +233,8 @@ function NewTransferDialog({ branches, myBranchId, presetProductId, presetProduc
   const { user } = useAuth();
   const [productId, setProductId] = useState<string | null>(presetProductId);
   const [productName, setProductName] = useState(presetProductName ?? "");
-  const [fromBranch, setFromBranch] = useState<string>("");
-  const [toBranch, setToBranch] = useState<string>(myBranchId ?? "");
+  const [fromBranch, setFromBranch] = useState<string>(myBranchId ?? "");
+  const [toBranch, setToBranch] = useState<string>("");
   const [reason, setReason] = useState("");
   const [customer, setCustomer] = useState("");
   const [notes, setNotes] = useState("");
@@ -286,6 +294,7 @@ function NewTransferDialog({ branches, myBranchId, presetProductId, presetProduc
                   <button key={r.id} type="button" onClick={() => {
                     setProductId(r.id); setProductName(r.name);
                     setFromBranch(r.branch_id);
+                    if (myBranchId && r.branch_id !== myBranchId) setToBranch(myBranchId);
                   }} className="w-full text-right p-2 hover:bg-muted/60 text-sm">
                     <span className="font-medium">{r.name}</span>
                     <span className="text-muted-foreground text-xs"> · {r.karat ?? "—"} · {r.branch?.name}</span>
@@ -305,7 +314,7 @@ function NewTransferDialog({ branches, myBranchId, presetProductId, presetProduc
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label>من فرع</Label>
+            <Label>من فرع (فرعك)</Label>
             <Select value={fromBranch} onValueChange={setFromBranch}>
               <SelectTrigger><SelectValue placeholder="اختر" /></SelectTrigger>
               <SelectContent>
@@ -316,9 +325,11 @@ function NewTransferDialog({ branches, myBranchId, presetProductId, presetProduc
           <div className="space-y-1.5">
             <Label>إلى فرع</Label>
             <Select value={toBranch} onValueChange={setToBranch}>
-              <SelectTrigger><SelectValue placeholder="اختر" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="اختر الفرع المستلم" /></SelectTrigger>
               <SelectContent>
-                {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                {branches.filter((b) => b.id !== fromBranch).map((b) => (
+                  <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
