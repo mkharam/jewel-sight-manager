@@ -147,7 +147,8 @@ export default function Transfers() {
               key={t.id}
               t={t}
               myBranchId={profile?.branch_id ?? null}
-              canEdit={true}
+              canEdit={isAdmin || t.from_branch_id === profile?.branch_id || t.to_branch_id === profile?.branch_id}
+              isAdmin={isAdmin}
               onUpdate={updateStatus}
             />
           ))}
