@@ -68,6 +68,21 @@ export default function ProductDetail() {
     enabled: !!id,
   });
 
+  // بث مباشر للأسعار والاستفسارات لهذه القطعة
+  useEffect(() => {
+    if (!id) return;
+    const ch = supabase
+      .channel(`product-${id}-live`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "product_quotes", filter: `product_id=eq.${id}` }, () => {
+        qc.invalidateQueries({ queryKey: ["quotes", id] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "customer_inquiries", filter: `product_id=eq.${id}` }, () => {
+        qc.invalidateQueries({ queryKey: ["product-inquiries", id] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [id, qc]);
+
   if (isLoading) return <div className="p-8 text-center text-muted-foreground">جارٍ التحميل...</div>;
   if (!product) return <div className="p-8 text-center">القطعة غير موجودة</div>;
 
