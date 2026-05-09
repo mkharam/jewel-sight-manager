@@ -63,10 +63,12 @@ export default function Staff() {
   };
 
   useEffect(() => {
-    if (!loading && isAdmin) load();
-  }, [loading, isAdmin]);
+    if (!loading && !rolesLoading && isAdmin) load();
+  }, [loading, rolesLoading, isAdmin]);
 
-  if (loading) return null;
+  if (loading || rolesLoading) {
+    return <div className="text-center py-12 text-muted-foreground">جارٍ التحميل...</div>;
+  }
   if (!isAdmin) return <Navigate to="/" replace />;
 
   const resetForm = () => {
