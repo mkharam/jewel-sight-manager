@@ -12,10 +12,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY missing");
+    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY missing");
 
     // Auth: user must be logged in
     const authHeader = req.headers.get("Authorization") ?? "";
@@ -90,56 +90,55 @@ Deno.serve(async (req) => {
 - description: وصف موجز سطر واحد
 - keywords: 3-5 كلمات مفتاحية`;
 
-    const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          { role: "system", content: systemPrompt },
-          {
+    const aiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{
             role: "user",
-            content: [
-              { type: "text", text: "حلّل هذه القطعة:" },
-              { type: "image_url", image_url: { url: `data:${contentType};base64,${b64}` } },
+            parts: [
+              { text: "حلّل هذه القطعة:" },
+              { inlineData: { mimeType: contentType, data: b64 } },
             ],
-          },
-        ],
-        tools: [{
-          type: "function",
-          function: {
-            name: "return_product",
-            description: "Return product attributes",
-            parameters: {
-              type: "object",
-              properties: {
-                name: { type: "string" },
-                category: { type: "string" },
-                karat: { type: "string" },
-                description: { type: "string" },
-                keywords: { type: "array", items: { type: "string" } },
+          }],
+          tools: [{
+            functionDeclarations: [{
+              name: "return_product",
+              description: "Return product attributes",
+              parameters: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  category: { type: "string" },
+                  karat: { type: "string" },
+                  description: { type: "string" },
+                  keywords: { type: "array", items: { type: "string" } },
+                },
+                required: ["name", "description"],
               },
-              required: ["name", "description"],
-            },
-          },
-        }],
-        tool_choice: { type: "function", function: { name: "return_product" } },
-      }),
-    });
+            }],
+          }],
+          toolConfig: { functionCallingConfig: { mode: "ANY", allowedFunctionNames: ["return_product"] } },
+        }),
+      }
+    );
 
     let parsed: any = {};
     if (aiRes.ok) {
       const data = await aiRes.json();
-      const args = data?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
-      if (args) parsed = JSON.parse(args);
+      const args = data?.candidates?.[0]?.content?.parts?.find((p: any) => p.functionCall)?.functionCall?.args;
+      if (args) parsed = args;
     } else {
       const t = await aiRes.text();
       console.error("AI error", aiRes.status, t);
-      if (aiRes.status === 429 || aiRes.status === 402) {
+      if (aiRes.status === 429 || aiRes.status === 403) {
         return new Response(JSON.stringify({
-          error: aiRes.status === 429 ? "تم تجاوز الحد، حاول لاحقاً" : "نفدت الرصيد",
+          error: aiRes.status === 429 ? "تم تجاوز الحد اليومي لـ Gemini، حاول غداً" : "مفتاح Gemini غير صالح أو محظور",
           aiBlocked: true,
-          code: aiRes.status === 429 ? "AI_RATE_LIMITED" : "AI_CREDITS_EXHAUSTED",
+          code: aiRes.status === 429 ? "AI_RATE_LIMITED" : "AI_KEY_INVALID",
           storagePath: path,
         }), {
           status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
