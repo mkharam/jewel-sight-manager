@@ -248,6 +248,25 @@ export default function ImportSocial() {
         <p className="text-xs text-muted-foreground">
           ⚠️ الحسابات الخاصة لا تعمل. للحصول على نتائج أفضل: استخدم رابط منشور عام أو ألبوم صور عام.
         </p>
+
+        <div className="border-t border-border pt-3">
+          <label className="flex flex-col sm:flex-row sm:items-center gap-2 cursor-pointer">
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => handleBulkFiles(e.target.files)}
+            />
+            <span className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-secondary px-4 py-2 text-sm font-medium hover:bg-secondary/80">
+              <FolderUp className="size-4" />
+              رفع مجلد صور من الجهاز (حتى 200)
+            </span>
+            <span className="text-xs text-muted-foreground">
+              مفيد بعد تنزيل صور بـ gallery-dl. الصور تُحلَّل بالـ AI مثل الرابط تماماً.
+            </span>
+          </label>
+        </div>
       </Card>
 
       {sourceTitle && (
