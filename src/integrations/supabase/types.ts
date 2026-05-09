@@ -187,6 +187,7 @@ export type Database = {
           is_primary: boolean
           product_id: string
           sort_order: number
+          source_url: string | null
           storage_path: string
           uploaded_by: string | null
         }
@@ -196,6 +197,7 @@ export type Database = {
           is_primary?: boolean
           product_id: string
           sort_order?: number
+          source_url?: string | null
           storage_path: string
           uploaded_by?: string | null
         }
@@ -205,6 +207,7 @@ export type Database = {
           is_primary?: boolean
           product_id?: string
           sort_order?: number
+          source_url?: string | null
           storage_path?: string
           uploaded_by?: string | null
         }
