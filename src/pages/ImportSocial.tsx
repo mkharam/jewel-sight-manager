@@ -260,7 +260,7 @@ export default function ImportSocial() {
             />
             <span className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-secondary px-4 py-2 text-sm font-medium hover:bg-secondary/80">
               <FolderUp className="size-4" />
-              رفع مجلد صور من الجهاز (حتى 200)
+              رفع مجلد صور من الجهاز
             </span>
             <span className="text-xs text-muted-foreground">
               مفيد بعد تنزيل صور بـ gallery-dl. الصور تُحلَّل بالـ AI مثل الرابط تماماً.
