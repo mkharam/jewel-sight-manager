@@ -27,8 +27,18 @@ const initialFilters: Filters = {
 };
 
 export default function ProductSearch() {
+  const { profile, roles } = useAuth();
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [debounced, setDebounced] = useState(filters);
+
+  const greeting = useMemo(() => {
+    const h = new Date().getHours();
+    if (h < 5) return "ساعة طيبة";
+    if (h < 12) return "صباح الخير";
+    if (h < 18) return "مساء الخير";
+    return "مساء النور";
+  }, []);
+  const roleLabel = roles.includes("admin") ? "مدير عام" : roles.includes("manager") ? "مدير فرع" : "موظف";
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(filters), 250);
