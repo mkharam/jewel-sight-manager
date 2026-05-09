@@ -158,8 +158,8 @@ export default function Transfers() {
   );
 }
 
-function TransferRow({ t, myBranchId, canEdit, onUpdate }: {
-  t: Transfer; myBranchId: string | null; canEdit: boolean;
+function TransferRow({ t, myBranchId, canEdit, isAdmin, onUpdate }: {
+  t: Transfer; myBranchId: string | null; canEdit: boolean; isAdmin: boolean;
   onUpdate: (t: Transfer, s: TransferStatus) => void;
 }) {
   const meta = STATUS_META[t.status];
@@ -168,11 +168,17 @@ function TransferRow({ t, myBranchId, canEdit, onUpdate }: {
   const isToMe = t.to_branch_id === myBranchId;
 
   const actions: { label: string; status: TransferStatus; variant?: any; show: boolean }[] = canEdit ? [
-    { label: "موافقة", status: "approved", show: t.status === "pending" && (isFromMe || !myBranchId) },
-    { label: "رفض", status: "rejected", variant: "outline", show: t.status === "pending" && (isFromMe || !myBranchId) },
-    { label: "أرسلت", status: "in_transit", show: t.status === "approved" && (isFromMe || !myBranchId) },
-    { label: "تأكيد الاستلام", status: "received", show: t.status === "in_transit" && (isToMe || !myBranchId) },
-    { label: "إلغاء", status: "cancelled", variant: "outline", show: ["pending", "approved"].includes(t.status) },
+    // قبول الطلب من فرع الإرسال
+    { label: "قبول", status: "approved", show: t.status === "pending" && (isFromMe || isAdmin) },
+    // إرسال القطعة
+    { label: "أرسلت", status: "in_transit", show: t.status === "approved" && (isFromMe || isAdmin) },
+    // استلام في الفرع المستقبل
+    { label: "تأكيد الاستلام", status: "received", show: t.status === "in_transit" && (isToMe || isAdmin) },
+    // إلغاء
+    { label: "إلغاء", status: "cancelled", variant: "outline", show: ["pending", "approved", "in_transit"].includes(t.status) },
+    // تراجع في حالة الخطأ — يرجع للحالة السابقة
+    { label: "تراجع (إعادة فتح)", status: "pending", variant: "outline", show: t.status === "cancelled" || t.status === "rejected" },
+    { label: "تراجع عن الإرسال", status: "approved", variant: "outline", show: t.status === "in_transit" && (isFromMe || isAdmin) },
   ] : [];
 
   return (
