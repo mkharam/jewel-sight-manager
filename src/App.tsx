@@ -11,6 +11,7 @@ import ProductDetail from "@/pages/ProductDetail";
 import ProductForm from "@/pages/ProductForm";
 import Inquiries from "@/pages/Inquiries";
 import ImportProducts from "@/pages/ImportProducts";
+import Staff from "@/pages/Staff";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -31,6 +32,7 @@ const App = () => (
             <Route path="/products/:id/edit" element={<ProductForm />} />
             <Route path="/inquiries" element={<Inquiries />} />
             <Route path="/import" element={<ImportProducts />} />
+            <Route path="/staff" element={<Staff />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

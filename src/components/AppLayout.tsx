@@ -1,11 +1,11 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Search, Package, MessageCircle, Upload, LogOut, Sparkles, Settings } from "lucide-react";
+import { Search, Package, MessageCircle, Upload, LogOut, Sparkles, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-const navItems = [
+const baseNav = [
   { to: "/", label: "البحث", icon: Search, end: true },
   { to: "/products", label: "المنتجات", icon: Package },
   { to: "/inquiries", label: "الاستفسارات", icon: MessageCircle },
@@ -14,6 +14,9 @@ const navItems = [
 
 export default function AppLayout() {
   const { profile, roles } = useAuth();
+  const navItems = roles.includes("admin")
+    ? [...baseNav, { to: "/staff", label: "الموظفون", icon: Users }]
+    : baseNav;
   const navigate = useNavigate();
 
   const signOut = async () => {
