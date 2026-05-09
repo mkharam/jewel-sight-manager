@@ -209,7 +209,7 @@ export default function Staff() {
           <TableHeader>
             <TableRow>
               <TableHead className="text-right">الاسم</TableHead>
-              <TableHead className="text-right">البريد</TableHead>
+              <TableHead className="text-right">اسم المستخدم</TableHead>
               <TableHead className="text-right">الدور</TableHead>
               <TableHead className="text-right">الفرع</TableHead>
               <TableHead className="text-right">إجراءات</TableHead>
