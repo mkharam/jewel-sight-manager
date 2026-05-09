@@ -296,7 +296,10 @@ function NewTransferDialog({ branches, myBranchId, presetProductId, presetProduc
 
   return (
     <DialogContent className="max-h-[90vh] overflow-y-auto">
-      <DialogHeader><DialogTitle>طلب تحويل قطعة</DialogTitle></DialogHeader>
+      <DialogHeader>
+        <DialogTitle>طلب تحويل قطعة</DialogTitle>
+        <DialogDescription>اختر القطعة والفروع لإنشاء طلب تحويل بين الفروع.</DialogDescription>
+      </DialogHeader>
       <div className="space-y-3">
         {!productId ? (
           <div className="space-y-1.5">
