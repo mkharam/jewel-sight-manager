@@ -175,7 +175,7 @@ Deno.serve(async (req) => {
                 if (typeof l === "string" && /\.(jpe?g|png|webp)(\?|$)/i.test(l)) merged.add(l);
               }
             }
-            images = Array.from(merged).slice(0, isSingleInstagramPost ? 1 : 120);
+            images = Array.from(merged).slice(0, isSingleInstagramPost ? 1 : 400);
             title = title ?? fcData?.data?.metadata?.title ?? fcData?.metadata?.title ?? null;
             usedMethod = usedMethod ? `${usedMethod}+firecrawl-scroll` : "firecrawl-scroll";
           } else {
