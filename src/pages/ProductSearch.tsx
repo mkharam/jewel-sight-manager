@@ -124,8 +124,18 @@ export default function ProductSearch() {
                 placeholder="ابحث: خاتم، سلسلة، 21K..."
                 value={filters.q}
                 onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
-                className="pr-10 h-12 text-base bg-card border-0 shadow-card"
+                className="pr-10 pl-10 h-12 text-base bg-card border-0 shadow-card"
               />
+              {filters.q && (
+                <button
+                  type="button"
+                  onClick={() => setFilters((f) => ({ ...f, q: "" }))}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-muted text-muted-foreground"
+                  aria-label="مسح البحث"
+                >
+                  <X className="size-4" />
+                </button>
+              )}
           </div>
           <ImageSearchButton
             categories={categories ?? undefined}
