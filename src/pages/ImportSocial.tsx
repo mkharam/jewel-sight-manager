@@ -104,7 +104,7 @@ export default function ImportSocial() {
   };
 
   const analyzeAll = async (list: Item[]) => {
-    const concurrency = 3;
+    const concurrency = 1;
     let idx = 0;
     let stopReason: string | null = null;
     const worker = async () => {
