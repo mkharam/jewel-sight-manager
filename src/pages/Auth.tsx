@@ -11,7 +11,7 @@ import { Sparkles } from "lucide-react";
 
 const schema = z.object({
   email: z.string().trim().email("بريد إلكتروني غير صالح").max(255),
-  password: z.string().min(6, "كلمة المرور 6 أحرف على الأقل").max(72),
+  password: z.string().min(4, "كلمة المرور 4 خانات على الأقل").max(72),
   fullName: z.string().trim().min(2, "الاسم قصير").max(100).optional(),
 });
 
