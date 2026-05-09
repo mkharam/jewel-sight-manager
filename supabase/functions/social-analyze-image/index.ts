@@ -12,7 +12,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    const rawGeminiKey = Deno.env.get("GEMINI_API_KEY") ?? "";
+    const GEMINI_API_KEY = rawGeminiKey.match(/AIza[\w-]+/)?.[0] ?? rawGeminiKey.trim().replace(/^['"]|['"]$/g, "");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY missing");
@@ -91,10 +92,10 @@ Deno.serve(async (req) => {
 - keywords: 3-5 كلمات مفتاحية`;
 
     const aiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_API_KEY}`,
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-goog-api-key": GEMINI_API_KEY },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: systemPrompt }] },
           contents: [{
@@ -134,11 +135,12 @@ Deno.serve(async (req) => {
     } else {
       const t = await aiRes.text();
       console.error("AI error", aiRes.status, t);
-      if (aiRes.status === 429 || aiRes.status === 403) {
+      if (aiRes.status === 429 || aiRes.status === 403 || aiRes.status === 400) {
+        const isRateLimit = aiRes.status === 429;
         return new Response(JSON.stringify({
-          error: aiRes.status === 429 ? "تم تجاوز الحد اليومي لـ Gemini، حاول غداً" : "مفتاح Gemini غير صالح أو محظور",
+          error: isRateLimit ? "تم تجاوز الحد اليومي لـ Gemini، حاول غداً" : "مفتاح Gemini غير صالح — أنشئ مفتاحاً جديداً واحفظه في الأسرار",
           aiBlocked: true,
-          code: aiRes.status === 429 ? "AI_RATE_LIMITED" : "AI_KEY_INVALID",
+          code: isRateLimit ? "AI_RATE_LIMITED" : "AI_KEY_INVALID",
           storagePath: path,
         }), {
           status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
