@@ -327,12 +327,7 @@ function ActivityPanel({ branches }: { branches: Branch[] }) {
         supabase.from("transfers").select("id, product_name_snapshot, requested_by, created_at, status, from_branch:branches!transfers_from_branch_id_fkey(name), to_branch:branches!transfers_to_branch_id_fkey(name)").order("created_at", { ascending: false }).limit(50),
         supabase.from("customer_inquiries").select("id, customer_name, created_by, created_at").order("created_at", { ascending: false }).limit(50),
       ]);
-        supabase.from("profiles").select("id, full_name, branch_id"),
-        supabase.from("products").select("id, name, created_by, created_at, branch:branches(name)").order("created_at", { ascending: false }).limit(50),
-        supabase.from("product_quotes").select("id, price, customer_name, quoted_by, created_at, product:products(id,name)").order("created_at", { ascending: false }).limit(50),
-        supabase.from("transfers").select("id, product_name_snapshot, requested_by, created_at, status, from_branch:branches!transfers_from_branch_id_fkey(name), to_branch:branches!transfers_to_branch_id_fkey(name)").order("created_at", { ascending: false }).limit(50),
-        supabase.from("customer_inquiries").select("id, customer_name, created_by, created_at").order("created_at", { ascending: false }).limit(50),
-      ]);
+
 
       const branchMap = new Map(branches.map((b) => [b.id, b.name]));
       const map = new Map<string, EmpStat>();
