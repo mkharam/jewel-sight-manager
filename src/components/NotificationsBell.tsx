@@ -111,6 +111,7 @@ export default function NotificationsBell() {
           <ul className="divide-y divide-border">
             {items.map((it) => {
               const d = describe(it);
+              if (!d) return null;
               const Icon = d.icon;
               const isNew = it.created_at > lastSeen;
               return (
