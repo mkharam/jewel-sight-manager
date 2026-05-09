@@ -83,7 +83,10 @@ export default function Inquiries() {
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg">
-            <DialogHeader><DialogTitle>تسجيل استفسار عميل</DialogTitle></DialogHeader>
+            <DialogHeader>
+              <DialogTitle>تسجيل استفسار عميل</DialogTitle>
+              <DialogDescription>سجّل ما طلبه العميل حتى يبحث الموظفون عنه.</DialogDescription>
+            </DialogHeader>
             <NewInquiryForm
               defaultBranch={profile?.branch_id ?? ""}
               branches={branches ?? []}
