@@ -65,14 +65,20 @@ export default function Transfers() {
         .from("transfers")
         .select(`*,
           from_branch:branches!transfers_from_branch_id_fkey(name),
-          to_branch:branches!transfers_to_branch_id_fkey(name),
-          requester:profiles!transfers_requested_by_fkey(full_name)
+          to_branch:branches!transfers_to_branch_id_fkey(name)
         `)
         .order("created_at", { ascending: false })
         .limit(200),
     ]);
     setBranches(br ?? []);
-    setTransfers((tr ?? []) as any);
+    const list = (tr ?? []) as any[];
+    const ids = Array.from(new Set(list.map((t) => t.requested_by).filter(Boolean)));
+    if (ids.length) {
+      const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", ids);
+      const map = new Map((profs ?? []).map((p: any) => [p.id, p.full_name]));
+      list.forEach((t) => { t.requester = { full_name: map.get(t.requested_by) ?? "—" }; });
+    }
+    setTransfers(list as any);
   };
 
   useEffect(() => {
