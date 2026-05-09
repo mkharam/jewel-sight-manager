@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Download, Save, Sparkles, X } from "lucide-react";
+import { Loader2, Download, Save, Sparkles, X, FolderUp } from "lucide-react";
 import { toast } from "sonner";
 
 type Item = {
@@ -21,6 +21,8 @@ type Item = {
   karat: string;
   description: string;
   error?: string;
+  fileBase64?: string;
+  fileType?: string;
 };
 
 const KARATS = ["18K", "21K", "22K", "24K", "ألماس", "فضة"];
