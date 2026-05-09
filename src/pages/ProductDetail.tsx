@@ -293,7 +293,10 @@ function AddQuoteDialog({ productId, branchId, onAdded }: { productId: string; b
         </Button>
       </DialogTrigger>
       <DialogContent>
-        <DialogHeader><DialogTitle>تسجيل سعر</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>تسجيل سعر</DialogTitle>
+          <DialogDescription>سجّل أي سعر تعرضه على عميل لمنع تخبط الأسعار بين الفروع.</DialogDescription>
+        </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
           <div>
             <Label>السعر المعروض *</Label>
