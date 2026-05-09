@@ -381,6 +381,85 @@ export type Database = {
           },
         ]
       }
+      transfers: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          created_at: string
+          customer_name: string | null
+          from_branch_id: string
+          id: string
+          notes: string | null
+          product_id: string | null
+          product_name_snapshot: string | null
+          reason: string | null
+          received_at: string | null
+          received_by: string | null
+          requested_by: string
+          status: Database["public"]["Enums"]["transfer_status"]
+          to_branch_id: string
+          updated_at: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          customer_name?: string | null
+          from_branch_id: string
+          id?: string
+          notes?: string | null
+          product_id?: string | null
+          product_name_snapshot?: string | null
+          reason?: string | null
+          received_at?: string | null
+          received_by?: string | null
+          requested_by: string
+          status?: Database["public"]["Enums"]["transfer_status"]
+          to_branch_id: string
+          updated_at?: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          customer_name?: string | null
+          from_branch_id?: string
+          id?: string
+          notes?: string | null
+          product_id?: string | null
+          product_name_snapshot?: string | null
+          reason?: string | null
+          received_at?: string | null
+          received_by?: string | null
+          requested_by?: string
+          status?: Database["public"]["Enums"]["transfer_status"]
+          to_branch_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transfers_from_branch_id_fkey"
+            columns: ["from_branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transfers_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transfers_to_branch_id_fkey"
+            columns: ["to_branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -426,6 +505,13 @@ export type Database = {
         | "in_transfer"
         | "damaged"
         | "lost"
+      transfer_status:
+        | "pending"
+        | "approved"
+        | "in_transit"
+        | "received"
+        | "rejected"
+        | "cancelled"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -562,6 +648,14 @@ export const Constants = {
         "in_transfer",
         "damaged",
         "lost",
+      ],
+      transfer_status: [
+        "pending",
+        "approved",
+        "in_transit",
+        "received",
+        "rejected",
+        "cancelled",
       ],
     },
   },
