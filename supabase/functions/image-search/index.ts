@@ -11,7 +11,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    const rawGeminiKey = Deno.env.get("GEMINI_API_KEY") ?? "";
+    const GEMINI_API_KEY = rawGeminiKey.match(/AIza[\w-]+/)?.[0] ?? rawGeminiKey.trim().replace(/^['"]|['"]$/g, "");
     if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY missing");
 
     const catList = (categories ?? []).map((c: any) => c.name).join("، ");
@@ -27,10 +28,10 @@ Deno.serve(async (req) => {
 }`;
 
     const aiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_API_KEY}`,
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-goog-api-key": GEMINI_API_KEY },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: systemPrompt }] },
           contents: [{
@@ -64,9 +65,9 @@ Deno.serve(async (req) => {
     if (!aiRes.ok) {
       const t = await aiRes.text();
       console.error("AI error", aiRes.status, t);
-      const status = aiRes.status === 429 || aiRes.status === 403 ? aiRes.status : 500;
+      const status = aiRes.status === 429 || aiRes.status === 403 || aiRes.status === 400 ? aiRes.status : 500;
       const msg = aiRes.status === 429 ? "تم تجاوز الحد اليومي لـ Gemini، حاول غداً"
-        : aiRes.status === 403 ? "مفتاح Gemini غير صالح"
+        : (aiRes.status === 403 || aiRes.status === 400) ? "مفتاح Gemini غير صالح"
         : "تعذّر تحليل الصورة";
       return new Response(JSON.stringify({ error: msg }), {
         status, headers: { ...corsHeaders, "Content-Type": "application/json" },
