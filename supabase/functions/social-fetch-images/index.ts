@@ -68,7 +68,14 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    const { url } = await req.json();
+    const { url, excludeUrls } = await req.json();
+    const excludeKeys = new Set<string>(
+      Array.isArray(excludeUrls)
+        ? excludeUrls
+            .filter((u: unknown): u is string => typeof u === "string")
+            .map((u: string) => u.replace(/&amp;/g, "&").split("?")[0])
+        : []
+    );
     if (!url || typeof url !== "string") {
       return new Response(JSON.stringify({ error: "url مطلوب" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
