@@ -58,7 +58,7 @@ export default function ImportSocial() {
       if (data?.error) throw new Error(data.error);
       const imgs: string[] = data?.images ?? [];
       if (!imgs.length) {
-        toast.error("لم نجد أي صور في هذا الرابط");
+        toast.error(data?.warning ?? "لم نجد أي صور مناسبة في هذا الرابط");
         return;
       }
       setSourceTitle(data?.sourceTitle ?? null);
@@ -88,6 +88,7 @@ export default function ImportSocial() {
             body: { imageUrl: list[i].imageUrl, categories: categories ?? [] },
           });
           if (error) throw error;
+          if (data?.skipped) throw new Error(data.error ?? "تم تخطي الصورة");
           if (data?.error && !data?.storagePath) throw new Error(data.error);
           setItems((prev) => prev.map((it, j) => j === i ? {
             ...it,
