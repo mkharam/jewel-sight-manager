@@ -138,9 +138,11 @@ Deno.serve(async (req) => {
       if (aiRes.status === 429 || aiRes.status === 402) {
         return new Response(JSON.stringify({
           error: aiRes.status === 429 ? "تم تجاوز الحد، حاول لاحقاً" : "نفدت الرصيد",
+          aiBlocked: true,
+          code: aiRes.status === 429 ? "AI_RATE_LIMITED" : "AI_CREDITS_EXHAUSTED",
           storagePath: path,
         }), {
-          status: aiRes.status, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
     }
