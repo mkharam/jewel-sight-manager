@@ -42,8 +42,12 @@ Deno.serve(async (req) => {
     const contentType = imgRes.headers.get("content-type") ?? "image/jpeg";
     const buf = new Uint8Array(await imgRes.arrayBuffer());
     if (buf.byteLength < 2000) {
-      return new Response(JSON.stringify({ error: "الصورة صغيرة جداً" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      return new Response(JSON.stringify({
+        skipped: true,
+        reason: "image_too_small",
+        error: "الصورة صغيرة جداً وتم تخطيها",
+      }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
