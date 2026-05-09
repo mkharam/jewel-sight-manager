@@ -72,8 +72,13 @@ export default function ImportSocial() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       const imgs: string[] = data?.images ?? [];
+      const skipped = data?.skipped ?? 0;
       if (!imgs.length) {
-        toast.error(data?.warning ?? "لم نجد أي صور مناسبة في هذا الرابط");
+        toast.error(
+          skipped
+            ? `كل الصور (${skipped}) تم استيرادها مسبقاً`
+            : (data?.warning ?? "لم نجد أي صور مناسبة في هذا الرابط")
+        );
         return;
       }
       setSourceTitle(data?.sourceTitle ?? null);
@@ -82,7 +87,9 @@ export default function ImportSocial() {
         name: "", category: "", karat: "", description: "",
       }));
       setItems(newItems);
-      toast.success(`تم العثور على ${imgs.length} صورة، جارٍ التحليل...`);
+      toast.success(
+        `${imgs.length} صورة جديدة` + (skipped ? ` (تم تخطّي ${skipped} مستوردة سابقاً)` : "") + "، جارٍ التحليل..."
+      );
       analyzeAll(newItems);
     } catch (e: any) {
       toast.error(e?.message ?? "فشل سحب الصور");
