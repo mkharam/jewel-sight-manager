@@ -173,7 +173,7 @@ export default function Staff() {
               </div>
               <div className="space-y-1.5">
                 <Label>كلمة المرور</Label>
-                <Input type="text" dir="ltr" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="4 خانات على الأقل" />
+                <Input type="password" dir="ltr" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="4 خانات على الأقل" autoComplete="new-password" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
@@ -284,7 +284,7 @@ export default function Staff() {
           <DialogHeader><DialogTitle>تغيير كلمة مرور — {pwUser?.full_name}</DialogTitle></DialogHeader>
           <div className="space-y-1.5">
             <Label>كلمة المرور الجديدة</Label>
-            <Input type="text" dir="ltr" value={newPw} onChange={(e) => setNewPw(e.target.value)} placeholder="4 خانات على الأقل" />
+            <Input type="password" dir="ltr" value={newPw} onChange={(e) => setNewPw(e.target.value)} placeholder="4 خانات على الأقل" autoComplete="new-password" />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPwUser(null)}>إلغاء</Button>
