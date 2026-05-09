@@ -91,12 +91,7 @@ Deno.serve(async (req) => {
 - description: وصف موجز سطر واحد
 - keywords: 3-5 كلمات مفتاحية`;
 
-    const aiRes = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-goog-api-key": GEMINI_API_KEY },
-        body: JSON.stringify({
+    const body = JSON.stringify({
           systemInstruction: { parts: [{ text: systemPrompt }] },
           contents: [{
             role: "user",
@@ -123,22 +118,45 @@ Deno.serve(async (req) => {
             }],
           }],
           toolConfig: { functionCallingConfig: { mode: "ANY", allowedFunctionNames: ["return_product"] } },
-        }),
-      }
-    );
+        });
+
+    let aiRes: Response | null = null;
+    let lastErrText = "";
+    let lastStatus = 0;
+    const maxAttempts = 4;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      aiRes = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-goog-api-key": GEMINI_API_KEY },
+          body,
+        }
+      );
+      if (aiRes.ok) break;
+      lastStatus = aiRes.status;
+      lastErrText = await aiRes.text();
+      console.error("AI error", aiRes.status, lastErrText.slice(0, 300));
+      if (aiRes.status !== 429 && aiRes.status !== 503) break;
+      // parse retryDelay from body, default exponential
+      let waitMs = 8000 * Math.pow(2, attempt);
+      const m = lastErrText.match(/"retryDelay"\s*:\s*"(\d+)s"/);
+      if (m) waitMs = (parseInt(m[1], 10) + 1) * 1000;
+      waitMs = Math.min(waitMs, 55000);
+      console.log(`rate-limited, waiting ${waitMs}ms (attempt ${attempt + 1})`);
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
 
     let parsed: any = {};
-    if (aiRes.ok) {
+    if (aiRes && aiRes.ok) {
       const data = await aiRes.json();
       const args = data?.candidates?.[0]?.content?.parts?.find((p: any) => p.functionCall)?.functionCall?.args;
       if (args) parsed = args;
     } else {
-      const t = await aiRes.text();
-      console.error("AI error", aiRes.status, t);
-      if (aiRes.status === 429 || aiRes.status === 403 || aiRes.status === 400) {
-        const isRateLimit = aiRes.status === 429;
+      if (lastStatus === 429 || lastStatus === 403 || lastStatus === 400) {
+        const isRateLimit = lastStatus === 429;
         return new Response(JSON.stringify({
-          error: isRateLimit ? "تم تجاوز الحد اليومي لـ Gemini، حاول غداً" : "مفتاح Gemini غير صالح — أنشئ مفتاحاً جديداً واحفظه في الأسرار",
+          error: isRateLimit ? "تم تجاوز حد الطلبات لـ Gemini (5/دقيقة على الخطة المجانية). انتظر دقيقة وأعد المحاولة." : "مفتاح Gemini غير صالح — أنشئ مفتاحاً جديداً واحفظه في الأسرار",
           aiBlocked: true,
           code: isRateLimit ? "AI_RATE_LIMITED" : "AI_KEY_INVALID",
           storagePath: path,
