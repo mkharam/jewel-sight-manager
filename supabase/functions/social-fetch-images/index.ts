@@ -35,7 +35,7 @@ function extractImages(html: string): string[] {
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(u);
-    if (out.length >= 40) break;
+    if (out.length >= 120) break;
   }
   return out;
 }
