@@ -78,9 +78,15 @@ export default function Staff() {
   const createUser = async () => {
     if (!email || !password || !fullName) { toast.error("املأ كل الحقول"); return; }
     if (password.length < 4) { toast.error("كلمة المرور 4 خانات على الأقل"); return; }
+    if (!/^[a-zA-Z0-9._-]+$/.test(email.trim())) {
+      toast.error("اسم المستخدم: أحرف إنجليزية وأرقام فقط"); return;
+    }
+    const fullEmail = email.trim().toLowerCase().includes("@")
+      ? email.trim().toLowerCase()
+      : `${email.trim().toLowerCase()}@lamaa.local`;
     setBusy(true);
     const { data, error } = await supabase.functions.invoke("admin-manage-users", {
-      body: { action: "create", email, password, full_name: fullName, role, branch_id: branchId === "none" ? null : branchId },
+      body: { action: "create", email: fullEmail, password, full_name: fullName, role, branch_id: branchId === "none" ? null : branchId },
     });
     setBusy(false);
     if (error || (data as any)?.error) {
@@ -158,8 +164,9 @@ export default function Staff() {
                 <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label>البريد الإلكتروني</Label>
-                <Input type="email" dir="ltr" value={email} onChange={(e) => setEmail(e.target.value)} />
+                <Label>اسم المستخدم</Label>
+                <Input dir="ltr" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="مثال: ahmed" />
+                <p className="text-[11px] text-muted-foreground">يستخدمه الموظف لتسجيل الدخول (إنجليزي/أرقام فقط)</p>
               </div>
               <div className="space-y-1.5">
                 <Label>كلمة المرور</Label>
@@ -202,7 +209,7 @@ export default function Staff() {
           <TableHeader>
             <TableRow>
               <TableHead className="text-right">الاسم</TableHead>
-              <TableHead className="text-right">البريد</TableHead>
+              <TableHead className="text-right">اسم المستخدم</TableHead>
               <TableHead className="text-right">الدور</TableHead>
               <TableHead className="text-right">الفرع</TableHead>
               <TableHead className="text-right">إجراءات</TableHead>
@@ -220,7 +227,7 @@ export default function Staff() {
                   {u.full_name || "—"}
                   {u.id === user?.id && <Badge variant="secondary" className="mr-2">أنت</Badge>}
                 </TableCell>
-                <TableCell dir="ltr" className="text-sm">{u.email}</TableCell>
+                <TableCell dir="ltr" className="text-sm">{u.email.replace(/@lamaa\.(local|com)$/, "")}</TableCell>
                 <TableCell>
                   <Select value={u.role} onValueChange={(v: any) => changeRole(u, v)} disabled={u.id === user?.id}>
                     <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>

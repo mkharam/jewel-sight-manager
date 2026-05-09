@@ -9,52 +9,53 @@ import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Sparkles } from "lucide-react";
 
+const USERNAME_DOMAIN = "lamaa.local";
+
 const schema = z.object({
-  email: z.string().trim().email("بريد إلكتروني غير صالح").max(255),
+  username: z
+    .string()
+    .trim()
+    .min(2, "اسم المستخدم قصير")
+    .max(50, "اسم المستخدم طويل")
+    .regex(/^[a-zA-Z0-9._-]+$/, "أحرف إنجليزية أو أرقام فقط"),
   password: z.string().min(4, "كلمة المرور 4 خانات على الأقل").max(72),
-  fullName: z.string().trim().min(2, "الاسم قصير").max(100).optional(),
 });
+
+// "admin" -> "admin@lamaa.local"; legacy "admin@lamaa.com" -> stays
+function usernameToEmail(input: string): string {
+  const v = input.trim().toLowerCase();
+  if (v.includes("@")) return v;
+  return `${v}@${USERNAME_DOMAIN}`;
+}
 
 export default function Auth() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const parsed = schema.safeParse({ email, password, fullName: mode === "signup" ? fullName : undefined });
+    const parsed = schema.safeParse({ username, password });
     if (!parsed.success) {
       toast.error(parsed.error.issues[0].message);
       return;
     }
     setLoading(true);
     try {
-      if (mode === "signin") {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        toast.success("مرحباً بعودتك");
-        navigate("/");
-      } else {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/`,
-            data: { full_name: fullName },
-          },
-        });
-        if (error) throw error;
-        toast.success("تم إنشاء الحساب — يمكنك الآن تسجيل الدخول");
-        setMode("signin");
+      const email = usernameToEmail(username);
+      let { error } = await supabase.auth.signInWithPassword({ email, password });
+      // Backwards compat: try the old admin email if user typed "admin"
+      if (error && username.trim().toLowerCase() === "admin") {
+        const r2 = await supabase.auth.signInWithPassword({ email: "admin@lamaa.com", password });
+        error = r2.error;
       }
+      if (error) throw error;
+      toast.success("مرحباً بعودتك");
+      navigate("/");
     } catch (err: any) {
       const msg = err.message?.includes("Invalid login")
-        ? "بيانات الدخول غير صحيحة"
-        : err.message?.includes("already registered")
-        ? "هذا البريد مسجل مسبقاً"
+        ? "اسم المستخدم أو كلمة المرور غير صحيحة"
         : err.message ?? "حدث خطأ";
       toast.error(msg);
     } finally {
@@ -74,51 +75,44 @@ export default function Auth() {
         </div>
 
         <Card className="p-6 shadow-elevated">
-          <div className="flex gap-2 mb-6 p-1 bg-muted rounded-lg">
-            <button
-              type="button"
-              onClick={() => setMode("signin")}
-              className={`flex-1 py-2 rounded-md text-sm font-semibold transition ${
-                mode === "signin" ? "bg-card shadow-sm" : "text-muted-foreground"
-              }`}
-            >
-              تسجيل دخول
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode("signup")}
-              className={`flex-1 py-2 rounded-md text-sm font-semibold transition ${
-                mode === "signup" ? "bg-card shadow-sm" : "text-muted-foreground"
-              }`}
-            >
-              حساب جديد
-            </button>
-          </div>
+          <h2 className="text-lg font-bold mb-4 text-center">تسجيل الدخول</h2>
 
           <form onSubmit={submit} className="space-y-4">
-            {mode === "signup" && (
-              <div className="space-y-1.5">
-                <Label htmlFor="fullName">الاسم الكامل</Label>
-                <Input id="fullName" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="مثال: أحمد علي" required />
-              </div>
-            )}
             <div className="space-y-1.5">
-              <Label htmlFor="email">البريد الإلكتروني</Label>
-              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@store.com" required dir="ltr" />
+              <Label htmlFor="username">اسم المستخدم</Label>
+              <Input
+                id="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="admin"
+                required
+                dir="ltr"
+                autoComplete="username"
+                autoFocus
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="password">كلمة المرور</Label>
-              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required dir="ltr" />
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••"
+                required
+                dir="ltr"
+                autoComplete="current-password"
+              />
             </div>
 
             <Button type="submit" disabled={loading} className="w-full bg-gold-gradient text-primary-foreground hover:opacity-90 shadow-gold">
-              {loading ? "جارٍ..." : mode === "signin" ? "دخول" : "إنشاء حساب"}
+              {loading ? "جارٍ..." : "دخول"}
             </Button>
           </form>
         </Card>
 
         <p className="text-center text-xs text-muted-foreground mt-4">
-          أول حساب يتم إنشاؤه يجب أن يُرقّى يدوياً إلى صلاحية مدير عام من قاعدة البيانات.
+          الحسابات تُنشأ من قِبَل المدير العام من صفحة "الموظفون".
         </p>
       </div>
     </div>
