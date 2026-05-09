@@ -51,8 +51,23 @@ export default function ImportSocial() {
     setItems([]);
     setSourceTitle(null);
     try {
+      // جلب كل الروابط المستوردة سابقاً للتخطّي
+      const excludeUrls: string[] = [];
+      const pageSize = 1000;
+      for (let from = 0; ; from += pageSize) {
+        const { data, error } = await supabase
+          .from("product_images")
+          .select("source_url")
+          .not("source_url", "is", null)
+          .range(from, from + pageSize - 1);
+        if (error) break;
+        const rows = data ?? [];
+        for (const r of rows) if (r.source_url) excludeUrls.push(r.source_url);
+        if (rows.length < pageSize) break;
+      }
+
       const { data, error } = await supabase.functions.invoke("social-fetch-images", {
-        body: { url: url.trim() },
+        body: { url: url.trim(), excludeUrls },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
