@@ -27,12 +27,13 @@ const STATUS_LABEL: Record<string, string> = {
   created: "أنشأ",
 };
 
-function describe(a: ActivityItem): { text: string; icon: any; href: string } {
+function describe(a: ActivityItem): { text: string; icon: any; href: string } | null {
   const actor = a.actor_name ?? "موظف";
   if (a.entity_type === "transfers") {
     const product = a.details?.product ?? "قطعة";
     if (a.action === "created") return { text: `${actor} طلب تحويل: ${product}`, icon: ArrowLeftRight, href: "/transfers" };
-    return { text: `${actor} ${STATUS_LABEL[a.action] ?? a.action}: ${product}`, icon: ArrowLeftRight, href: "/transfers" };
+    if (STATUS_LABEL[a.action]) return { text: `${actor} ${STATUS_LABEL[a.action]}: ${product}`, icon: ArrowLeftRight, href: "/transfers" };
+    return null;
   }
   if (a.entity_type === "product_quotes") {
     const price = a.details?.price;
@@ -41,7 +42,7 @@ function describe(a: ActivityItem): { text: string; icon: any; href: string } {
   if (a.entity_type === "customer_inquiries") {
     return { text: `${actor} سجّل استفسار${a.details?.customer ? ` من ${a.details.customer}` : ""}`, icon: MessageCircle, href: "/inquiries" };
   }
-  return { text: `${actor} نشاط جديد`, icon: Package, href: "/" };
+  return null;
 }
 
 const LS_KEY = "lamaa.notifs.lastSeen";
@@ -110,6 +111,7 @@ export default function NotificationsBell() {
           <ul className="divide-y divide-border">
             {items.map((it) => {
               const d = describe(it);
+              if (!d) return null;
               const Icon = d.icon;
               const isNew = it.created_at > lastSeen;
               return (
