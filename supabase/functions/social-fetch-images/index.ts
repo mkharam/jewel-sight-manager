@@ -35,7 +35,7 @@ function extractImages(html: string): string[] {
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(u);
-    if (out.length >= 40) break;
+    if (out.length >= 120) break;
   }
   return out;
 }
@@ -106,11 +106,22 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Strategy 2: Firecrawl (for non-social sites or as final fallback)
-    if (!images.length) {
+    // Strategy 2: Firecrawl with scroll actions to load more posts (esp. Instagram infinite scroll)
+    const isInstagram = /instagram\.com/i.test(url);
+    const shouldUseFirecrawl = !images.length || (isInstagram && images.length < 30);
+    if (shouldUseFirecrawl) {
       const FIRECRAWL_API_KEY = Deno.env.get("FIRECRAWL_API_KEY");
       if (FIRECRAWL_API_KEY) {
         try {
+          // Build scroll actions to trigger infinite-scroll loading
+          const actions: any[] = [];
+          if (isSocial) {
+            for (let i = 0; i < 8; i++) {
+              actions.push({ type: "scroll", direction: "down" });
+              actions.push({ type: "wait", milliseconds: 1500 });
+            }
+          }
+
           const fcRes = await fetch(FIRECRAWL_URL, {
             method: "POST",
             headers: {
@@ -121,21 +132,24 @@ Deno.serve(async (req) => {
               url,
               formats: ["rawHtml", "links"],
               onlyMainContent: false,
-              waitFor: 2500,
+              waitFor: 3000,
+              ...(actions.length ? { actions } : {}),
             }),
           });
           const fcData = await fcRes.json();
           if (fcRes.ok) {
             const html = fcData?.data?.rawHtml ?? fcData?.rawHtml ?? "";
-            images = extractImages(html);
-            title = title ?? fcData?.data?.metadata?.title ?? fcData?.metadata?.title ?? null;
+            const fcImages = extractImages(html);
+            // Merge with previously found
+            const merged = new Set(images);
+            for (const i of fcImages) merged.add(i);
             const links: string[] = fcData?.data?.links ?? fcData?.links ?? [];
             for (const l of links) {
-              if (typeof l === "string" && /\.(jpe?g|png|webp)(\?|$)/i.test(l) && images.length < 40) {
-                if (!images.includes(l)) images.push(l);
-              }
+              if (typeof l === "string" && /\.(jpe?g|png|webp)(\?|$)/i.test(l)) merged.add(l);
             }
-            usedMethod = "firecrawl";
+            images = Array.from(merged).slice(0, 120);
+            title = title ?? fcData?.data?.metadata?.title ?? fcData?.metadata?.title ?? null;
+            usedMethod = usedMethod ? `${usedMethod}+firecrawl-scroll` : "firecrawl-scroll";
           } else {
             console.error("firecrawl error", fcRes.status, fcData);
           }
