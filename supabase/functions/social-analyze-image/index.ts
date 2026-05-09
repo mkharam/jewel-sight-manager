@@ -1,0 +1,152 @@
+import { corsHeaders } from "https://esm.sh/@supabase/supabase-js@2.95.0/cors";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.95.0";
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  try {
+    const { imageUrl, categories } = await req.json();
+    if (!imageUrl) {
+      return new Response(JSON.stringify({ error: "imageUrl مطلوب" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY missing");
+
+    // Auth: user must be logged in
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: userData } = await userClient.auth.getUser();
+    const userId = userData?.user?.id;
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "غير مصرح" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Fetch image bytes server-side (bypass CORS)
+    const imgRes = await fetch(imageUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; LamaaBot/1.0)" },
+    });
+    if (!imgRes.ok) {
+      return new Response(JSON.stringify({ error: `تعذّر جلب الصورة (${imgRes.status})` }), {
+        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const contentType = imgRes.headers.get("content-type") ?? "image/jpeg";
+    const buf = new Uint8Array(await imgRes.arrayBuffer());
+    if (buf.byteLength < 2000) {
+      return new Response(JSON.stringify({ error: "الصورة صغيرة جداً" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // base64 for AI
+    let bin = "";
+    for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+    const b64 = btoa(bin);
+
+    // Upload to storage
+    const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+    const ext = contentType.includes("png") ? "png" : contentType.includes("webp") ? "webp" : "jpg";
+    const path = `social-import/${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const { error: upErr } = await admin.storage.from("product-images").upload(path, buf, {
+      contentType,
+      upsert: false,
+    });
+    if (upErr) {
+      console.error("upload err", upErr);
+      return new Response(JSON.stringify({ error: "فشل رفع الصورة" }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // AI analyze
+    const catList = (categories ?? []).map((c: any) => c.name).join("، ");
+    const systemPrompt = `أنت خبير مجوهرات. حلّل صورة قطعة واستخرج بياناتها بصيغة JSON.
+الفئات المتاحة: ${catList || "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة"}.
+أعد:
+- name: اسم تجاري قصير وجذاب بالعربية (مثل: "خاتم ذهب أصفر بنقش يدوي")
+- category: اسم الفئة الأقرب من القائمة
+- karat: 18K أو 21K أو 22K أو 24K أو ألماس أو فضة
+- description: وصف موجز سطر واحد
+- keywords: 3-5 كلمات مفتاحية`;
+
+    const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash",
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "حلّل هذه القطعة:" },
+              { type: "image_url", image_url: { url: `data:${contentType};base64,${b64}` } },
+            ],
+          },
+        ],
+        tools: [{
+          type: "function",
+          function: {
+            name: "return_product",
+            description: "Return product attributes",
+            parameters: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                category: { type: "string" },
+                karat: { type: "string" },
+                description: { type: "string" },
+                keywords: { type: "array", items: { type: "string" } },
+              },
+              required: ["name", "description"],
+            },
+          },
+        }],
+        tool_choice: { type: "function", function: { name: "return_product" } },
+      }),
+    });
+
+    let parsed: any = {};
+    if (aiRes.ok) {
+      const data = await aiRes.json();
+      const args = data?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
+      if (args) parsed = JSON.parse(args);
+    } else {
+      const t = await aiRes.text();
+      console.error("AI error", aiRes.status, t);
+      if (aiRes.status === 429 || aiRes.status === 402) {
+        return new Response(JSON.stringify({
+          error: aiRes.status === 429 ? "تم تجاوز الحد، حاول لاحقاً" : "نفدت الرصيد",
+          storagePath: path,
+        }), {
+          status: aiRes.status, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    return new Response(JSON.stringify({
+      storagePath: path,
+      name: parsed.name ?? "",
+      category: parsed.category ?? "",
+      karat: parsed.karat ?? "",
+      description: parsed.description ?? "",
+      keywords: parsed.keywords ?? [],
+    }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (e) {
+    console.error("social-analyze-image error", e);
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "خطأ غير معروف" }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});
