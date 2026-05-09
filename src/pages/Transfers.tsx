@@ -48,7 +48,9 @@ interface Transfer {
 interface Branch { id: string; name: string }
 
 export default function Transfers() {
-  const { user, profile } = useAuth();
+  const { user, profile, roles } = useAuth();
+  const isAdmin = roles.includes("admin");
+  const isManager = roles.includes("manager");
   const [params] = useSearchParams();
   const presetProductId = params.get("product");
   const presetProductName = params.get("name");
