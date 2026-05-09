@@ -313,7 +313,7 @@ function NewTransferDialog({ branches, myBranchId, presetProductId, presetProduc
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label>من فرع</Label>
+            <Label>من فرع (فرعك)</Label>
             <Select value={fromBranch} onValueChange={setFromBranch}>
               <SelectTrigger><SelectValue placeholder="اختر" /></SelectTrigger>
               <SelectContent>
@@ -324,9 +324,11 @@ function NewTransferDialog({ branches, myBranchId, presetProductId, presetProduc
           <div className="space-y-1.5">
             <Label>إلى فرع</Label>
             <Select value={toBranch} onValueChange={setToBranch}>
-              <SelectTrigger><SelectValue placeholder="اختر" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="اختر الفرع المستلم" /></SelectTrigger>
               <SelectContent>
-                {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                {branches.filter((b) => b.id !== fromBranch).map((b) => (
+                  <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
