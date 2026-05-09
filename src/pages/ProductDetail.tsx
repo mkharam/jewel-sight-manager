@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowRight, Edit, ImageIcon, MapPin, MessageCircle, Tag, Trash2, User } from "lucide-react";
+import { ArrowRight, Edit, ImageIcon, MapPin, MessageCircle, Tag, Trash2, User, ArrowLeftRight } from "lucide-react";
 import { PRODUCT_STATUS, formatCurrency, formatDate, formatWeight, getImageUrl } from "@/lib/constants";
 import { toast } from "sonner";
 
@@ -183,6 +183,11 @@ export default function ProductDetail() {
           </Card>
 
           <AddQuoteDialog productId={id!} branchId={product.branch_id} onAdded={() => qc.invalidateQueries({ queryKey: ["quotes", id] })} />
+          <Link to={`/transfers?product=${id}&name=${encodeURIComponent(product.name)}`} className="block">
+            <Button variant="outline" size="lg" className="w-full">
+              <ArrowLeftRight className="size-4 ml-1" /> طلب تحويل لفرعي
+            </Button>
+          </Link>
         </div>
       </div>
 
