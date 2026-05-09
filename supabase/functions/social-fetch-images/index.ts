@@ -2,6 +2,50 @@ import { corsHeaders } from "https://esm.sh/@supabase/supabase-js@2.95.0/cors";
 
 const FIRECRAWL_URL = "https://api.firecrawl.dev/v2/scrape";
 
+const UA_FACEBOOK = "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)";
+const UA_BROWSER = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
+
+function extractImages(html: string): string[] {
+  const found = new Set<string>();
+
+  const ogRe1 = /<meta[^>]+property=["'](?:og:image(?::url)?|twitter:image)["'][^>]+content=["']([^"']+)["']/gi;
+  const ogRe2 = /<meta[^>]+content=["']([^"']+)["'][^>]+property=["'](?:og:image(?::url)?|twitter:image)["']/gi;
+  for (const m of html.matchAll(ogRe1)) found.add(m[1]);
+  for (const m of html.matchAll(ogRe2)) found.add(m[1]);
+
+  for (const m of html.matchAll(/<img[^>]+src=["']([^"']+)["']/gi)) found.add(m[1]);
+
+  for (const m of html.matchAll(/<img[^>]+srcset=["']([^"']+)["']/gi)) {
+    const parts = m[1].split(",").map((s) => s.trim().split(/\s+/)[0]);
+    if (parts.length) found.add(parts[parts.length - 1]);
+  }
+
+  // FB/IG embed image URLs in JSON inside <script>
+  for (const m of html.matchAll(/"(https?:\/\/[^"\s]+\.(?:jpg|jpeg|png|webp)[^"\s]*)"/gi)) found.add(m[1]);
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of found) {
+    let u = raw.trim().replace(/&amp;/g, "&");
+    if (!u) continue;
+    if (u.startsWith("//")) u = "https:" + u;
+    if (!/^https?:\/\//i.test(u)) continue;
+    if (/sprite|emoji|favicon|profile_pic|rsrc\.php|static\.cdninstagram\.com\/rsrc/i.test(u)) continue;
+    const key = u.split("?")[0];
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(u);
+    if (out.length >= 40) break;
+  }
+  return out;
+}
+
+function extractTitle(html: string): string | null {
+  const m = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)
+    ?? html.match(/<title>([^<]+)<\/title>/i);
+  return m?.[1] ?? null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -13,85 +57,109 @@ Deno.serve(async (req) => {
       });
     }
 
-    const FIRECRAWL_API_KEY = Deno.env.get("FIRECRAWL_API_KEY");
-    if (!FIRECRAWL_API_KEY) throw new Error("FIRECRAWL_API_KEY غير مهيأ");
+    const isSocial = /facebook\.com|fb\.com|instagram\.com/i.test(url);
+    let images: string[] = [];
+    let title: string | null = null;
+    let usedMethod = "";
 
-    const fcRes = await fetch(FIRECRAWL_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${FIRECRAWL_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        url,
-        formats: ["rawHtml", "links"],
-        onlyMainContent: false,
-        waitFor: 2500,
-      }),
-    });
+    // Strategy 1: direct fetch with FB crawler UA (works for FB/IG public posts)
+    if (isSocial) {
+      try {
+        const r = await fetch(url, {
+          headers: {
+            "User-Agent": UA_FACEBOOK,
+            "Accept": "text/html,application/xhtml+xml",
+            "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
+          },
+          redirect: "follow",
+        });
+        if (r.ok) {
+          const html = await r.text();
+          images = extractImages(html);
+          title = extractTitle(html);
+          usedMethod = "direct-fb-ua";
+        } else {
+          await r.text().catch(() => {});
+        }
+      } catch (e) {
+        console.error("direct fb ua failed", e);
+      }
 
-    const fcData = await fcRes.json();
-    if (!fcRes.ok) {
-      console.error("firecrawl error", fcRes.status, fcData);
-      const msg = fcRes.status === 402
-        ? "رصيد Firecrawl غير كافٍ"
-        : `تعذّر سحب الصفحة (${fcRes.status})`;
-      return new Response(JSON.stringify({ error: msg }), {
-        status: fcRes.status === 402 ? 402 : 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      // Try with browser UA as fallback
+      if (!images.length) {
+        try {
+          const r = await fetch(url, {
+            headers: { "User-Agent": UA_BROWSER, "Accept-Language": "en-US,en;q=0.9" },
+            redirect: "follow",
+          });
+          if (r.ok) {
+            const html = await r.text();
+            images = extractImages(html);
+            title = title ?? extractTitle(html);
+            usedMethod = "direct-browser-ua";
+          } else {
+            await r.text().catch(() => {});
+          }
+        } catch (e) {
+          console.error("direct browser ua failed", e);
+        }
+      }
+    }
+
+    // Strategy 2: Firecrawl (for non-social sites or as final fallback)
+    if (!images.length) {
+      const FIRECRAWL_API_KEY = Deno.env.get("FIRECRAWL_API_KEY");
+      if (FIRECRAWL_API_KEY) {
+        try {
+          const fcRes = await fetch(FIRECRAWL_URL, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${FIRECRAWL_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              url,
+              formats: ["rawHtml", "links"],
+              onlyMainContent: false,
+              waitFor: 2500,
+            }),
+          });
+          const fcData = await fcRes.json();
+          if (fcRes.ok) {
+            const html = fcData?.data?.rawHtml ?? fcData?.rawHtml ?? "";
+            images = extractImages(html);
+            title = title ?? fcData?.data?.metadata?.title ?? fcData?.metadata?.title ?? null;
+            const links: string[] = fcData?.data?.links ?? fcData?.links ?? [];
+            for (const l of links) {
+              if (typeof l === "string" && /\.(jpe?g|png|webp)(\?|$)/i.test(l) && images.length < 40) {
+                if (!images.includes(l)) images.push(l);
+              }
+            }
+            usedMethod = "firecrawl";
+          } else {
+            console.error("firecrawl error", fcRes.status, fcData);
+          }
+        } catch (e) {
+          console.error("firecrawl threw", e);
+        }
+      }
+    }
+
+    if (!images.length) {
+      return new Response(JSON.stringify({
+        error: isSocial
+          ? "تعذّر استخراج صور من الرابط. تأكد أن المنشور عام (Public)، أو جرّب رابط منشور مفرد بدلاً من الصفحة الرئيسية."
+          : "لم نجد صوراً في هذه الصفحة",
+      }), {
+        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const html: string = fcData?.data?.rawHtml ?? fcData?.rawHtml ?? "";
-    const metadata = fcData?.data?.metadata ?? fcData?.metadata ?? {};
-    const links: string[] = fcData?.data?.links ?? fcData?.links ?? [];
-
-    const found = new Set<string>();
-
-    // og:image / twitter:image
-    const ogMatches = [...html.matchAll(/<meta[^>]+property=["'](?:og:image|og:image:url|twitter:image)["'][^>]+content=["']([^"']+)["']/gi)];
-    for (const m of ogMatches) found.add(m[1]);
-    const ogMatches2 = [...html.matchAll(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["'](?:og:image|og:image:url|twitter:image)["']/gi)];
-    for (const m of ogMatches2) found.add(m[1]);
-
-    // <img src=...>
-    const imgMatches = [...html.matchAll(/<img[^>]+src=["']([^"']+)["']/gi)];
-    for (const m of imgMatches) found.add(m[1]);
-
-    // <img srcset=...> take last (highest res)
-    const srcsetMatches = [...html.matchAll(/<img[^>]+srcset=["']([^"']+)["']/gi)];
-    for (const m of srcsetMatches) {
-      const parts = m[1].split(",").map(s => s.trim().split(/\s+/)[0]);
-      if (parts.length) found.add(parts[parts.length - 1]);
-    }
-
-    // links that look like images
-    for (const l of links) {
-      if (typeof l === "string" && /\.(jpe?g|png|webp)(\?|$)/i.test(l)) found.add(l);
-    }
-
-    // Filter, normalize, dedupe
-    const results: string[] = [];
-    const seen = new Set<string>();
-    for (const raw of found) {
-      let u = raw.trim();
-      if (!u) continue;
-      if (u.startsWith("//")) u = "https:" + u;
-      if (!/^https?:\/\//i.test(u)) continue;
-      // skip tiny icons / emoji / sprites
-      if (/sprite|emoji|favicon|profile_pic|rsrc\.php|static\.cdninstagram\.com\/rsrc/i.test(u)) continue;
-      // unique by stripped query (some CDNs vary tokens)
-      const key = u.split("?")[0];
-      if (seen.has(key)) continue;
-      seen.add(key);
-      results.push(u);
-      if (results.length >= 40) break;
-    }
-
     return new Response(JSON.stringify({
-      images: results,
-      sourceTitle: metadata?.title ?? metadata?.ogTitle ?? null,
+      images,
+      sourceTitle: title,
       sourceUrl: url,
+      method: usedMethod,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
