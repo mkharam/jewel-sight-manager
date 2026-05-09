@@ -294,6 +294,7 @@ function NewTransferDialog({ branches, myBranchId, presetProductId, presetProduc
                   <button key={r.id} type="button" onClick={() => {
                     setProductId(r.id); setProductName(r.name);
                     setFromBranch(r.branch_id);
+                    if (myBranchId && r.branch_id !== myBranchId) setToBranch(myBranchId);
                   }} className="w-full text-right p-2 hover:bg-muted/60 text-sm">
                     <span className="font-medium">{r.name}</span>
                     <span className="text-muted-foreground text-xs"> · {r.karat ?? "—"} · {r.branch?.name}</span>
