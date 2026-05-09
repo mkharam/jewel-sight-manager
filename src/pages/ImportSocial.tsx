@@ -184,7 +184,7 @@ export default function ImportSocial() {
 
   const handleBulkFiles = async (files: FileList | null) => {
     if (!files || !files.length) return;
-    const arr = Array.from(files).filter((f) => f.type.startsWith("image/")).slice(0, 200);
+    const arr = Array.from(files).filter((f) => f.type.startsWith("image/"));
     if (!arr.length) return toast.error("اختر صوراً (JPG/PNG/WEBP)");
     setItems([]);
     setSourceTitle(`📁 ${arr.length} صورة من المجلد`);
@@ -260,7 +260,7 @@ export default function ImportSocial() {
             />
             <span className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-secondary px-4 py-2 text-sm font-medium hover:bg-secondary/80">
               <FolderUp className="size-4" />
-              رفع مجلد صور من الجهاز (حتى 200)
+              رفع مجلد صور من الجهاز
             </span>
             <span className="text-xs text-muted-foreground">
               مفيد بعد تنزيل صور بـ gallery-dl. الصور تُحلَّل بالـ AI مثل الرابط تماماً.
