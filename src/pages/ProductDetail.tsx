@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth, isManagerOrAdmin } from "@/hooks/useAuth";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 import { ArrowRight, Edit, ImageIcon, MapPin, MessageCircle, Tag, Trash2, User, ArrowLeftRight } from "lucide-react";
 import { PRODUCT_STATUS, formatCurrency, formatDate, formatWeight, getImageUrl } from "@/lib/constants";
 import { toast } from "sonner";
@@ -20,7 +20,7 @@ export default function ProductDetail() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { user, roles } = useAuth();
-  const canEdit = isManagerOrAdmin(roles);
+  const canEdit = !!user;
 
   const { data: product, isLoading } = useQuery({
     queryKey: ["product", id],
@@ -67,6 +67,21 @@ export default function ProductDetail() {
     },
     enabled: !!id,
   });
+
+  // بث مباشر للأسعار والاستفسارات لهذه القطعة
+  useEffect(() => {
+    if (!id) return;
+    const ch = supabase
+      .channel(`product-${id}-live`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "product_quotes", filter: `product_id=eq.${id}` }, () => {
+        qc.invalidateQueries({ queryKey: ["quotes", id] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "customer_inquiries", filter: `product_id=eq.${id}` }, () => {
+        qc.invalidateQueries({ queryKey: ["product-inquiries", id] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [id, qc]);
 
   if (isLoading) return <div className="p-8 text-center text-muted-foreground">جارٍ التحميل...</div>;
   if (!product) return <div className="p-8 text-center">القطعة غير موجودة</div>;
@@ -293,7 +308,10 @@ function AddQuoteDialog({ productId, branchId, onAdded }: { productId: string; b
         </Button>
       </DialogTrigger>
       <DialogContent>
-        <DialogHeader><DialogTitle>تسجيل سعر</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>تسجيل سعر</DialogTitle>
+          <DialogDescription>سجّل أي سعر تعرضه على عميل لمنع تخبط الأسعار بين الفروع.</DialogDescription>
+        </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
           <div>
             <Label>السعر المعروض *</Label>

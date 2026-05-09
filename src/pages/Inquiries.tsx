@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, MessageCircle, Phone, MapPin } from "lucide-react";
 import { INQUIRY_STATUS, KARAT_OPTIONS, formatCurrency, formatDate, InquiryStatus } from "@/lib/constants";
@@ -30,6 +30,17 @@ export default function Inquiries() {
   const qc = useQueryClient();
   const [filter, setFilter] = useState<InquiryStatus | "all">("all");
   const [open, setOpen] = useState(false);
+
+  // بث مباشر — أي استفسار جديد أو تغيير حالة يظهر فوراً للجميع
+  useEffect(() => {
+    const ch = supabase
+      .channel("inquiries-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "customer_inquiries" }, () => {
+        qc.invalidateQueries({ queryKey: ["inquiries"] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [qc]);
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
@@ -72,7 +83,10 @@ export default function Inquiries() {
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg">
-            <DialogHeader><DialogTitle>تسجيل استفسار عميل</DialogTitle></DialogHeader>
+            <DialogHeader>
+              <DialogTitle>تسجيل استفسار عميل</DialogTitle>
+              <DialogDescription>سجّل ما طلبه العميل حتى يبحث الموظفون عنه.</DialogDescription>
+            </DialogHeader>
             <NewInquiryForm
               defaultBranch={profile?.branch_id ?? ""}
               branches={branches ?? []}
