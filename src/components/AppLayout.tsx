@@ -65,6 +65,7 @@ export default function AppLayout() {
           </nav>
 
           <div className="flex items-center gap-1 sm:gap-2">
+            <NotificationsBell />
             <div className="hidden sm:block text-left">
               <p className="text-sm font-semibold leading-tight">{profile?.full_name ?? "—"}</p>
               <p className="text-[11px] text-muted-foreground leading-tight">
