@@ -227,7 +227,7 @@ export default function Staff() {
                   {u.full_name || "—"}
                   {u.id === user?.id && <Badge variant="secondary" className="mr-2">أنت</Badge>}
                 </TableCell>
-                <TableCell dir="ltr" className="text-sm">{u.email}</TableCell>
+                <TableCell dir="ltr" className="text-sm">{u.email.replace(/@lamaa\.(local|com)$/, "")}</TableCell>
                 <TableCell>
                   <Select value={u.role} onValueChange={(v: any) => changeRole(u, v)} disabled={u.id === user?.id}>
                     <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
