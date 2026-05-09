@@ -31,6 +31,17 @@ export default function Inquiries() {
   const [filter, setFilter] = useState<InquiryStatus | "all">("all");
   const [open, setOpen] = useState(false);
 
+  // بث مباشر — أي استفسار جديد أو تغيير حالة يظهر فوراً للجميع
+  useEffect(() => {
+    const ch = supabase
+      .channel("inquiries-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "customer_inquiries" }, () => {
+        qc.invalidateQueries({ queryKey: ["inquiries"] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [qc]);
+
   const { data: branches } = useQuery({
     queryKey: ["branches"],
     queryFn: async () => (await supabase.from("branches").select("id,name").order("name")).data ?? [],
