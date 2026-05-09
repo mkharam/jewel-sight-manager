@@ -20,7 +20,7 @@ export default function ProductDetail() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { user, roles } = useAuth();
-  const canEdit = isManagerOrAdmin(roles);
+  const canEdit = !!user;
 
   const { data: product, isLoading } = useQuery({
     queryKey: ["product", id],
