@@ -233,8 +233,8 @@ function NewTransferDialog({ branches, myBranchId, presetProductId, presetProduc
   const { user } = useAuth();
   const [productId, setProductId] = useState<string | null>(presetProductId);
   const [productName, setProductName] = useState(presetProductName ?? "");
-  const [fromBranch, setFromBranch] = useState<string>("");
-  const [toBranch, setToBranch] = useState<string>(myBranchId ?? "");
+  const [fromBranch, setFromBranch] = useState<string>(myBranchId ?? "");
+  const [toBranch, setToBranch] = useState<string>("");
   const [reason, setReason] = useState("");
   const [customer, setCustomer] = useState("");
   const [notes, setNotes] = useState("");
