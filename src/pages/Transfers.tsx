@@ -48,9 +48,7 @@ interface Transfer {
 interface Branch { id: string; name: string }
 
 export default function Transfers() {
-  const { user, profile, roles } = useAuth();
-  const isAdmin = roles.includes("admin");
-  const isManager = roles.includes("manager");
+  const { user, profile } = useAuth();
   const [params] = useSearchParams();
   const presetProductId = params.get("product");
   const presetProductName = params.get("name");
@@ -148,7 +146,7 @@ export default function Transfers() {
               key={t.id}
               t={t}
               myBranchId={profile?.branch_id ?? null}
-              canEdit={isAdmin || (isManager && (t.from_branch_id === profile?.branch_id || t.to_branch_id === profile?.branch_id))}
+              canEdit={true}
               onUpdate={updateStatus}
             />
           ))}
