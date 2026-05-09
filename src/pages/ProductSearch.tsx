@@ -89,23 +89,42 @@ export default function ProductSearch() {
     return n;
   }, [filters]);
 
+  const myBranchName = useMemo(
+    () => branches?.find((b) => b.id === profile?.branch_id)?.name ?? null,
+    [branches, profile?.branch_id]
+  );
+
   return (
     <div className="space-y-4">
-      {/* Hero search */}
-      <div className="bg-gold-soft rounded-2xl p-5 md:p-8 shadow-card">
-        <h2 className="text-2xl md:text-3xl font-extrabold mb-1">ابحث عن أي قطعة فوراً</h2>
-        <p className="text-sm text-muted-foreground mb-4">
-          ابحث بالاسم، الوصف، الفئة، الوزن أو القيراط — عبر كل الفروع.
-        </p>
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <SearchIcon className="absolute right-3 top-1/2 -translate-y-1/2 size-5 text-muted-foreground" />
-            <Input
-              placeholder="مثال: خاتم ألماس، سلسلة 21K، سوار..."
-              value={filters.q}
-              onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
-              className="pr-10 h-12 text-base bg-card"
-            />
+      {/* Luxury welcome + search */}
+      <div className="relative overflow-hidden rounded-3xl bg-gold-gradient shadow-gold p-5 md:p-8">
+        <div className="absolute -top-12 -left-12 size-40 rounded-full bg-white/10 blur-2xl pointer-events-none" />
+        <div className="absolute -bottom-16 -right-10 size-44 rounded-full bg-white/10 blur-2xl pointer-events-none" />
+        <div className="relative">
+          <div className="flex items-center gap-2 text-primary-foreground/85 text-xs font-medium mb-1">
+            <Sparkles className="size-3.5" />
+            <span>{greeting}</span>
+          </div>
+          <h2 className="text-xl md:text-3xl font-extrabold text-primary-foreground leading-tight">
+            أهلاً بك، {profile?.full_name ?? "—"}
+          </h2>
+          <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary-foreground/15 backdrop-blur text-primary-foreground text-[11px] font-semibold border border-primary-foreground/20">
+              <Store className="size-3" />
+              {myBranchName ?? "بدون فرع محدد"}
+            </span>
+            <span className="text-[11px] text-primary-foreground/80">{roleLabel} · لمعة</span>
+          </div>
+
+          <div className="flex gap-2 mt-4">
+            <div className="relative flex-1">
+              <SearchIcon className="absolute right-3 top-1/2 -translate-y-1/2 size-5 text-muted-foreground" />
+              <Input
+                placeholder="ابحث: خاتم، سلسلة، 21K..."
+                value={filters.q}
+                onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
+                className="pr-10 h-12 text-base bg-card border-0 shadow-card"
+              />
           </div>
           <Sheet>
             <SheetTrigger asChild>
