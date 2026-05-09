@@ -147,11 +147,15 @@ Deno.serve(async (req) => {
 
     if (!images.length) {
       return new Response(JSON.stringify({
-        error: isSocial
-          ? "تعذّر استخراج صور من الرابط. تأكد أن المنشور عام (Public)، أو جرّب رابط منشور مفرد بدلاً من الصفحة الرئيسية."
-          : "لم نجد صوراً في هذه الصفحة",
+        images: [],
+        sourceTitle: title,
+        sourceUrl: url,
+        method: usedMethod || "none",
+        warning: isSocial
+          ? "تعذّر استخراج صور مناسبة من الرابط. روابط البروفايل غالباً تعرض صورة الحساب فقط؛ جرّب رابط منشور أو صورة مفردة عامة."
+          : "لم نجد صوراً مناسبة في هذه الصفحة",
       }), {
-        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
