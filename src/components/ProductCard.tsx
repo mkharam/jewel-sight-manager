@@ -1,8 +1,10 @@
 import { Link } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ImageIcon, MapPin } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ImageIcon, MapPin, Tag } from "lucide-react";
 import { PRODUCT_STATUS, formatCurrency, formatWeight, getImageUrl, ProductStatus } from "@/lib/constants";
+import QuickQuoteSheet from "@/components/QuickQuoteSheet";
 
 export interface ProductCardData {
   id: string;
@@ -13,6 +15,7 @@ export interface ProductCardData {
   sale_price: number | null;
   promo_price: number | null;
   status: ProductStatus;
+  branch_id?: string | null;
   branch?: { name: string } | null;
   category?: { name: string } | null;
   images?: { storage_path: string; is_primary: boolean }[];
@@ -24,8 +27,8 @@ export default function ProductCard({ product }: { product: ProductCardData }) {
   const status = PRODUCT_STATUS[product.status];
 
   return (
-    <Link to={`/products/${product.id}`}>
-      <Card className="overflow-hidden hover:shadow-elevated transition-all hover:-translate-y-0.5 group">
+    <Card className="overflow-hidden hover:shadow-elevated transition-all hover:-translate-y-0.5 group relative">
+      <Link to={`/products/${product.id}`} className="block">
         <div className="aspect-square bg-gold-soft relative overflow-hidden">
           {imgUrl ? (
             <img src={imgUrl} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
@@ -68,7 +71,28 @@ export default function ProductCard({ product }: { product: ProductCardData }) {
             )}
           </div>
         </div>
-      </Card>
-    </Link>
+      </Link>
+
+      {/* زر تسجيل سعر سريع — يفتح Bottom Sheet دون مغادرة الصفحة */}
+      <div
+        className="absolute bottom-2 left-2 z-10"
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      >
+        <QuickQuoteSheet
+          productId={product.id}
+          productName={product.name}
+          branchId={product.branch_id ?? null}
+          trigger={
+            <Button
+              size="icon"
+              className="size-9 rounded-full bg-gold-gradient text-primary-foreground shadow-gold"
+              aria-label="تسجيل سعر سريع"
+            >
+              <Tag className="size-4" />
+            </Button>
+          }
+        />
+      </div>
+    </Card>
   );
 }
