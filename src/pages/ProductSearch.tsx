@@ -237,6 +237,30 @@ export default function ProductSearch() {
         </div>
       </div>
 
+      {/* فلاتر سريعة Chips */}
+      <div className="flex gap-2 overflow-x-auto -mx-3 px-3 pb-1 scrollbar-none">
+        {KARAT_OPTIONS.map((k) => (
+          <Chip
+            key={k}
+            active={filters.karat === k}
+            onClick={() => setFilters((f) => ({ ...f, karat: f.karat === k ? "all" : k }))}
+          >{k}</Chip>
+        ))}
+        <div className="w-px bg-border mx-1 shrink-0" />
+        {categories?.slice(0, 6).map((c) => (
+          <Chip
+            key={c.id}
+            active={filters.categoryId === c.id}
+            onClick={() => setFilters((f) => ({ ...f, categoryId: f.categoryId === c.id ? "all" : c.id }))}
+          >{c.name}</Chip>
+        ))}
+        {(filters.karat !== "all" || filters.categoryId !== "all" || filters.branchId !== "all" || filters.status !== "all" || filters.minWeight || filters.maxWeight) && (
+          <Chip onClick={() => setFilters(initialFilters)} active={false}>
+            <X className="size-3 inline" /> مسح
+          </Chip>
+        )}
+      </div>
+
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
           {isLoading ? "جارٍ..." : `${products?.length ?? 0} نتيجة`}
