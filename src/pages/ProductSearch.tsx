@@ -291,6 +291,23 @@ export default function ProductSearch() {
   );
 }
 
+function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        "shrink-0 px-3 h-8 rounded-full text-xs font-semibold border transition-colors whitespace-nowrap " +
+        (active
+          ? "bg-gold-gradient text-primary-foreground border-transparent shadow-gold"
+          : "bg-card text-foreground border-border hover:bg-secondary")
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
 function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
