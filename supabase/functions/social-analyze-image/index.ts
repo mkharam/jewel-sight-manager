@@ -123,28 +123,19 @@ Deno.serve(async (req) => {
     let aiRes: Response | null = null;
     let lastErrText = "";
     let lastStatus = 0;
-    const maxAttempts = 4;
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      aiRes = await fetch(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-goog-api-key": GEMINI_API_KEY },
-          body,
-        }
-      );
-      if (aiRes.ok) break;
+    // Single attempt — let the client handle retries to avoid 150s edge timeout
+    aiRes = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-goog-api-key": GEMINI_API_KEY },
+        body,
+      }
+    );
+    if (!aiRes.ok) {
       lastStatus = aiRes.status;
       lastErrText = await aiRes.text();
       console.error("AI error", aiRes.status, lastErrText.slice(0, 300));
-      if (aiRes.status !== 429 && aiRes.status !== 503) break;
-      // parse retryDelay from body, default exponential
-      let waitMs = 8000 * Math.pow(2, attempt);
-      const m = lastErrText.match(/"retryDelay"\s*:\s*"(\d+)s"/);
-      if (m) waitMs = (parseInt(m[1], 10) + 1) * 1000;
-      waitMs = Math.min(waitMs, 55000);
-      console.log(`rate-limited, waiting ${waitMs}ms (attempt ${attempt + 1})`);
-      await new Promise((r) => setTimeout(r, waitMs));
     }
 
     let parsed: any = {};
