@@ -198,7 +198,7 @@ export default function ProductDetail() {
             )}
           </Card>
 
-          <AddQuoteDialog productId={id!} branchId={product.branch_id} onAdded={() => qc.invalidateQueries({ queryKey: ["quotes", id] })} />
+          <QuickQuoteSheet productId={id!} productName={product.name} branchId={product.branch_id} fullWidthButton />
           <Link to={`/transfers?product=${id}&name=${encodeURIComponent(product.name)}`} className="block">
             <Button variant="outline" size="lg" className="w-full">
               <ArrowLeftRight className="size-4 ml-1" /> طلب تحويل لفرعي
