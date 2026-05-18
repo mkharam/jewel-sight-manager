@@ -27,9 +27,22 @@ const initialFilters: Filters = {
   q: "", karat: "all", branchId: "all", categoryId: "all", status: "all", minWeight: "", maxWeight: "",
 };
 
+const SAVED_FILTERS_KEY = "lamaa.lastSearch.v1";
+
+function loadSavedFilters(): Filters {
+  try {
+    const raw = localStorage.getItem(SAVED_FILTERS_KEY);
+    if (!raw) return initialFilters;
+    const p = JSON.parse(raw);
+    return { ...initialFilters, ...p };
+  } catch {
+    return initialFilters;
+  }
+}
+
 export default function ProductSearch() {
   const { profile, roles } = useAuth();
-  const [filters, setFilters] = useState<Filters>(initialFilters);
+  const [filters, setFilters] = useState<Filters>(loadSavedFilters);
   const [debounced, setDebounced] = useState(filters);
 
   const greeting = useMemo(() => {
@@ -42,7 +55,10 @@ export default function ProductSearch() {
   const roleLabel = roles.includes("admin") ? "مدير عام" : roles.includes("manager") ? "مدير فرع" : "موظف";
 
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(filters), 250);
+    const t = setTimeout(() => {
+      setDebounced(filters);
+      try { localStorage.setItem(SAVED_FILTERS_KEY, JSON.stringify(filters)); } catch {}
+    }, 250);
     return () => clearTimeout(t);
   }, [filters]);
 
