@@ -27,9 +27,22 @@ const initialFilters: Filters = {
   q: "", karat: "all", branchId: "all", categoryId: "all", status: "all", minWeight: "", maxWeight: "",
 };
 
+const SAVED_FILTERS_KEY = "lamaa.lastSearch.v1";
+
+function loadSavedFilters(): Filters {
+  try {
+    const raw = localStorage.getItem(SAVED_FILTERS_KEY);
+    if (!raw) return initialFilters;
+    const p = JSON.parse(raw);
+    return { ...initialFilters, ...p };
+  } catch {
+    return initialFilters;
+  }
+}
+
 export default function ProductSearch() {
   const { profile, roles } = useAuth();
-  const [filters, setFilters] = useState<Filters>(initialFilters);
+  const [filters, setFilters] = useState<Filters>(loadSavedFilters);
   const [debounced, setDebounced] = useState(filters);
 
   const greeting = useMemo(() => {
@@ -42,7 +55,10 @@ export default function ProductSearch() {
   const roleLabel = roles.includes("admin") ? "مدير عام" : roles.includes("manager") ? "مدير فرع" : "موظف";
 
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(filters), 250);
+    const t = setTimeout(() => {
+      setDebounced(filters);
+      try { localStorage.setItem(SAVED_FILTERS_KEY, JSON.stringify(filters)); } catch {}
+    }, 250);
     return () => clearTimeout(t);
   }, [filters]);
 
@@ -61,7 +77,7 @@ export default function ProductSearch() {
     queryFn: async () => {
       let q = supabase
         .from("products")
-        .select("id,name,karat,weight_grams,ring_size,sale_price,promo_price,status,branch:branches(name),category:categories(name),images:product_images(storage_path,is_primary)")
+        .select("id,name,karat,weight_grams,ring_size,sale_price,promo_price,status,branch_id,branch:branches(name),category:categories(name),images:product_images(storage_path,is_primary)")
         .order("created_at", { ascending: false })
         .limit(120);
 
@@ -221,6 +237,30 @@ export default function ProductSearch() {
         </div>
       </div>
 
+      {/* فلاتر سريعة Chips */}
+      <div className="flex gap-2 overflow-x-auto -mx-3 px-3 pb-1 scrollbar-none">
+        {KARAT_OPTIONS.map((k) => (
+          <Chip
+            key={k}
+            active={filters.karat === k}
+            onClick={() => setFilters((f) => ({ ...f, karat: f.karat === k ? "all" : k }))}
+          >{k}</Chip>
+        ))}
+        <div className="w-px bg-border mx-1 shrink-0" />
+        {categories?.slice(0, 6).map((c) => (
+          <Chip
+            key={c.id}
+            active={filters.categoryId === c.id}
+            onClick={() => setFilters((f) => ({ ...f, categoryId: f.categoryId === c.id ? "all" : c.id }))}
+          >{c.name}</Chip>
+        ))}
+        {(filters.karat !== "all" || filters.categoryId !== "all" || filters.branchId !== "all" || filters.status !== "all" || filters.minWeight || filters.maxWeight) && (
+          <Chip onClick={() => setFilters(initialFilters)} active={false}>
+            <X className="size-3 inline" /> مسح
+          </Chip>
+        )}
+      </div>
+
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
           {isLoading ? "جارٍ..." : `${products?.length ?? 0} نتيجة`}
@@ -248,6 +288,23 @@ export default function ProductSearch() {
         </div>
       )}
     </div>
+  );
+}
+
+function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        "shrink-0 px-3 h-8 rounded-full text-xs font-semibold border transition-colors whitespace-nowrap " +
+        (active
+          ? "bg-gold-gradient text-primary-foreground border-transparent shadow-gold"
+          : "bg-card text-foreground border-border hover:bg-secondary")
+      }
+    >
+      {children}
+    </button>
   );
 }
 

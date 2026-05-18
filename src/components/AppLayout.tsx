@@ -1,16 +1,18 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { Search, Package, MessageCircle, Upload, LogOut, Sparkles, Users, ArrowLeftRight, Share2 } from "lucide-react";
+import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import NotificationsBell from "@/components/NotificationsBell";
 
-type NavItem = { to: string; label: string; icon: any; end?: boolean };
+type NavItem = { to: string; label: string; icon: any; end?: boolean; badgeKey?: "transfers" };
 
 const baseNav: NavItem[] = [
   { to: "/", label: "البحث", icon: Search, end: true },
-  { to: "/transfers", label: "تحويلات", icon: ArrowLeftRight },
+  { to: "/transfers", label: "تحويلات", icon: ArrowLeftRight, badgeKey: "transfers" },
   { to: "/inquiries", label: "استفسارات", icon: MessageCircle },
   { to: "/products/new", label: "إضافة", icon: Package },
 ];
@@ -21,9 +23,46 @@ const desktopExtras: NavItem[] = [
 ];
 
 export default function AppLayout() {
-  const { profile, roles } = useAuth();
+  const { profile, roles, user } = useAuth();
   const navigate = useNavigate();
   const isAdmin = roles.includes("admin");
+  const qc = useQueryClient();
+  const branchId = profile?.branch_id ?? null;
+
+  // عدد التحويلات المعلّقة للموظف: واردة بانتظار استلام، أو صادرة بانتظار موافقة
+  const { data: pendingTransfers = 0 } = useQuery({
+    queryKey: ["pending-transfers-count", branchId, user?.id],
+    queryFn: async () => {
+      if (!user) return 0;
+      // واردة إلى فرعي بانتظار approval/شحن
+      let total = 0;
+      if (branchId) {
+        const { count: incoming } = await supabase
+          .from("transfers")
+          .select("id", { count: "exact", head: true })
+          .eq("to_branch_id", branchId)
+          .in("status", ["pending", "approved", "in_transit"] as any);
+        total += incoming ?? 0;
+      }
+      return total;
+    },
+    enabled: !!user,
+    refetchInterval: 60_000,
+  });
+
+  // اشتراك Realtime لتحديث العدّاد فوراً
+  useEffect(() => {
+    if (!user) return;
+    const ch = supabase
+      .channel("transfers-badge")
+      .on("postgres_changes", { event: "*", schema: "public", table: "transfers" }, () => {
+        qc.invalidateQueries({ queryKey: ["pending-transfers-count"] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [user, qc]);
+
+  const badges: Record<string, number> = { transfers: pendingTransfers };
 
   const mobileNav: NavItem[] = isAdmin
     ? [...baseNav, { to: "/staff", label: "موظفون", icon: Users }]
@@ -53,16 +92,24 @@ export default function AppLayout() {
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">
-            {desktopNav.map((item) => (
-              <NavLink key={item.to} to={item.to} end={item.end}
-                className={({ isActive }) => cn(
-                  "px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2",
-                  isActive ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
-                )}>
-                <item.icon className="size-4" />
-                {item.label}
-              </NavLink>
-            ))}
+            {desktopNav.map((item) => {
+              const count = item.badgeKey ? badges[item.badgeKey] : 0;
+              return (
+                <NavLink key={item.to} to={item.to} end={item.end}
+                  className={({ isActive }) => cn(
+                    "px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 relative",
+                    isActive ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
+                  )}>
+                  <item.icon className="size-4" />
+                  {item.label}
+                  {count > 0 && (
+                    <span className="ml-1 min-w-5 h-5 px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center">
+                      {count > 99 ? "99+" : count}
+                    </span>
+                  )}
+                </NavLink>
+              );
+            })}
           </nav>
 
           <div className="flex items-center gap-1 sm:gap-2">
@@ -89,16 +136,26 @@ export default function AppLayout() {
           "grid h-16",
           mobileNav.length === 5 ? "grid-cols-5" : "grid-cols-4"
         )}>
-          {mobileNav.map((item) => (
-            <NavLink key={item.to} to={item.to} end={item.end}
-              className={({ isActive }) => cn(
-                "flex flex-col items-center justify-center gap-0.5 text-[10px] transition-colors",
-                isActive ? "text-primary" : "text-muted-foreground active:bg-muted/40"
-              )}>
-              <item.icon className="size-5" />
-              {item.label}
-            </NavLink>
-          ))}
+          {mobileNav.map((item) => {
+            const count = item.badgeKey ? badges[item.badgeKey] : 0;
+            return (
+              <NavLink key={item.to} to={item.to} end={item.end}
+                className={({ isActive }) => cn(
+                  "flex flex-col items-center justify-center gap-0.5 text-[10px] transition-colors relative",
+                  isActive ? "text-primary" : "text-muted-foreground active:bg-muted/40"
+                )}>
+                <div className="relative">
+                  <item.icon className="size-5" />
+                  {count > 0 && (
+                    <span className="absolute -top-1.5 -right-2 min-w-4 h-4 px-1 rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center">
+                      {count > 9 ? "9+" : count}
+                    </span>
+                  )}
+                </div>
+                {item.label}
+              </NavLink>
+            );
+          })}
         </div>
       </nav>
     </div>
