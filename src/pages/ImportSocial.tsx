@@ -174,16 +174,6 @@ export default function ImportSocial() {
       toast.error(stopReason);
     }
   };
-    if (stopReason) {
-      setItems((prev) => prev.map((it) => it.status === "pending" ? {
-        ...it,
-        status: "error",
-        include: false,
-        error: stopReason ?? "تم إيقاف التحليل",
-      } : it));
-      toast.error(stopReason);
-    }
-  };
 
   const updateItem = (i: number, patch: Partial<Item>) => {
     setItems((prev) => prev.map((it, j) => j === i ? { ...it, ...patch } : it));
