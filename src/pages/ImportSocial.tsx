@@ -104,13 +104,16 @@ export default function ImportSocial() {
   };
 
   const analyzeAll = async (list: Item[]) => {
-    const concurrency = 1;
     let idx = 0;
     let stopReason: string | null = null;
-    const worker = async () => {
-      while (idx < list.length && !stopReason) {
-        const i = idx++;
-        setItems((prev) => prev.map((it, j) => j === i ? { ...it, status: "analyzing" } : it));
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    while (idx < list.length && !stopReason) {
+      const i = idx++;
+      setItems((prev) => prev.map((it, j) => j === i ? { ...it, status: "analyzing" } : it));
+      let attempts = 0;
+      const maxAttempts = 5;
+      while (attempts < maxAttempts && !stopReason) {
+        attempts++;
         try {
           const it = list[i];
           const body: Record<string, unknown> = { categories: categories ?? [] };
@@ -122,10 +125,19 @@ export default function ImportSocial() {
           }
           const { data, error } = await supabase.functions.invoke("social-analyze-image", { body });
           if (error) throw error;
+          if (data?.aiBlocked && data?.code === AI_RATE_LIMITED) {
+            // wait and retry this same image
+            if (attempts < maxAttempts) {
+              await sleep(15000);
+              continue;
+            }
+            stopReason = "تم تجاوز حد Gemini مراراً. حاول لاحقاً.";
+            throw new Error(stopReason);
+          }
           if (data?.aiBlocked) {
             stopReason = data.code === AI_CREDITS_EXHAUSTED
-              ? "نفد رصيد AI. تم إيقاف التحليل، والصور التي رُفعت قبل الخطأ بقيت محفوظة."
-              : "تم تجاوز حد AI مؤقتاً. تم إيقاف التحليل، حاول لاحقاً.";
+              ? "نفد رصيد AI. تم إيقاف التحليل."
+              : "مفتاح AI غير صالح. تم إيقاف التحليل.";
             throw new Error(stopReason);
           }
           if (data?.skipped) throw new Error(data.error ?? "تم تخطي الصورة");
@@ -139,14 +151,19 @@ export default function ImportSocial() {
             karat: data.karat || "",
             description: data.description || "",
           } : it));
+          break;
         } catch (e: any) {
-          setItems((prev) => prev.map((it, j) => j === i ? {
-            ...it, status: "error", include: false, error: e?.message ?? "خطأ",
-          } : it));
+          if (attempts >= maxAttempts || stopReason) {
+            setItems((prev) => prev.map((it, j) => j === i ? {
+              ...it, status: "error", include: false, error: e?.message ?? "خطأ",
+            } : it));
+            break;
+          }
         }
       }
-    };
-    await Promise.all(Array.from({ length: concurrency }, worker));
+      // small spacing between images to respect 5 req/min
+      if (idx < list.length && !stopReason) await sleep(13000);
+    }
     if (stopReason) {
       setItems((prev) => prev.map((it) => it.status === "pending" ? {
         ...it,
