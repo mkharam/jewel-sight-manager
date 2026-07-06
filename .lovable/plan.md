@@ -1,66 +1,124 @@
-# لمعة (Lamaa) — Project Handoff Brief
+# Photo pipeline: categorize, search, auto-name
 
-Paste this to Claude (or any other AI) so it has full context on what's built and what's pending.
+One unified plan for the three photo touchpoints — **storing photos per branch**, **searching by photo**, and **AI auto-fill when adding a product**. All AI runs through **Lovable AI Gateway** (`LOVABLE_API_KEY` is already provisioned), model `google/gemini-3-flash-preview` for vision + text. No third-party keys, no OpenRouter, no Gemini free tier — the Gateway is what the workspace pays for.
 
 ---
 
-## What the app is
+## 1. How photos are stored & organized per branch
 
-**لمعة** — Arabic RTL, mobile-first web app for managing a chain of 5 gold & jewelry shops in Libya (جرابة، حي الأندلس، بنعاشور، النوفليين، القادسية).
+Today: `product-images` public bucket, rows in `product_images` (path + is_primary). Nothing branch-aware.
 
-Primary user = a shop employee standing next to a customer, using a phone. Top priority = *find the piece fast and quote a price in one tap*.
+**Change:** keep one bucket, use the *path* as the organizational key.
 
-## Stack
+```
+product-images/
+  branch-<branchId>/
+    <productId>/
+      <uuid>.webp        ← original upload, WebP-compressed to ~1600px
+      <uuid>_thumb.webp  ← 400px thumb for cards/search results
+```
 
-- React 18 + Vite 5 + TypeScript + Tailwind v3 + shadcn/ui
-- Lovable Cloud backend (Supabase under the hood): Postgres + Auth + Storage + Edge Functions + Realtime
-- Auth: username-only login (internally mapped to `username@lamaa.local`). Accounts created by admin. Seed account: `admin` / `1234`.
-- Roles in a separate `user_roles` table (`admin` / `manager` / `employee`) with `has_role()` SECURITY DEFINER function.
-- Design: gold gradient `hsl(38 65% 42%)`, ivory background, Cairo/Tajawal fonts. No purple. Semantic tokens in `src/index.css`.
+Why not one bucket per branch: buckets are heavy, RLS on `storage.objects` can filter by path prefix just as well, thumbnails share the same CDN, and cross-branch transfers keep the same URL.
 
-## What's already built
+**On `product_images` add columns:** `width`, `height`, `thumb_path`, `ai_labels jsonb`, `ai_embedding vector(1536)`, `dominant_color text`. `ai_labels` holds `{ category, karat, style, gemstones, description }` returned by the analyzer. The embedding column powers vector search (§2).
 
-**Pages** (`src/pages/`): `Auth`, `ProductSearch` (home), `ProductDetail`, `ProductForm`, `Inquiries`, `ImportProducts`, `ImportSocial`, `Staff`, `Transfers`.
+**RLS on storage:** employees can read all photos (they need to find pieces across branches), but insert/delete only under `branch-<own_branch_id>/`. Managers/admins: all branches.
 
-**Key features live:**
-- Product catalog with images, karat, weight, ring size, price, promo price, status, branch, category.
-- Search page with sticky search bar, image search button, karat/category chips, full filter sheet, saved last search in localStorage (`lamaa.lastSearch.v1`).
-- Image search via `supabase/functions/image-search` (currently Gemini vision — quota issues, see below).
-- Social media image import via `social-fetch-images` + `social-analyze-image` edge functions.
-- Branch-to-branch **transfers** with Realtime updates, notifications bell.
-- Customer inquiries (`customer_inquiries`) and per-quote logging (`product_quotes`) — every price shown to a customer must be recorded to prevent price drift between branches.
-- Staff management by admin.
-- **QuickQuoteSheet** component (bottom sheet) started for one-tap price quoting from product cards.
+---
 
-**Explicitly killed:** barcode scanning. Never re-add. Search is name/description/filters only.
+## 2. Search by photo (visual similarity, not keyword)
 
-## Plan document
+The current `image-search` edge function asks Gemini "describe this image", then does an `ilike` on `products.name/description`. That's why it fails as soon as the vision quota hits — every search is a fresh vision call.
 
-`.lovable/plan.md` contains the full improvement roadmap agreed with the user. Priorities in order:
-1. Quick Quote + last-prices suggestion + ±10% price drift warning
-2. Sticky search + chip filters + last-search memory (mostly done)
-3. Bottom navigation + FAB for mobile
-4. Unified `customers` table + link quotes/inquiries to it
-5. Transfers UX (badge, "request to my branch" button in card, realtime sound)
+**Move to vector search — one vision call per *product*, zero per search.**
 
-**Deferred:** manager reports dashboard, offline mode (internet always available for this user).
+Pipeline:
 
-## Current blocker
+1. **On product save** (new photo added): edge function calls Lovable AI Gateway → `google/gemini-embedding-001` on the image (multimodal embedding) → stores 1536-dim vector in `product_images.ai_embedding`. Also runs a *single* Gemini vision pass to fill `ai_labels` (category, karat guess, style, gems, short caption).
+2. **On search-by-photo**: same embedding call on the customer's photo (one Gateway request, cheap), then Postgres `ORDER BY embedding <=> query_embedding LIMIT 12` using `pgvector` HNSW index. Returns top matches in <100ms, no LLM in the loop.
+3. **Optional re-rank**: if the top 12 look close by cosine distance, skip re-rank. If distances are wide, one Gemini call can pick the best 6 — but this is a v2 nicety.
 
-**AI vision quota.** Lovable AI credits ran out; Gemini free tier also exhausted. Last recommendation to user was to switch `image-search` and `social-analyze-image` edge functions to **OpenRouter** (free vision models: Llama 3.2 Vision, Qwen2-VL, Gemini Free — ~200 req/day each). Waiting on user to provide `OPENROUTER_API_KEY`. Cloudflare Workers AI (LLaVA, 10k req/day) is the backup option.
+Adds pgvector extension + HNSW index on `product_images.ai_embedding`. Search cost drops from "1 vision call per search" to "1 embedding call per search" (roughly 10× cheaper) and stops breaking when vision is rate-limited.
 
-## Comparison context
+Text search stays as-is on `products.name`; the two blend on the search page: text results first, then "قطع مشابهة بالصورة" section below when the user searched by photo.
 
-User compared لمعة to Seraj ERP (tic-ly.com/seraj-erp). Seraj = general-purpose accounting/ERP, desktop. لمعة = jewelry-specific, mobile-first, cloud, with AI image search and per-customer relationship tracking. Missing vs Seraj: daily employee report, Z-report/daily close, purchase cost & profit margin per product — user has not yet decided whether to add these.
+---
 
-## Conventions to respect
+## 3. AI auto-fill when adding a new product
 
-- Never hardcode colors — use semantic tokens from `index.css`.
-- All new `public` tables need `GRANT` + RLS + policies in the same migration.
-- Never edit `src/integrations/supabase/client.ts` or `types.ts` (auto-generated).
-- Say "Lovable Cloud" / "backend" to the user, never "Supabase".
-- RTL Arabic everywhere; keep gold luxury aesthetic.
+Today: employee uploads photo → types name, category, karat, weight, etc. Slow and inconsistent between branches.
 
-## Next concrete step (when unblocked)
+**New flow in `ProductForm`:**
 
-Either (a) get OpenRouter key from user and swap the two edge functions off Gemini, or (b) start Quick Quote step 1 from the plan without touching AI. User's call.
+1. Employee picks/takes a photo. Upload starts immediately in the background.
+2. Once uploaded, a new edge function `analyze-product-image` is invoked. It calls Gemini vision with a **strict JSON schema** (via `Output.object` / `generateObject`) returning:
+   ```
+   {
+     name_ar: string,           // "خاتم ذهبي بحجر أزرق"
+     category_slug: enum,       // matched to existing categories
+     karat_guess: "18K"|"21K"|"22K"|"24K"|null,
+     style: string[],           // ["كلاسيكي","خطوبة"]
+     gemstones: string[],       // ["زفير","ألماس"]
+     estimated_weight_g: number|null,  // rough, only if scale visible
+     description_ar: string     // 1–2 sentences
+   }
+   ```
+3. Form fields **pre-fill** with the AI's guesses, each field marked with a small ✨ badge = "AI اقترح". Employee reviews and edits in one glance — no retyping unless the AI is wrong.
+4. Same call also produces the embedding + labels stored on `product_images` (§2), so nothing is wasted.
+5. Fallback if the Gateway returns 402/429: the form still works, fields stay empty, employee fills manually. A toast says "AI مشغول الآن — املأ يدوياً".
+
+Category is matched by asking Gemini to pick from the *existing* `categories` list (passed in the prompt), not free-text — this keeps the taxonomy clean.
+
+---
+
+## 4. Migration off the two current Gemini functions
+
+- `supabase/functions/image-search`: rewrite to embedding-based search (§2). Drops the ad-hoc `GEMINI_API_KEY` — uses `LOVABLE_API_KEY` via the Gateway helper.
+- `supabase/functions/social-analyze-image`: same migration to Gateway, reuses the same JSON schema as `analyze-product-image` so social imports and manual adds produce identical data.
+
+---
+
+## Technical section
+
+**DB migration:**
+- `create extension if not exists vector;`
+- `alter table product_images add column thumb_path text, width int, height int, ai_labels jsonb default '{}'::jsonb, ai_embedding vector(1536), dominant_color text;`
+- `create index product_images_embedding_idx on product_images using hnsw (ai_embedding vector_cosine_ops);`
+- SQL function `match_product_images(query_embedding vector(1536), match_count int)` returning `product_id, similarity`.
+- Storage RLS on `storage.objects` filtering path prefix `branch-<uid's branch_id>/` for write; open read.
+
+**Edge functions:**
+- `analyze-product-image` (new): input `{ imagePath }` → returns structured JSON + writes embedding & labels to `product_images`.
+- `image-search` (rewrite): input `{ imagePath | imageBase64 }` → embeds → RPC `match_product_images` → returns product ids ordered by similarity.
+- `social-analyze-image` (rewrite): same as `analyze-product-image` but reads from social scraper's temp URL.
+- Shared `_shared/ai-gateway.ts` provider helper per the AI SDK Gateway pattern.
+
+**Client:**
+- `ImageSearchButton`: instead of applying text filters, navigate to `/products?similarTo=<uploadId>` and render similarity results grid.
+- `ProductForm`: add "Analyze with AI" auto-trigger on first photo upload, ✨ badges on pre-filled fields, manual override always available.
+- Thumbnails: generate `_thumb.webp` client-side (Canvas resize) before upload, so cards never fetch full-size images.
+
+**Costs (order of magnitude, per employee action):**
+- Add product: 1 vision + 1 embedding call (~one-time per product).
+- Search by photo: 1 embedding call (~10× cheaper than vision).
+- Browse: zero AI calls.
+
+---
+
+## Not in scope now
+
+- On-device embedding (privacy/cost win, but adds ~5MB model download).
+- Re-embedding all existing photos in a batch job — can run once after deploy.
+- Face/hand detection to auto-crop (nice-to-have).
+
+---
+
+## Suggested build order
+
+1. DB migration (pgvector, new columns, RPC, storage RLS).
+2. `_shared/ai-gateway.ts` + rewrite `image-search` to embeddings.
+3. `analyze-product-image` + wire into `ProductForm` with ✨ pre-fill.
+4. Backfill script: embed every existing product's primary image.
+5. Rewrite `social-analyze-image` to reuse the same schema.
+
+Ready to start with step 1 (DB migration), or want to reorder?
