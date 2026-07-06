@@ -10,9 +10,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowRight, Upload, X, Star } from "lucide-react";
+import { ArrowRight, Upload, X, Star, Sparkles, Loader2 } from "lucide-react";
 import { PRODUCT_STATUS, KARAT_OPTIONS, getImageUrl } from "@/lib/constants";
 import { toast } from "sonner";
+
+type AiSuggestion = {
+  name_ar?: string;
+  category_id?: string | null;
+  category_name?: string | null;
+  karat?: string | null;
+  style?: string[];
+  gemstones?: string[];
+  description_ar?: string;
+};
 
 const schema = z.object({
   name: z.string().trim().min(2, "الاسم قصير").max(150),
