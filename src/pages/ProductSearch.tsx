@@ -72,25 +72,38 @@ export default function ProductSearch() {
     queryFn: async () => (await supabase.from("categories").select("id,name").order("sort_order")).data ?? [],
   });
 
+  // Image-search results — when set, overrides the normal query and shows only these products in similarity order.
+  const [similarIds, setSimilarIds] = useState<string[] | null>(null);
+
   const { data: products, isLoading } = useQuery({
-    queryKey: ["products", debounced],
+    queryKey: ["products", debounced, similarIds],
     queryFn: async () => {
       let q = supabase
         .from("products")
         .select("id,name,karat,weight_grams,ring_size,sale_price,promo_price,status,branch_id,branch:branches(name),category:categories(name),images:product_images(storage_path,is_primary)")
-        .order("created_at", { ascending: false })
         .limit(120);
 
-      if (debounced.q) q = q.or(`name.ilike.%${debounced.q}%,sku.ilike.%${debounced.q}%,description.ilike.%${debounced.q}%`);
-      if (debounced.karat !== "all") q = q.eq("karat", debounced.karat);
-      if (debounced.branchId !== "all") q = q.eq("branch_id", debounced.branchId);
-      if (debounced.categoryId !== "all") q = q.eq("category_id", debounced.categoryId);
-      if (debounced.status !== "all") q = q.eq("status", debounced.status as ProductStatus);
-      if (debounced.minWeight) q = q.gte("weight_grams", parseFloat(debounced.minWeight));
-      if (debounced.maxWeight) q = q.lte("weight_grams", parseFloat(debounced.maxWeight));
+      if (similarIds && similarIds.length > 0) {
+        q = q.in("id", similarIds);
+      } else {
+        q = q.order("created_at", { ascending: false });
+        if (debounced.q) q = q.or(`name.ilike.%${debounced.q}%,sku.ilike.%${debounced.q}%,description.ilike.%${debounced.q}%`);
+        if (debounced.karat !== "all") q = q.eq("karat", debounced.karat);
+        if (debounced.branchId !== "all") q = q.eq("branch_id", debounced.branchId);
+        if (debounced.categoryId !== "all") q = q.eq("category_id", debounced.categoryId);
+        if (debounced.status !== "all") q = q.eq("status", debounced.status as ProductStatus);
+        if (debounced.minWeight) q = q.gte("weight_grams", parseFloat(debounced.minWeight));
+        if (debounced.maxWeight) q = q.lte("weight_grams", parseFloat(debounced.maxWeight));
+      }
 
       const { data, error } = await q;
       if (error) throw error;
+
+      // Preserve similarity order returned by the AI search.
+      if (similarIds && data) {
+        const idx = new Map(similarIds.map((id, i) => [id, i]));
+        return [...data].sort((a: any, b: any) => (idx.get(a.id) ?? 999) - (idx.get(b.id) ?? 999));
+      }
       return data ?? [];
     },
   });
