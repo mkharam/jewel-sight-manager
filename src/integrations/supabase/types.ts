@@ -182,34 +182,52 @@ export type Database = {
       }
       product_images: {
         Row: {
+          ai_embedding: string | null
+          ai_labels: Json
           created_at: string
+          dominant_color: string | null
+          height: number | null
           id: string
           is_primary: boolean
           product_id: string
           sort_order: number
           source_url: string | null
           storage_path: string
+          thumb_path: string | null
           uploaded_by: string | null
+          width: number | null
         }
         Insert: {
+          ai_embedding?: string | null
+          ai_labels?: Json
           created_at?: string
+          dominant_color?: string | null
+          height?: number | null
           id?: string
           is_primary?: boolean
           product_id: string
           sort_order?: number
           source_url?: string | null
           storage_path: string
+          thumb_path?: string | null
           uploaded_by?: string | null
+          width?: number | null
         }
         Update: {
+          ai_embedding?: string | null
+          ai_labels?: Json
           created_at?: string
+          dominant_color?: string | null
+          height?: number | null
           id?: string
           is_primary?: boolean
           product_id?: string
           sort_order?: number
           source_url?: string | null
           storage_path?: string
+          thumb_path?: string | null
           uploaded_by?: string | null
+          width?: number | null
         }
         Relationships: [
           {
@@ -550,6 +568,16 @@ export type Database = {
         Returns: boolean
       }
       is_manager_or_admin: { Args: { _user_id: string }; Returns: boolean }
+      match_product_images: {
+        Args: { match_count?: number; query_embedding: string }
+        Returns: {
+          image_id: string
+          product_id: string
+          similarity: number
+          storage_path: string
+          thumb_path: string
+        }[]
+      }
     }
     Enums: {
       app_role: "admin" | "manager" | "employee"
