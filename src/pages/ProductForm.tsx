@@ -292,7 +292,7 @@ export default function ProductForm() {
             <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required maxLength={150} />
           </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="الفئة">
+            <Field label="الفئة" aiHint={aiApplied.has("category_id")}>
               <Select value={form.category_id} onValueChange={(v) => setForm({ ...form, category_id: v })}>
                 <SelectTrigger><SelectValue placeholder="اختر..." /></SelectTrigger>
                 <SelectContent>
@@ -305,7 +305,7 @@ export default function ProductForm() {
             </Field>
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <Field label="القيراط">
+            <Field label="القيراط" aiHint={aiApplied.has("karat")}>
               <Select value={form.karat} onValueChange={(v) => setForm({ ...form, karat: v })}>
                 <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
                 <SelectContent>
