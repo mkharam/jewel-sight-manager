@@ -356,7 +356,7 @@ export default function ProductForm() {
 
         <Card className="p-5 space-y-4">
           <h2 className="font-bold">الوصف والملاحظات</h2>
-          <Field label="الوصف"><Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} maxLength={2000} /></Field>
+          <Field label="الوصف" aiHint={aiApplied.has("description")}><Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} maxLength={2000} /></Field>
           <Field label="ملاحظات داخلية (للموظفين فقط)"><Textarea value={form.internal_notes} onChange={(e) => setForm({ ...form, internal_notes: e.target.value })} rows={2} maxLength={2000} /></Field>
         </Card>
 
