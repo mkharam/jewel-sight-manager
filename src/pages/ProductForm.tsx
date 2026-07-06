@@ -186,21 +186,50 @@ export default function ProductForm() {
         productId = data.id;
       }
 
-      // Upload new images
+      // Upload new images — path convention: branch-<branchId>/<productId>/<file>
+      const branchPrefix = payload.branch_id ? `branch-${payload.branch_id}` : "unassigned";
       const totalImages = existingImages.length + newFiles.length;
+      const uploadedImageIds: { id: string; file: File; isPrimary: boolean }[] = [];
       for (let i = 0; i < newFiles.length; i++) {
         const file = newFiles[i];
         const ext = file.name.split(".").pop();
-        const path = `${productId}/${Date.now()}-${i}.${ext}`;
+        const path = `${branchPrefix}/${productId}/${Date.now()}-${i}.${ext}`;
         const { error: upErr } = await supabase.storage.from("product-images").upload(path, file);
         if (upErr) throw upErr;
-        await supabase.from("product_images").insert({
-          product_id: productId!,
-          storage_path: path,
-          is_primary: totalImages === newFiles.length && i === primaryIndex,
-          sort_order: existingImages.length + i,
-          uploaded_by: user?.id,
-        });
+        const isPrimary = totalImages === newFiles.length && i === primaryIndex;
+        const { data: imgRow, error: imgErr } = await supabase
+          .from("product_images")
+          .insert({
+            product_id: productId!,
+            storage_path: path,
+            is_primary: isPrimary,
+            sort_order: existingImages.length + i,
+            uploaded_by: user?.id,
+          })
+          .select("id")
+          .single();
+        if (imgErr) throw imgErr;
+        uploadedImageIds.push({ id: imgRow.id, file, isPrimary });
+      }
+
+      // Fire-and-forget: analyze + embed each new image so search-by-photo finds it.
+      // We don't block the save on this — the toast confirms success independently.
+      for (const { id: imageId, file } of uploadedImageIds) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = (reader.result as string).split(",")[1];
+          supabase.functions
+            .invoke("analyze-product-image", {
+              body: {
+                imageBase64: base64,
+                mimeType: file.type,
+                categories: categories ?? [],
+                imageId,
+              },
+            })
+            .catch((e) => console.warn("Background embed failed", e));
+        };
+        reader.readAsDataURL(file);
       }
 
       await supabase.from("activity_log").insert({
