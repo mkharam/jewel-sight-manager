@@ -5,28 +5,39 @@ import { Camera, Loader2, Sparkles, Upload, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 
-interface AnalysisResult {
-  category?: string | null;
+interface Analysis {
+  name_ar?: string;
+  category_name?: string | null;
+  category_id?: string | null;
   karat?: string | null;
-  keywords?: string[];
-  description?: string;
+  style?: string[];
+  gemstones?: string[];
+  description_ar?: string;
+}
+
+interface Match {
+  product_id: string;
+  similarity: number;
 }
 
 interface Props {
   categories?: { id: string; name: string }[];
-  onApply: (filters: { categoryId?: string; karat?: string; q?: string }) => void;
+  /** Called with product IDs ordered by similarity (best first). */
+  onResults: (payload: { productIds: string[]; analysis: Analysis }) => void;
 }
 
-export default function ImageSearchButton({ categories, onApply }: Props) {
+export default function ImageSearchButton({ categories, onResults }: Props) {
   const [open, setOpen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [matches, setMatches] = useState<Match[] | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
     setPreviewUrl(null);
-    setResult(null);
+    setAnalysis(null);
+    setMatches(null);
     setLoading(false);
     if (inputRef.current) inputRef.current.value = "";
   };
@@ -42,7 +53,8 @@ export default function ImageSearchButton({ categories, onApply }: Props) {
     }
     setPreviewUrl(URL.createObjectURL(file));
     setLoading(true);
-    setResult(null);
+    setAnalysis(null);
+    setMatches(null);
 
     try {
       const base64: string = await new Promise((resolve, reject) => {
@@ -56,13 +68,14 @@ export default function ImageSearchButton({ categories, onApply }: Props) {
       });
 
       const { data, error } = await supabase.functions.invoke("image-search", {
-        body: { imageBase64: base64, mimeType: file.type, categories },
+        body: { imageBase64: base64, mimeType: file.type, categories, matchCount: 12 },
       });
 
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
 
-      setResult(data as AnalysisResult);
+      setAnalysis((data as any).analysis ?? {});
+      setMatches((data as any).matches ?? []);
     } catch (e: any) {
       toast({ title: "تعذّر التحليل", description: e.message ?? "حاول مجدداً", variant: "destructive" });
     } finally {
@@ -71,17 +84,15 @@ export default function ImageSearchButton({ categories, onApply }: Props) {
   };
 
   const apply = () => {
-    if (!result) return;
-    const cat = categories?.find((c) => result.category && c.name.includes(result.category));
-    const q = result.keywords?.[0] ?? "";
-    onApply({
-      categoryId: cat?.id,
-      karat: result.karat && ["18K", "21K", "22K", "24K", "ألماس", "فضة", "أخرى"].includes(result.karat) ? result.karat : undefined,
-      q,
-    });
+    if (!matches || !analysis) return;
+    onResults({ productIds: matches.map((m) => m.product_id), analysis });
     setOpen(false);
     reset();
-    toast({ title: "تم البحث بالصورة", description: "تم تطبيق الفلاتر المقترحة" });
+    const n = matches.length;
+    toast({
+      title: n > 0 ? `${n} قطعة مشابهة` : "لا توجد نتائج",
+      description: n > 0 ? "أعلى القطع تشابهاً معروضة" : "لم نجد قطعاً مشابهة بالصورة",
+    });
   };
 
   return (
@@ -106,7 +117,7 @@ export default function ImageSearchButton({ categories, onApply }: Props) {
               بحث بالصورة
             </DialogTitle>
             <DialogDescription>
-              ارفع صورة قطعة من العميل وسيقترح النظام قطعاً مشابهة.
+              ارفع صورة قطعة من العميل وسنبحث عن أقرب القطع في المخزون.
             </DialogDescription>
           </DialogHeader>
 
@@ -150,31 +161,41 @@ export default function ImageSearchButton({ categories, onApply }: Props) {
             {loading && (
               <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground py-4">
                 <Loader2 className="size-4 animate-spin" />
-                جارٍ تحليل الصورة…
+                جارٍ تحليل الصورة والبحث…
               </div>
             )}
 
-            {result && (
+            {analysis && matches && (
               <div className="rounded-xl bg-gold-soft border border-primary/20 p-3 space-y-2">
                 <p className="text-xs font-semibold text-primary">نتيجة التحليل</p>
-                <p className="text-sm">{result.description}</p>
+                {analysis.description_ar && <p className="text-sm">{analysis.description_ar}</p>}
                 <div className="flex flex-wrap gap-1.5">
-                  {result.category && (
+                  {analysis.category_name && (
                     <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-semibold">
-                      {result.category}
+                      {analysis.category_name}
                     </span>
                   )}
-                  {result.karat && (
+                  {analysis.karat && (
                     <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-semibold">
-                      {result.karat}
+                      {analysis.karat}
                     </span>
                   )}
-                  {result.keywords?.map((k, i) => (
-                    <span key={i} className="px-2 py-0.5 rounded-full bg-muted text-foreground text-[11px]">
-                      {k}
+                  {analysis.style?.map((s, i) => (
+                    <span key={"s" + i} className="px-2 py-0.5 rounded-full bg-muted text-foreground text-[11px]">
+                      {s}
+                    </span>
+                  ))}
+                  {analysis.gemstones?.map((g, i) => (
+                    <span key={"g" + i} className="px-2 py-0.5 rounded-full bg-accent text-accent-foreground text-[11px]">
+                      💎 {g}
                     </span>
                   ))}
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  {matches.length > 0
+                    ? `عثرنا على ${matches.length} قطعة مشابهة`
+                    : "لا توجد قطع مشابهة في المخزون بعد. تأكد من تحليل الصور عند إضافة القطع."}
+                </p>
                 <Button onClick={apply} className="w-full bg-gold-gradient text-primary-foreground shadow-gold mt-2">
                   عرض القطع المشابهة
                 </Button>

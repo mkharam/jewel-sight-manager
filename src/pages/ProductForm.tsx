@@ -10,9 +10,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowRight, Upload, X, Star } from "lucide-react";
+import { ArrowRight, Upload, X, Star, Sparkles, Loader2 } from "lucide-react";
 import { PRODUCT_STATUS, KARAT_OPTIONS, getImageUrl } from "@/lib/constants";
 import { toast } from "sonner";
+
+type AiSuggestion = {
+  name_ar?: string;
+  category_id?: string | null;
+  category_name?: string | null;
+  karat?: string | null;
+  style?: string[];
+  gemstones?: string[];
+  description_ar?: string;
+};
 
 const schema = z.object({
   name: z.string().trim().min(2, "الاسم قصير").max(150),
@@ -48,6 +58,9 @@ export default function ProductForm() {
   const [newFiles, setNewFiles] = useState<File[]>([]);
   const [primaryIndex, setPrimaryIndex] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState<AiSuggestion | null>(null);
+  const [aiApplied, setAiApplied] = useState<Set<string>>(new Set());
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
@@ -85,7 +98,60 @@ export default function ProductForm() {
     const files = Array.from(e.target.files ?? []);
     const valid = files.filter((f) => f.size <= 5 * 1024 * 1024 && f.type.startsWith("image/"));
     if (valid.length < files.length) toast.error("بعض الملفات تجاوزت 5MB أو ليست صور");
+    if (valid.length === 0) return;
+
+    const wasEmpty = newFiles.length === 0 && existingImages.length === 0;
     setNewFiles((p) => [...p, ...valid].slice(0, 8));
+
+    // Auto-analyze the first newly-added photo when the product has no photos yet.
+    if (wasEmpty && !editing) {
+      void analyzeWithAi(valid[0]);
+    }
+  };
+
+  const analyzeWithAi = async (file: File) => {
+    setAiLoading(true);
+    try {
+      const base64: string = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve((r.result as string).split(",")[1]);
+        r.onerror = reject;
+        r.readAsDataURL(file);
+      });
+      const { data, error } = await supabase.functions.invoke("analyze-product-image", {
+        body: {
+          imageBase64: base64,
+          mimeType: file.type,
+          categories: categories ?? [],
+        },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+
+      const s = data as AiSuggestion;
+      setAiSuggestion(s);
+
+      // Pre-fill only empty fields so we never overwrite the employee's input.
+      const applied = new Set<string>();
+      setForm((f) => {
+        const next = { ...f };
+        if (!f.name && s.name_ar) { next.name = s.name_ar; applied.add("name"); }
+        if (!f.category_id && s.category_id) { next.category_id = s.category_id; applied.add("category_id"); }
+        if (!f.karat && s.karat && KARAT_OPTIONS.includes(s.karat)) {
+          next.karat = s.karat; applied.add("karat");
+        }
+        if (!f.description && s.description_ar) {
+          next.description = s.description_ar; applied.add("description");
+        }
+        return next;
+      });
+      setAiApplied(applied);
+      toast.success("تم التحليل بالذكاء ✨", { description: "راجع الحقول قبل الحفظ" });
+    } catch (err: any) {
+      toast.error("تعذّر التحليل", { description: err.message ?? "املأ الحقول يدوياً" });
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -120,21 +186,50 @@ export default function ProductForm() {
         productId = data.id;
       }
 
-      // Upload new images
+      // Upload new images — path convention: branch-<branchId>/<productId>/<file>
+      const branchPrefix = payload.branch_id ? `branch-${payload.branch_id}` : "unassigned";
       const totalImages = existingImages.length + newFiles.length;
+      const uploadedImageIds: { id: string; file: File; isPrimary: boolean }[] = [];
       for (let i = 0; i < newFiles.length; i++) {
         const file = newFiles[i];
         const ext = file.name.split(".").pop();
-        const path = `${productId}/${Date.now()}-${i}.${ext}`;
+        const path = `${branchPrefix}/${productId}/${Date.now()}-${i}.${ext}`;
         const { error: upErr } = await supabase.storage.from("product-images").upload(path, file);
         if (upErr) throw upErr;
-        await supabase.from("product_images").insert({
-          product_id: productId!,
-          storage_path: path,
-          is_primary: totalImages === newFiles.length && i === primaryIndex,
-          sort_order: existingImages.length + i,
-          uploaded_by: user?.id,
-        });
+        const isPrimary = totalImages === newFiles.length && i === primaryIndex;
+        const { data: imgRow, error: imgErr } = await supabase
+          .from("product_images")
+          .insert({
+            product_id: productId!,
+            storage_path: path,
+            is_primary: isPrimary,
+            sort_order: existingImages.length + i,
+            uploaded_by: user?.id,
+          })
+          .select("id")
+          .single();
+        if (imgErr) throw imgErr;
+        uploadedImageIds.push({ id: imgRow.id, file, isPrimary });
+      }
+
+      // Fire-and-forget: analyze + embed each new image so search-by-photo finds it.
+      // We don't block the save on this — the toast confirms success independently.
+      for (const { id: imageId, file } of uploadedImageIds) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = (reader.result as string).split(",")[1];
+          supabase.functions
+            .invoke("analyze-product-image", {
+              body: {
+                imageBase64: base64,
+                mimeType: file.type,
+                categories: categories ?? [],
+                imageId,
+              },
+            })
+            .catch((e) => console.warn("Background embed failed", e));
+        };
+        reader.readAsDataURL(file);
       }
 
       await supabase.from("activity_log").insert({
@@ -169,13 +264,35 @@ export default function ProductForm() {
 
       <h1 className="text-2xl font-bold">{editing ? "تعديل قطعة" : "إضافة قطعة جديدة"}</h1>
 
+      {(aiLoading || aiSuggestion) && (
+        <div className="rounded-xl bg-gold-soft border border-primary/20 p-3 flex items-start gap-3">
+          {aiLoading ? (
+            <Loader2 className="size-5 text-primary animate-spin shrink-0 mt-0.5" />
+          ) : (
+            <Sparkles className="size-5 text-primary shrink-0 mt-0.5" />
+          )}
+          <div className="flex-1 text-sm">
+            {aiLoading ? (
+              <p className="font-semibold">جارٍ تحليل الصورة بالذكاء الاصطناعي…</p>
+            ) : (
+              <>
+                <p className="font-semibold">تم اقتراح بعض الحقول تلقائياً</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  الحقول المميّزة بـ ✨ اقترحها الذكاء الاصطناعي — راجعها قبل الحفظ.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <form onSubmit={submit} className="space-y-4">
         <Card className="p-5 space-y-4">
-          <Field label="اسم القطعة *">
+          <Field label="اسم القطعة *" aiHint={aiApplied.has("name")}>
             <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required maxLength={150} />
           </Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="الفئة">
+            <Field label="الفئة" aiHint={aiApplied.has("category_id")}>
               <Select value={form.category_id} onValueChange={(v) => setForm({ ...form, category_id: v })}>
                 <SelectTrigger><SelectValue placeholder="اختر..." /></SelectTrigger>
                 <SelectContent>
@@ -188,7 +305,7 @@ export default function ProductForm() {
             </Field>
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <Field label="القيراط">
+            <Field label="القيراط" aiHint={aiApplied.has("karat")}>
               <Select value={form.karat} onValueChange={(v) => setForm({ ...form, karat: v })}>
                 <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
                 <SelectContent>
@@ -239,7 +356,7 @@ export default function ProductForm() {
 
         <Card className="p-5 space-y-4">
           <h2 className="font-bold">الوصف والملاحظات</h2>
-          <Field label="الوصف"><Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} maxLength={2000} /></Field>
+          <Field label="الوصف" aiHint={aiApplied.has("description")}><Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} maxLength={2000} /></Field>
           <Field label="ملاحظات داخلية (للموظفين فقط)"><Textarea value={form.internal_notes} onChange={(e) => setForm({ ...form, internal_notes: e.target.value })} rows={2} maxLength={2000} /></Field>
         </Card>
 
@@ -293,10 +410,18 @@ export default function ProductForm() {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children, aiHint }: { label: string; children: React.ReactNode; aiHint?: boolean }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs font-semibold">{label}</Label>
+      <Label className="text-xs font-semibold flex items-center gap-1">
+        {label}
+        {aiHint && (
+          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold">
+            <Sparkles className="size-2.5" />
+            AI
+          </span>
+        )}
+      </Label>
       {children}
     </div>
   );
