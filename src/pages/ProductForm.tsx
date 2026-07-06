@@ -410,10 +410,18 @@ export default function ProductForm() {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children, aiHint }: { label: string; children: React.ReactNode; aiHint?: boolean }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs font-semibold">{label}</Label>
+      <Label className="text-xs font-semibold flex items-center gap-1">
+        {label}
+        {aiHint && (
+          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold">
+            <Sparkles className="size-2.5" />
+            AI
+          </span>
+        )}
+      </Label>
       {children}
     </div>
   );
