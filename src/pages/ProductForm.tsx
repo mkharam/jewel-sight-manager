@@ -58,6 +58,9 @@ export default function ProductForm() {
   const [newFiles, setNewFiles] = useState<File[]>([]);
   const [primaryIndex, setPrimaryIndex] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState<AiSuggestion | null>(null);
+  const [aiApplied, setAiApplied] = useState<Set<string>>(new Set());
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
