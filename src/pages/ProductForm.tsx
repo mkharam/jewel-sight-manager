@@ -98,7 +98,60 @@ export default function ProductForm() {
     const files = Array.from(e.target.files ?? []);
     const valid = files.filter((f) => f.size <= 5 * 1024 * 1024 && f.type.startsWith("image/"));
     if (valid.length < files.length) toast.error("بعض الملفات تجاوزت 5MB أو ليست صور");
+    if (valid.length === 0) return;
+
+    const wasEmpty = newFiles.length === 0 && existingImages.length === 0;
     setNewFiles((p) => [...p, ...valid].slice(0, 8));
+
+    // Auto-analyze the first newly-added photo when the product has no photos yet.
+    if (wasEmpty && !editing) {
+      void analyzeWithAi(valid[0]);
+    }
+  };
+
+  const analyzeWithAi = async (file: File) => {
+    setAiLoading(true);
+    try {
+      const base64: string = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve((r.result as string).split(",")[1]);
+        r.onerror = reject;
+        r.readAsDataURL(file);
+      });
+      const { data, error } = await supabase.functions.invoke("analyze-product-image", {
+        body: {
+          imageBase64: base64,
+          mimeType: file.type,
+          categories: categories ?? [],
+        },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+
+      const s = data as AiSuggestion;
+      setAiSuggestion(s);
+
+      // Pre-fill only empty fields so we never overwrite the employee's input.
+      const applied = new Set<string>();
+      setForm((f) => {
+        const next = { ...f };
+        if (!f.name && s.name_ar) { next.name = s.name_ar; applied.add("name"); }
+        if (!f.category_id && s.category_id) { next.category_id = s.category_id; applied.add("category_id"); }
+        if (!f.karat && s.karat && KARAT_OPTIONS.includes(s.karat)) {
+          next.karat = s.karat; applied.add("karat");
+        }
+        if (!f.description && s.description_ar) {
+          next.description = s.description_ar; applied.add("description");
+        }
+        return next;
+      });
+      setAiApplied(applied);
+      toast.success("تم التحليل بالذكاء ✨", { description: "راجع الحقول قبل الحفظ" });
+    } catch (err: any) {
+      toast.error("تعذّر التحليل", { description: err.message ?? "املأ الحقول يدوياً" });
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   const submit = async (e: React.FormEvent) => {
