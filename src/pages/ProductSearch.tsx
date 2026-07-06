@@ -168,14 +168,9 @@ export default function ProductSearch() {
           </div>
           <ImageSearchButton
             categories={categories ?? undefined}
-            onApply={({ categoryId, karat, q }) =>
-              setFilters((f) => ({
-                ...f,
-                categoryId: categoryId ?? f.categoryId,
-                karat: karat ?? f.karat,
-                q: q ?? f.q,
-              }))
-            }
+            onResults={({ productIds }) => {
+              setSimilarIds(productIds.length > 0 ? productIds : []);
+            }}
           />
           <Sheet>
             <SheetTrigger asChild>
