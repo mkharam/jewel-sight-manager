@@ -264,9 +264,31 @@ export default function ProductForm() {
 
       <h1 className="text-2xl font-bold">{editing ? "تعديل قطعة" : "إضافة قطعة جديدة"}</h1>
 
+      {(aiLoading || aiSuggestion) && (
+        <div className="rounded-xl bg-gold-soft border border-primary/20 p-3 flex items-start gap-3">
+          {aiLoading ? (
+            <Loader2 className="size-5 text-primary animate-spin shrink-0 mt-0.5" />
+          ) : (
+            <Sparkles className="size-5 text-primary shrink-0 mt-0.5" />
+          )}
+          <div className="flex-1 text-sm">
+            {aiLoading ? (
+              <p className="font-semibold">جارٍ تحليل الصورة بالذكاء الاصطناعي…</p>
+            ) : (
+              <>
+                <p className="font-semibold">تم اقتراح بعض الحقول تلقائياً</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  الحقول المميّزة بـ ✨ اقترحها الذكاء الاصطناعي — راجعها قبل الحفظ.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <form onSubmit={submit} className="space-y-4">
         <Card className="p-5 space-y-4">
-          <Field label="اسم القطعة *">
+          <Field label="اسم القطعة *" aiHint={aiApplied.has("name")}>
             <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required maxLength={150} />
           </Field>
           <div className="grid grid-cols-2 gap-3">
