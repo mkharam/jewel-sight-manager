@@ -80,7 +80,7 @@ export default function ProductSearch() {
     queryFn: async () => {
       let q = supabase
         .from("products")
-        .select("id,name,karat,weight_grams,ring_size,sale_price,promo_price,status,branch_id,branch:branches(name),category:categories(name),images:product_images(storage_path,is_primary)")
+        .select("id,name,sku,karat,weight_grams,ring_size,sale_price,promo_price,status,branch_id,branch:branches(name),category:categories(name),images:product_images(storage_path,is_primary)")
         .limit(120);
 
       if (similarIds && similarIds.length > 0) {
