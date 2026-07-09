@@ -49,6 +49,9 @@ export default function ProductCard({ product }: { product: ProductCardData }) {
         </div>
         <div className="p-3 space-y-1.5">
           <h3 className="font-semibold text-sm line-clamp-1">{product.name}</h3>
+          {product.sku && (
+            <p className="text-[10px] font-mono text-muted-foreground truncate" dir="ltr">{product.sku}</p>
+          )}
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             {product.weight_grams != null && <span>{formatWeight(product.weight_grams)}</span>}
             {product.ring_size && <span>· مقاس {product.ring_size}</span>}
