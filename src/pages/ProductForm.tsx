@@ -174,7 +174,34 @@ export default function ProductForm() {
     setSaving(true);
     try {
       let productId = id;
-      const payload = parsed.data;
+      const payload = { ...parsed.data };
+
+      // توليد SKU تلقائي عند إنشاء منتج جديد إذا لم يكتبه الموظف
+      if (!editing && !payload.sku && payload.branch_id) {
+        try {
+          const branch = branches?.find((b: any) => b.id === payload.branch_id) as any;
+          const cat = categories?.find((c: any) => c.id === payload.category_id) as any;
+          const branchCode = (branch?.code || "GEN").toUpperCase().slice(0, 4);
+          const catCode = (cat?.name_en || cat?.name || "ITM")
+            .toString()
+            .replace(/[^a-zA-Z]/g, "")
+            .toUpperCase()
+            .slice(0, 3) || "ITM";
+          const now = new Date();
+          const yymm = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, "0")}`;
+          const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+          const { count } = await supabase
+            .from("products")
+            .select("id", { count: "exact", head: true })
+            .eq("branch_id", payload.branch_id)
+            .gte("created_at", monthStart);
+          const seq = String((count ?? 0) + 1).padStart(4, "0");
+          payload.sku = `${branchCode}-${catCode}-${yymm}-${seq}`;
+        } catch (e) {
+          console.warn("SKU auto-generation skipped", e);
+        }
+      }
+
       if (editing) {
         const { error } = await supabase.from("products").update({ ...payload, updated_by: user?.id }).eq("id", id!);
         if (error) throw error;
