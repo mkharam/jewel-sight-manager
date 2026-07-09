@@ -10,8 +10,7 @@ import ProductSearch from "@/pages/ProductSearch";
 import ProductDetail from "@/pages/ProductDetail";
 import ProductForm from "@/pages/ProductForm";
 import Inquiries from "@/pages/Inquiries";
-import ImportProducts from "@/pages/ImportProducts";
-import ImportSocial from "@/pages/ImportSocial";
+import BulkImport from "@/pages/BulkImport";
 import Staff from "@/pages/Staff";
 import Transfers from "@/pages/Transfers";
 import NotFound from "./pages/NotFound.tsx";
@@ -33,8 +32,7 @@ const App = () => (
             <Route path="/products/:id" element={<ProductDetail />} />
             <Route path="/products/:id/edit" element={<ProductForm />} />
             <Route path="/inquiries" element={<Inquiries />} />
-            <Route path="/import" element={<ImportProducts />} />
-            <Route path="/import-social" element={<ImportSocial />} />
+            <Route path="/import" element={<BulkImport />} />
             <Route path="/staff" element={<Staff />} />
             <Route path="/transfers" element={<Transfers />} />
           </Route>

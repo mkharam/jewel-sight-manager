@@ -14,6 +14,7 @@ export type JewelryAnalysis = {
   name_ar: string;
   category_name: string | null;
   karat: "18K" | "21K" | "22K" | "24K" | "ألماس" | "فضة" | "أخرى" | null;
+  metal_color: "yellow" | "white" | "rose" | "mixed" | null;
   style: string[];
   gemstones: string[];
   description_ar: string;
@@ -29,6 +30,11 @@ const JEWELRY_SCHEMA = {
       type: ["string", "null"],
       enum: ["18K", "21K", "22K", "24K", "ألماس", "فضة", "أخرى", null],
     },
+    metal_color: {
+      type: ["string", "null"],
+      enum: ["yellow", "white", "rose", "mixed", null],
+      description: "لون المعدن الظاهر في الصورة",
+    },
     style: {
       type: "array",
       items: { type: "string" },
@@ -41,12 +47,11 @@ const JEWELRY_SCHEMA = {
     },
     description_ar: { type: "string", description: "وصف بالعربية بجملة أو جملتين" },
   },
-  required: ["name_ar", "category_name", "karat", "style", "gemstones", "description_ar"],
+  required: ["name_ar", "category_name", "karat", "metal_color", "style", "gemstones", "description_ar"],
 };
 
 /**
  * Vision call: analyze a jewelry photo and return structured fields.
- * Uses Lovable AI Gateway → google/gemini-3-flash-preview.
  */
 export async function analyzeJewelryImage(params: {
   imageBase64: string;
@@ -60,10 +65,28 @@ export async function analyzeJewelryImage(params: {
     : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
 
   const systemPrompt =
-    `أنت خبير مجوهرات عربي. حلّل صورة القطعة واستخرج خصائصها.\n` +
-    `اختر category_name فقط من هذه القائمة (طابق الاسم حرفياً): ${catList}.\n` +
-    `إن لم تكن الفئة واضحة اجعل category_name = null.\n` +
-    `أعد فقط JSON مطابق للـ schema المطلوب، بدون أي نص إضافي.`;
+    `أنت خبير مجوهرات عربي متخصص في تمييز أنواع المعادن والأحجار الكريمة.\n` +
+    `\n` +
+    `قواعد التمييز الحاسمة (طبّقها بصرامة):\n` +
+    `1) لون المعدن (metal_color):\n` +
+    `   • yellow = ذهب أصفر لامع/دافئ.\n` +
+    `   • white  = ذهب أبيض أو بلاتين أو فضة (سطح فضي/رمادي فاتح).\n` +
+    `   • rose   = ذهب وردي/نحاسي.\n` +
+    `   • mixed  = القطعة تجمع لونين أو أكثر.\n` +
+    `\n` +
+    `2) قواعد اختيار karat — مهمة جداً:\n` +
+    `   • القطع الصفراء الشائعة في ليبيا ⇐ اختر 21K افتراضياً ما لم يظهر ختم آخر.\n` +
+    `   • السطح الأبيض/الفضي اللامع بدون أحجار شفافة مقطّعة (facets) = ذهب أبيض ⇐ اختر 18K أو 21K حسب اللمعان (ليس "ألماس" وليس "فضة" تلقائياً).\n` +
+    `   • لا تختر "ألماس" إلا إذا رأيت بوضوح أحجاراً شفافة مقطّعة (لها أوجه/facets تعكس الضوء بألوان قزحية) مثبّتة في القطعة. مجرد اللمعان أو اللون الأبيض لا يعني ألماس.\n` +
+    `   • "فضة" فقط إذا كان التصميم بسيطاً/عصرياً بنمط فضي واضح أو يظهر ختم فضة.\n` +
+    `\n` +
+    `3) gemstones: اذكر الأحجار الظاهرة فعلياً (ألماس، زركون، ياقوت، زمرد، لؤلؤ...). إن لم تكن متأكداً اتركها فارغة.\n` +
+    `\n` +
+    `4) category_name: اختر فقط من هذه القائمة (طابق الاسم حرفياً): ${catList}. إن لم تكن الفئة واضحة اجعلها null.\n` +
+    `\n` +
+    `5) description_ar: جملة قصيرة تصف الشكل واللون والحجم النسبي.\n` +
+    `\n` +
+    `أعد فقط JSON مطابق للـ schema، بدون أي نص إضافي.`;
 
   const body = {
     model: "google/gemini-3-flash-preview",
@@ -72,7 +95,7 @@ export async function analyzeJewelryImage(params: {
       {
         role: "user",
         content: [
-          { type: "text", text: "حلّل هذه القطعة:" },
+          { type: "text", text: "حلّل هذه القطعة بدقة عالية:" },
           {
             type: "image_url",
             image_url: { url: `data:${mimeType};base64,${imageBase64}` },
@@ -112,7 +135,6 @@ export async function analyzeJewelryImage(params: {
   try {
     return JSON.parse(raw) as JewelryAnalysis;
   } catch {
-    // Fallback: try to salvage JSON from any wrapping text.
     const m = raw.match(/\{[\s\S]*\}/);
     if (m) return JSON.parse(m[0]);
     throw new Error("AI returned invalid JSON");
@@ -120,9 +142,7 @@ export async function analyzeJewelryImage(params: {
 }
 
 /**
- * Embedding call: turn text into a 1536-dim vector.
- * Uses openai/text-embedding-3-small with dimensions=1536 to match the
- * product_images.ai_embedding column.
+ * Embedding call: 1536-dim vector matching product_images.ai_embedding.
  */
 export async function embedText(text: string): Promise<number[]> {
   const res = await fetch(`${GATEWAY}/embeddings`, {
@@ -158,6 +178,7 @@ export function analysisToEmbeddingText(a: JewelryAnalysis): string {
   if (a.name_ar) parts.push(a.name_ar);
   if (a.category_name) parts.push(a.category_name);
   if (a.karat) parts.push(a.karat);
+  if (a.metal_color) parts.push(`لون: ${a.metal_color}`);
   if (a.style?.length) parts.push(a.style.join(" "));
   if (a.gemstones?.length) parts.push("أحجار: " + a.gemstones.join(" "));
   if (a.description_ar) parts.push(a.description_ar);

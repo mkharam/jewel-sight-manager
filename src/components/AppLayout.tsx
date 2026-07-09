@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Search, Package, MessageCircle, Upload, LogOut, Sparkles, Users, ArrowLeftRight, Share2 } from "lucide-react";
+import { Search, Package, MessageCircle, Upload, LogOut, Sparkles, Users, ArrowLeftRight } from "lucide-react";
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,7 +19,6 @@ const baseNav: NavItem[] = [
 
 const desktopExtras: NavItem[] = [
   { to: "/import", label: "استيراد", icon: Upload },
-  { to: "/import-social", label: "من السوشيال", icon: Share2 },
 ];
 
 export default function AppLayout() {
