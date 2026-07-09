@@ -9,6 +9,7 @@ import QuickQuoteSheet from "@/components/QuickQuoteSheet";
 export interface ProductCardData {
   id: string;
   name: string;
+  sku?: string | null;
   karat: string | null;
   weight_grams: number | null;
   ring_size: string | null;
