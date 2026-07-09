@@ -369,8 +369,8 @@ export default function ProductForm() {
               </Select>
             </Field>
           </div>
-          <Field label="SKU (رمز داخلي اختياري)">
-            <Input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} maxLength={80} dir="ltr" />
+          <Field label="SKU (يُولَّد تلقائياً من رمز الفرع إن تُرك فارغاً)">
+            <Input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} maxLength={80} dir="ltr" placeholder="مثال: JRB-RNG-2607-0001" />
           </Field>
         </Card>
 
