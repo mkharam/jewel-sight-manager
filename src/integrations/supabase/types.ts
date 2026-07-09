@@ -46,6 +46,7 @@ export type Database = {
       }
       branches: {
         Row: {
+          code: string | null
           created_at: string
           id: string
           is_active: boolean
@@ -55,6 +56,7 @@ export type Database = {
           phone: string | null
         }
         Insert: {
+          code?: string | null
           created_at?: string
           id?: string
           is_active?: boolean
@@ -64,6 +66,7 @@ export type Database = {
           phone?: string | null
         }
         Update: {
+          code?: string | null
           created_at?: string
           id?: string
           is_active?: boolean
