@@ -64,11 +64,13 @@ export default function ProductForm() {
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
-    queryFn: async () => (await supabase.from("branches").select("id,name").order("name")).data ?? [],
+    queryFn: async () =>
+      (await supabase.from("branches").select("id,name,code").order("name")).data ?? [],
   });
   const { data: categories } = useQuery({
     queryKey: ["categories"],
-    queryFn: async () => (await supabase.from("categories").select("id,name").order("sort_order")).data ?? [],
+    queryFn: async () =>
+      (await supabase.from("categories").select("id,name,name_en").order("sort_order")).data ?? [],
   });
 
   useEffect(() => {
