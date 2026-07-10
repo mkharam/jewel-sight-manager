@@ -59,7 +59,7 @@ export default function BulkImport() {
     const newItems: Item[] = arr.map((f) => ({
       previewUrl: URL.createObjectURL(f),
       file: f,
-      status: "pending",
+      status: "uploading",
       include: true,
       name: "",
       category: "",
@@ -67,67 +67,77 @@ export default function BulkImport() {
       description: "",
     }));
     setItems((prev) => [...prev, ...newItems]);
-    toast.success(`تم تحميل ${newItems.length} صورة، جارٍ الرفع والتحليل…`);
+    toast.success(`${newItems.length} صورة — يجري الرفع أولاً ثم التحليل تلقائياً`);
+    // 1) رفع الكل بالتوازي (سريع جداً)، 2) تحليل واحدة تلو الأخرى (احتراماً لحد Gemini المجاني 15 طلب/دقيقة)
     processAll(newItems);
   };
 
   const processAll = async (list: Item[]) => {
     setProcessing(true);
-    // معالجة متسلسلة لاحترام حدود API
-    for (let i = 0; i < list.length; i++) {
-      const it = list[i];
-      const globalIndex = itemsIndexOf(it);
-      // Upload
-      try {
-        setStatus(it, "uploading");
-        const ext = (it.file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
-        const path = `imports/${user!.id}/${Date.now()}-${i}.${ext || "jpg"}`;
-        const { error: upErr } = await supabase.storage.from("product-images").upload(path, it.file);
-        if (upErr) throw upErr;
-        it.storagePath = path;
-      } catch (e: any) {
-        setError(it, e?.message ?? "فشل رفع الصورة");
-        continue;
-      }
 
-      // Analyze
-      try {
-        setStatus(it, "analyzing");
-        const base64 = await fileToBase64(it.file);
-        const { data, error } = await supabase.functions.invoke("analyze-product-image", {
-          body: { imageBase64: base64, mimeType: it.file.type, categories: categories ?? [] },
-        });
-        if (error) throw error;
-        if ((data as any)?.error) throw new Error((data as any).error);
-        setItems((prev) => prev.map((x) =>
-          x === it
-            ? {
-                ...x,
-                status: "ready",
-                name: (data as any).name_ar || "",
-                category: (data as any).category_name || "",
-                karat: (data as any).karat || "",
-                description: (data as any).description_ar || "",
-              }
-            : x,
-        ));
-      } catch (e: any) {
-        setError(it, e?.message ?? "فشل التحليل");
+    // ===== المرحلة 1: رفع كل الصور بالتوازي =====
+    await Promise.all(
+      list.map(async (it, i) => {
+        try {
+          const ext = (it.file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
+          const path = `imports/${user!.id}/${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}.${ext || "jpg"}`;
+          const { error: upErr } = await supabase.storage.from("product-images").upload(path, it.file);
+          if (upErr) throw upErr;
+          it.storagePath = path;
+          setItems((prev) => prev.map((x) => (x === it ? { ...x, storagePath: path, status: "analyzing" } : x)));
+        } catch (e: any) {
+          setError(it, e?.message ?? "فشل رفع الصورة");
+        }
+      }),
+    );
+
+    // ===== المرحلة 2: التحليل بالتسلسل مع احترام حد المعدل =====
+    for (const it of list) {
+      if (it.status === "error" || !it.storagePath) continue;
+      let attempts = 0;
+      while (attempts < 3) {
+        try {
+          const base64 = await fileToBase64(it.file);
+          const { data, error } = await supabase.functions.invoke("analyze-product-image", {
+            body: { imageBase64: base64, mimeType: it.file.type, categories: categories ?? [] },
+          });
+          if (error) throw error;
+          if ((data as any)?.error) throw new Error((data as any).error);
+          setItems((prev) => prev.map((x) =>
+            x === it
+              ? {
+                  ...x,
+                  status: "ready",
+                  name: (data as any).name_ar || "",
+                  category: (data as any).category_name || "",
+                  karat: (data as any).karat || "",
+                  description: (data as any).description_ar || "",
+                }
+              : x,
+          ));
+          break;
+        } catch (e: any) {
+          const msg = e?.message ?? "فشل التحليل";
+          // rate limit: انتظر 15 ثانية وأعد المحاولة
+          if (msg.includes("429") || msg.toLowerCase().includes("rate") || msg.includes("مشغول")) {
+            attempts++;
+            await new Promise((r) => setTimeout(r, 15000));
+            continue;
+          }
+          setError(it, msg);
+          break;
+        }
       }
-      // ملاحظة: globalIndex غير مستخدم — نعتمد على reference equality
-      void globalIndex;
+      // فاصل صغير بين الطلبات لتجنّب حد 15/دقيقة
+      await new Promise((r) => setTimeout(r, 4500));
     }
     setProcessing(false);
   };
 
-  const itemsIndexOf = (it: Item) => items.indexOf(it);
-  const setStatus = (it: Item, status: Item["status"]) => {
-    it.status = status;
-    setItems((prev) => prev.map((x) => (x === it ? { ...x, status } : x)));
-  };
   const setError = (it: Item, msg: string) => {
     setItems((prev) => prev.map((x) => (x === it ? { ...x, status: "error", include: false, error: msg } : x)));
   };
+
 
   const updateItem = (i: number, patch: Partial<Item>) =>
     setItems((prev) => prev.map((it, j) => (j === i ? { ...it, ...patch } : it)));
