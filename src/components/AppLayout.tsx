@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Search, Package, MessageCircle, Upload, LogOut, Sparkles, Users, ArrowLeftRight } from "lucide-react";
+import { Search, Package, MessageCircle, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3 } from "lucide-react";
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,6 +19,10 @@ const baseNav: NavItem[] = [
 
 const desktopExtras: NavItem[] = [
   { to: "/import", label: "استيراد", icon: Upload },
+];
+
+const adminExtras: NavItem[] = [
+  { to: "/reports", label: "الجرد", icon: BarChart3 },
 ];
 
 export default function AppLayout() {
@@ -68,7 +72,7 @@ export default function AppLayout() {
     : baseNav;
 
   const desktopNav: NavItem[] = isAdmin
-    ? [...baseNav, ...desktopExtras, { to: "/staff", label: "موظفون", icon: Users }]
+    ? [...baseNav, ...desktopExtras, ...adminExtras, { to: "/staff", label: "موظفون", icon: Users }]
     : [...baseNav, ...desktopExtras];
 
   const signOut = async () => {
