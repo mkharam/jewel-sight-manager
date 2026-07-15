@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BarChart3, Download, TrendingUp, ArrowLeftRight, Package, DollarSign } from "lucide-react";
 
-type Branch = { id: string; name_ar: string; code: string | null };
+type Branch = { id: string; name: string; code: string | null };
 
 function monthRange(ym: string) {
   // ym = "YYYY-MM"
@@ -41,7 +41,7 @@ export default function Reports() {
   const { data: branches = [] } = useQuery({
     queryKey: ["branches-all"],
     queryFn: async () => {
-      const { data } = await supabase.from("branches").select("id, name_ar, code").order("name_ar");
+      const { data } = await supabase.from("branches").select("id, name, code").order("name");
       return (data ?? []) as Branch[];
     },
   });
@@ -96,7 +96,7 @@ export default function Reports() {
     for (const b of branches) {
       map.set(b.id, {
         branch_id: b.id,
-        name: b.name_ar,
+        name: b.name,
         quotes: 0,
         revenue: 0,
         transfersOut: 0,
@@ -250,7 +250,7 @@ export default function Reports() {
                   <li key={q.id} className="flex justify-between items-center border-b border-border/60 pb-1">
                     <div>
                       <p className="font-medium">{q.products?.name ?? "—"}</p>
-                      <p className="text-xs text-muted-foreground">{q.customer_name ?? "زبون"} · {branches.find(b => b.id === q.branch_id)?.name_ar ?? "—"}</p>
+                      <p className="text-xs text-muted-foreground">{q.customer_name ?? "زبون"} · {branches.find(b => b.id === q.branch_id)?.name ?? "—"}</p>
                     </div>
                     <span className="font-mono text-primary">{fmt(Number(q.price))} د.ل</span>
                   </li>
@@ -272,7 +272,7 @@ export default function Reports() {
                     <div>
                       <p className="font-medium">{t.product_name_snapshot ?? "—"}</p>
                       <p className="text-xs text-muted-foreground">
-                        {branches.find(b => b.id === t.from_branch_id)?.name_ar ?? "—"} ← {branches.find(b => b.id === t.to_branch_id)?.name_ar ?? "—"}
+                        {branches.find(b => b.id === t.from_branch_id)?.name ?? "—"} ← {branches.find(b => b.id === t.to_branch_id)?.name ?? "—"}
                       </p>
                     </div>
                     <span className="text-xs px-2 py-0.5 rounded bg-secondary">{t.status}</span>
