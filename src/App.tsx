@@ -12,6 +12,7 @@ import ProductForm from "@/pages/ProductForm";
 import Inquiries from "@/pages/Inquiries";
 import BulkImport from "@/pages/BulkImport";
 import Staff from "@/pages/Staff";
+import Reports from "@/pages/Reports";
 import Transfers from "@/pages/Transfers";
 import NotFound from "./pages/NotFound.tsx";
 
@@ -34,6 +35,7 @@ const App = () => (
             <Route path="/inquiries" element={<Inquiries />} />
             <Route path="/import" element={<BulkImport />} />
             <Route path="/staff" element={<Staff />} />
+            <Route path="/reports" element={<Reports />} />
             <Route path="/transfers" element={<Transfers />} />
           </Route>
           <Route path="*" element={<NotFound />} />
