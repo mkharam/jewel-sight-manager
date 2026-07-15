@@ -27,12 +27,31 @@ const STATUS_LABEL: Record<string, string> = {
   created: "أنشأ",
 };
 
+const PRODUCT_STATUS_AR: Record<string, string> = {
+  available: "متوفرة",
+  reserved: "محجوزة",
+  sold: "مباعة",
+  transferred: "محوّلة",
+};
+
 function describe(a: ActivityItem): { text: string; icon: any; href: string } | null {
   const actor = a.actor_name ?? "موظف";
   if (a.entity_type === "transfers") {
     const product = a.details?.product ?? "قطعة";
     if (a.action === "created") return { text: `${actor} طلب تحويل: ${product}`, icon: ArrowLeftRight, href: "/transfers" };
     if (STATUS_LABEL[a.action]) return { text: `${actor} ${STATUS_LABEL[a.action]}: ${product}`, icon: ArrowLeftRight, href: "/transfers" };
+    return null;
+  }
+  if (a.entity_type === "products") {
+    const name = a.details?.name ?? "قطعة";
+    const href = a.entity_id ? `/products/${a.entity_id}` : "/";
+    if (a.action === "created") return { text: `${actor} أضاف قطعة: ${name}`, icon: Package, href };
+    if (a.action?.startsWith("status_")) {
+      const next = a.action.replace("status_", "");
+      const label = PRODUCT_STATUS_AR[next] ?? next;
+      if (next === "sold") return { text: `${actor} باع القطعة: ${name} 🎉`, icon: Tag, href };
+      return { text: `${actor} حدّث حالة ${name} إلى ${label}`, icon: Package, href };
+    }
     return null;
   }
   if (a.entity_type === "product_quotes") {
