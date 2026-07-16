@@ -282,10 +282,10 @@ export default function BulkImport() {
                 </button>
               </div>
               <div className="flex-1 min-w-0 space-y-2">
-                {(it.status === "uploading" || it.status === "analyzing") && (
+                {(it.status === "uploading" || it.status === "analyzing" || it.status === "pending") && (
                   <p className="text-xs text-muted-foreground flex items-center gap-1">
                     <Loader2 className="size-3 animate-spin" />
-                    {it.status === "uploading" ? "جارٍ الرفع…" : "جارٍ التحليل…"}
+                    {it.status === "uploading" ? "جارٍ الرفع…" : it.status === "pending" ? "بانتظار التحليل…" : "جارٍ التحليل…"}
                   </p>
                 )}
                 {it.status === "error" && <p className="text-xs text-destructive">⚠️ {it.error}</p>}
