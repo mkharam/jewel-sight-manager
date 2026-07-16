@@ -95,14 +95,21 @@ Deno.serve(async (req) => {
     const mimeType: string = body?.mimeType ?? "image/jpeg";
     const categories: { id: string; name: string }[] = body?.categories ?? [];
     const imageId: string | undefined = body?.imageId;
+    // Optional: caller can pass a previously computed analysis to skip Gemini
+    // and only compute+persist the embedding (used by bulk import on Save).
+    const providedAnalysis: JewelryAnalysis | undefined = body?.analysis;
 
-    if (!imageBase64) return json({ error: "imageBase64 required" }, 400);
+    if (!providedAnalysis && !imageBase64) {
+      return json({ error: "imageBase64 or analysis required" }, 400);
+    }
 
-    const analysis = await analyzeWithGemini({
-      imageBase64,
-      mimeType,
-      categoryNames: categories.map((c) => c.name),
-    });
+    const analysis: JewelryAnalysis = providedAnalysis
+      ? providedAnalysis
+      : await analyzeWithGemini({
+          imageBase64: imageBase64!,
+          mimeType,
+          categoryNames: categories.map((c) => c.name),
+        });
 
     let categoryId: string | null = null;
     if (analysis.category_name) {
@@ -114,6 +121,7 @@ Deno.serve(async (req) => {
       );
       categoryId = cat?.id ?? null;
     }
+
 
     // embedding اختياري — يُستخدم للبحث بالصورة، وليس مطلوباً للاستيراد بالجملة
     if (imageId) {
