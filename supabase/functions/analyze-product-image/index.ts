@@ -15,7 +15,10 @@ import {
 } from "../_shared/lovable-ai.ts";
 
 function getGeminiKey(): string | null {
-  const raw = Deno.env.get("GEMINI_API_KEY") ?? "";
+  const raw =
+    Deno.env.get("GOOGLE_API_KEY") ??
+    Deno.env.get("GEMINI_API_KEY") ??
+    "";
   const k = raw.trim().replace(/^["']|["']$/g, "");
   return k || null;
 }
