@@ -119,7 +119,7 @@ Deno.serve(async (req) => {
 
     const analysis: JewelryAnalysis = providedAnalysis
       ? providedAnalysis
-      : await analyzeWithGemini({
+      : await analyzeWithFallback({
           imageBase64: imageBase64!,
           mimeType,
           categoryNames: categories.map((c) => c.name),
