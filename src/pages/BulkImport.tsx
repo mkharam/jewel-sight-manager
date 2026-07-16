@@ -91,7 +91,7 @@ export default function BulkImport() {
           const { error: upErr } = await supabase.storage.from("product-images").upload(path, it.file);
           if (upErr) throw upErr;
           it.storagePath = path;
-          setItems((prev) => prev.map((x) => (x === it ? { ...x, storagePath: path, status: "analyzing" } : x)));
+          setItems((prev) => prev.map((x) => (x === it ? { ...x, storagePath: path, status: "pending" } : x)));
         } catch (e: any) {
           setError(it, e?.message ?? "فشل رفع الصورة");
         }
@@ -102,6 +102,7 @@ export default function BulkImport() {
     // ===== المرحلة 2: التحليل بالتسلسل مع احترام حد المعدل =====
     for (const it of list) {
       if (it.status === "error" || !it.storagePath) continue;
+      setItems((prev) => prev.map((x) => (x === it ? { ...x, status: "analyzing" } : x)));
       let attempts = 0;
       while (attempts < 3) {
         try {
@@ -281,10 +282,10 @@ export default function BulkImport() {
                 </button>
               </div>
               <div className="flex-1 min-w-0 space-y-2">
-                {(it.status === "uploading" || it.status === "analyzing") && (
+                {(it.status === "uploading" || it.status === "analyzing" || it.status === "pending") && (
                   <p className="text-xs text-muted-foreground flex items-center gap-1">
                     <Loader2 className="size-3 animate-spin" />
-                    {it.status === "uploading" ? "جارٍ الرفع…" : "جارٍ التحليل…"}
+                    {it.status === "uploading" ? "جارٍ الرفع…" : it.status === "pending" ? "بانتظار التحليل…" : "جارٍ التحليل…"}
                   </p>
                 )}
                 {it.status === "error" && <p className="text-xs text-destructive">⚠️ {it.error}</p>}

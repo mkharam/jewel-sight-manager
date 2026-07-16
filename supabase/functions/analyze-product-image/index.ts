@@ -7,17 +7,17 @@
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
+  analyzeJewelryImage,
   analysisToEmbeddingText,
   embedText,
   friendlyError,
   type JewelryAnalysis,
 } from "../_shared/lovable-ai.ts";
 
-function getGeminiKey(): string {
+function getGeminiKey(): string | null {
   const raw = Deno.env.get("GEMINI_API_KEY") ?? "";
   const k = raw.trim().replace(/^["']|["']$/g, "");
-  if (!k) throw Object.assign(new Error("GEMINI_API_KEY not set"), { status: 500 });
-  return k;
+  return k || null;
 }
 
 async function analyzeWithGemini(params: {
@@ -25,21 +25,19 @@ async function analyzeWithGemini(params: {
   mimeType: string;
   categoryNames: string[];
 }): Promise<JewelryAnalysis> {
+  const key = getGeminiKey();
+  if (!key) throw Object.assign(new Error("GEMINI_API_KEY not set"), { status: 500 });
   const { imageBase64, mimeType, categoryNames } = params;
   const catList = categoryNames.length
     ? categoryNames.join("، ")
     : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
 
   const systemPrompt =
-    `أنت خبير مجوهرات عربي. حلّل الصورة وأعد JSON فقط بهذا الشكل بدون أي نص إضافي:\n` +
+    `أنت خبير مجوهرات عربي. حلّل الصورة وأعد JSON فقط:\n` +
     `{"name_ar": string, "category_name": string|null, "karat": "18K"|"21K"|"22K"|"24K"|"ألماس"|"فضة"|"أخرى"|null, "metal_color": "yellow"|"white"|"rose"|"mixed"|null, "style": string[], "gemstones": string[], "description_ar": string}\n\n` +
-    `قواعد صارمة:\n` +
-    `• السطح الأبيض/الفضي اللامع بدون أحجار شفافة مقطّعة = ذهب أبيض 18K أو 21K (ليس ألماس).\n` +
-    `• "ألماس" فقط إذا رأيت أحجاراً شفافة لها أوجه (facets) تعكس الضوء.\n` +
-    `• "فضة" فقط عند نمط فضي واضح أو ختم فضة.\n` +
-    `• القطع الصفراء الليبية الشائعة = 21K افتراضياً.\n` +
-    `• category_name يجب أن يطابق واحدة من: ${catList} أو null.\n` +
-    `• description_ar جملة قصيرة تصف الشكل واللون.`;
+    `قواعد: السطح الأبيض اللامع بدون أحجار مقطّعة = ذهب أبيض 18K/21K (ليس ألماس). ` +
+    `"ألماس" فقط عند رؤية أحجار شفافة لها facets. القطع الصفراء الليبية = 21K افتراضياً. ` +
+    `category_name يطابق واحدة من: ${catList} أو null.`;
 
   const url =
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent";
@@ -60,18 +58,14 @@ async function analyzeWithGemini(params: {
 
   const res = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-goog-api-key": getGeminiKey(),
-    },
+    headers: { "Content-Type": "application/json", "X-goog-api-key": key },
     body: JSON.stringify(body),
   });
 
   if (!res.ok) {
     const text = await res.text();
     console.error("Gemini error", res.status, text);
-    // 429 = rate limit, نمرّرها للواجهة لتنتظر
-    const status = res.status === 429 ? 429 : res.status === 402 ? 402 : 500;
+    const status = res.status;
     throw Object.assign(new Error(text || `Gemini ${res.status}`), { status });
   }
 
@@ -84,6 +78,26 @@ async function analyzeWithGemini(params: {
     if (m) return JSON.parse(m[0]);
     throw new Error("Gemini returned invalid JSON");
   }
+}
+
+// يحاول Gemini المباشر أولاً (مجاني)، وعند فشله يستخدم Lovable AI Gateway كاحتياطي.
+async function analyzeWithFallback(params: {
+  imageBase64: string;
+  mimeType: string;
+  categoryNames: string[];
+}): Promise<JewelryAnalysis> {
+  if (getGeminiKey()) {
+    try {
+      return await analyzeWithGemini(params);
+    } catch (e) {
+      const msg = (e as Error)?.message ?? "";
+      const status = (e as any)?.status;
+      // 429 = rate limit → دع الواجهة تنتظر بدل التبديل
+      if (status === 429) throw e;
+      console.warn("Gemini failed, falling back to Lovable Gateway:", status, msg.slice(0, 200));
+    }
+  }
+  return await analyzeJewelryImage(params);
 }
 
 Deno.serve(async (req) => {
@@ -105,7 +119,7 @@ Deno.serve(async (req) => {
 
     const analysis: JewelryAnalysis = providedAnalysis
       ? providedAnalysis
-      : await analyzeWithGemini({
+      : await analyzeWithFallback({
           imageBase64: imageBase64!,
           mimeType,
           categoryNames: categories.map((c) => c.name),
