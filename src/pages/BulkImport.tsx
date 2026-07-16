@@ -178,14 +178,31 @@ export default function BulkImport() {
           .select("id")
           .single();
         if (e1 || !prod) { failed++; continue; }
-        const { error: e2 } = await supabase.from("product_images").insert({
-          product_id: prod.id,
-          storage_path: it.storagePath!,
-          is_primary: true,
-          uploaded_by: user.id,
-        });
-        if (e2) { failed++; continue; }
+        const { data: img, error: e2 } = await supabase
+          .from("product_images")
+          .insert({
+            product_id: prod.id,
+            storage_path: it.storagePath!,
+            is_primary: true,
+            uploaded_by: user.id,
+          })
+          .select("id")
+          .single();
+        if (e2 || !img) { failed++; continue; }
         ok++;
+        // Persist embedding so the photo is searchable via image-search later.
+        // Fire-and-forget with the pre-computed analysis (no extra Gemini cost).
+        if (it.analysis) {
+          supabase.functions
+            .invoke("analyze-product-image", {
+              body: {
+                imageId: img.id,
+                analysis: it.analysis,
+                categories: categories ?? [],
+              },
+            })
+            .catch((err) => console.warn("embed failed", err));
+        }
       } catch {
         failed++;
       }
@@ -195,6 +212,7 @@ export default function BulkImport() {
     if (ok) setItems([]);
     void branches; // للاحتفاظ بالاستعلام جاهزاً
   };
+
 
   const readyCount = items.filter((it) => it.include && it.status === "ready").length;
 
