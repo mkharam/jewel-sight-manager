@@ -78,9 +78,13 @@ export default function BulkImport() {
   const processAll = async (list: Item[]) => {
     setProcessing(true);
 
-    // ===== المرحلة 1: رفع كل الصور بالتوازي =====
-    await Promise.all(
-      list.map(async (it, i) => {
+    // ===== المرحلة 1: رفع الصور مع تحديد التوازي (6 معاً) لتفادي اختناق المتصفح =====
+    const UPLOAD_CONCURRENCY = 6;
+    let uploadIdx = 0;
+    const uploadWorker = async () => {
+      while (uploadIdx < list.length) {
+        const i = uploadIdx++;
+        const it = list[i];
         try {
           const ext = (it.file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
           const path = `imports/${user!.id}/${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}.${ext || "jpg"}`;
@@ -91,8 +95,9 @@ export default function BulkImport() {
         } catch (e: any) {
           setError(it, e?.message ?? "فشل رفع الصورة");
         }
-      }),
-    );
+      }
+    };
+    await Promise.all(Array.from({ length: UPLOAD_CONCURRENCY }, uploadWorker));
 
     // ===== المرحلة 2: التحليل بالتسلسل مع احترام حد المعدل =====
     for (const it of list) {
@@ -106,22 +111,23 @@ export default function BulkImport() {
           });
           if (error) throw error;
           if ((data as any)?.error) throw new Error((data as any).error);
+          const a = data as any;
           setItems((prev) => prev.map((x) =>
             x === it
               ? {
                   ...x,
                   status: "ready",
-                  name: (data as any).name_ar || "",
-                  category: (data as any).category_name || "",
-                  karat: (data as any).karat || "",
-                  description: (data as any).description_ar || "",
+                  name: a.name_ar || "",
+                  category: a.category_name || "",
+                  karat: a.karat || "",
+                  description: a.description_ar || "",
+                  analysis: a,
                 }
               : x,
           ));
           break;
         } catch (e: any) {
           const msg = e?.message ?? "فشل التحليل";
-          // rate limit: انتظر 15 ثانية وأعد المحاولة
           if (msg.includes("429") || msg.toLowerCase().includes("rate") || msg.includes("مشغول")) {
             attempts++;
             await new Promise((r) => setTimeout(r, 15000));
@@ -131,11 +137,11 @@ export default function BulkImport() {
           break;
         }
       }
-      // فاصل صغير بين الطلبات لتجنّب حد 15/دقيقة
       await new Promise((r) => setTimeout(r, 4500));
     }
     setProcessing(false);
   };
+
 
   const setError = (it: Item, msg: string) => {
     setItems((prev) => prev.map((x) => (x === it ? { ...x, status: "error", include: false, error: msg } : x)));
