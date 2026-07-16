@@ -102,6 +102,7 @@ export default function BulkImport() {
     // ===== المرحلة 2: التحليل بالتسلسل مع احترام حد المعدل =====
     for (const it of list) {
       if (it.status === "error" || !it.storagePath) continue;
+      setItems((prev) => prev.map((x) => (x === it ? { ...x, status: "analyzing" } : x)));
       let attempts = 0;
       while (attempts < 3) {
         try {
