@@ -91,7 +91,7 @@ export default function BulkImport() {
           const { error: upErr } = await supabase.storage.from("product-images").upload(path, it.file);
           if (upErr) throw upErr;
           it.storagePath = path;
-          setItems((prev) => prev.map((x) => (x === it ? { ...x, storagePath: path, status: "analyzing" } : x)));
+          setItems((prev) => prev.map((x) => (x === it ? { ...x, storagePath: path, status: "pending" } : x)));
         } catch (e: any) {
           setError(it, e?.message ?? "فشل رفع الصورة");
         }
