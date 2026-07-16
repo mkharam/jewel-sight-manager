@@ -28,7 +28,10 @@ type Item = {
   karat: string;
   description: string;
   error?: string;
+  // Full analysis kept so we can persist embedding on save (photo search).
+  analysis?: any;
 };
+
 
 export default function BulkImport() {
   const { user, profile } = useAuth();
