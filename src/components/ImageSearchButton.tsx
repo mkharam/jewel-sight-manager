@@ -85,13 +85,14 @@ export default function ImageSearchButton({ categories, onResults }: Props) {
 
   const apply = () => {
     if (!matches || !analysis) return;
-    onResults({ productIds: matches.map((m) => m.product_id), analysis });
+    onResults({ matches, analysis });
     setOpen(false);
     reset();
     const n = matches.length;
+    const exact = matches.filter((m) => m.similarity >= 0.92).length;
     toast({
-      title: n > 0 ? `${n} قطعة مشابهة` : "لا توجد نتائج",
-      description: n > 0 ? "أعلى القطع تشابهاً معروضة" : "لم نجد قطعاً مشابهة بالصورة",
+      title: exact > 0 ? `🎯 ${exact} قطعة مطابقة` : n > 0 ? `${n} قطعة مشابهة` : "لا توجد نتائج",
+      description: exact > 0 ? "تم إيجاد قطعة مطابقة تماماً" : n > 0 ? "أعلى القطع تشابهاً معروضة" : "لم نجد قطعاً مشابهة بالصورة",
     });
   };
 
