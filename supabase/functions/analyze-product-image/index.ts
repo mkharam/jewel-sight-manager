@@ -129,13 +129,19 @@ Deno.serve(async (req) => {
       return json({ error: "imageBase64 or analysis required" }, 400);
     }
 
-    const analysis: JewelryAnalysis = providedAnalysis
-      ? providedAnalysis
-      : await analyzeWithFallback({
-          imageBase64: imageBase64!,
-          mimeType,
-          categoryNames: categories.map((c) => c.name),
-        });
+    let analysis: JewelryAnalysis;
+    let provider = "cached";
+    if (providedAnalysis) {
+      analysis = providedAnalysis;
+    } else {
+      const r = await analyzeWithFallback({
+        imageBase64: imageBase64!,
+        mimeType,
+        categoryNames: categories.map((c) => c.name),
+      });
+      analysis = r.analysis;
+      provider = r.provider;
+    }
 
     let categoryId: string | null = null;
     if (analysis.category_name) {
@@ -169,11 +175,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    return json({ ...analysis, category_id: categoryId });
+    return json({ ...analysis, category_id: categoryId, provider });
   } catch (e) {
     const { status, message } = friendlyError(e);
-    // لا نعيد HTTP 429 للمتصفح: استدعاء الدالة يعتبره Runtime Error وقد
-    // يقطع تدفق الواجهة. النتيجة المنظمة تسمح للواجهة بإعادة المحاولة بأمان.
     if (status === 429) {
       return json({ error: message, code: "AI_BUSY", retryable: true }, 200);
     }
