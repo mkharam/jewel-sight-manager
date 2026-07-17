@@ -103,49 +103,61 @@ export default function BulkImport() {
     // ===== المرحلة 2: التحليل بالتسلسل مع احترام حد المعدل =====
     for (const it of list) {
       if (it.status === "error" || !it.storagePath) continue;
-      setItems((prev) => prev.map((x) => (x === it ? { ...x, status: "analyzing" } : x)));
-      let attempts = 0;
-      while (attempts < 3) {
-        try {
-          const base64 = await fileToBase64(it.file);
-          const { data, error } = await supabase.functions.invoke("analyze-product-image", {
-            body: { imageBase64: base64, mimeType: it.file.type, categories: categories ?? [] },
-          });
-          if (error) throw error;
-          if ((data as any)?.error) throw new Error((data as any).error);
-          const a = data as any;
-          setItems((prev) => prev.map((x) =>
-            x === it
-              ? {
-                  ...x,
-                  status: "ready",
-                  name: a.name_ar || "",
-                  category: a.category_name || "",
-                  karat: a.karat || "",
-                  description: a.description_ar || "",
-                  analysis: a,
-                }
-              : x,
-          ));
-          break;
-        } catch (e: any) {
-          const msg = e?.message ?? "فشل التحليل";
-          if (msg.includes("429") || msg.toLowerCase().includes("rate") || msg.includes("مشغول")) {
-            attempts++;
-            if (attempts >= 3) {
-              setError(it, "تم تجاوز حد الذكاء الاصطناعي مؤقتاً — جرّب لاحقاً");
-              break;
-            }
-            await new Promise((r) => setTimeout(r, 20000));
-            continue;
-          }
-          setError(it, msg);
-          break;
-        }
-      }
-      await new Promise((r) => setTimeout(r, 4500));
+      await analyzeOne(it);
+      // ~24 صورة/دقيقة (أقل من حد Groq 30 و Gemini 15 مع 3 مزودين بالتناوب)
+      await new Promise((r) => setTimeout(r, 2500));
     }
     setProcessing(false);
+  };
+
+  // تحليل صورة واحدة (يُستخدم للمرة الأولى وللإعادة اليدوية).
+  const analyzeOne = async (it: Item) => {
+    setItems((prev) => prev.map((x) => (x === it ? { ...x, status: "analyzing", error: undefined } : x)));
+    let attempts = 0;
+    while (attempts < 3) {
+      try {
+        const base64 = await fileToBase64(it.file);
+        const { data, error } = await supabase.functions.invoke("analyze-product-image", {
+          body: { imageBase64: base64, mimeType: it.file.type, categories: categories ?? [] },
+        });
+        if (error) throw error;
+        if ((data as any)?.error) throw new Error((data as any).error);
+        const a = data as any;
+        setItems((prev) => prev.map((x) =>
+          x === it
+            ? {
+                ...x,
+                status: "ready",
+                name: a.name_ar || "",
+                category: a.category_name || "",
+                karat: a.karat || "",
+                description: a.description_ar || "",
+                provider: a.provider,
+                analysis: a,
+              }
+            : x,
+        ));
+        return;
+      } catch (e: any) {
+        const msg = e?.message ?? "فشل التحليل";
+        if (msg.includes("429") || msg.toLowerCase().includes("rate") || msg.includes("مشغول") || msg.includes("AI_BUSY")) {
+          attempts++;
+          if (attempts >= 3) {
+            setError(it, "كل المزودات مشغولة الآن — اضغط ↻ للإعادة");
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 15000));
+          continue;
+        }
+        setError(it, msg);
+        return;
+      }
+    }
+  };
+
+  const retryOne = async (it: Item) => {
+    if (!it.storagePath) return;
+    await analyzeOne(it);
   };
 
 
