@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Save, Sparkles, X, FolderUp } from "lucide-react";
+import { Loader2, Save, Sparkles, X, FolderUp, RotateCw } from "lucide-react";
 import { toast } from "sonner";
 import { KARAT_OPTIONS } from "@/lib/constants";
 
@@ -28,6 +28,7 @@ type Item = {
   karat: string;
   description: string;
   error?: string;
+  provider?: string; // gemini | groq | lovable | cached
   // Full analysis kept so we can persist embedding on save (photo search).
   analysis?: any;
 };
