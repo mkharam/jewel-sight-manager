@@ -72,8 +72,9 @@ export default function ProductSearch() {
     queryFn: async () => (await supabase.from("categories").select("id,name").order("sort_order")).data ?? [],
   });
 
-  // Image-search results — when set, overrides the normal query and shows only these products in similarity order.
-  const [similarIds, setSimilarIds] = useState<string[] | null>(null);
+  // Image-search results — when set, overrides normal query with similarity-ranked matches.
+  const [similarMatches, setSimilarMatches] = useState<{ product_id: string; similarity: number }[] | null>(null);
+  const similarIds = useMemo(() => similarMatches?.map((m) => m.product_id) ?? null, [similarMatches]);
 
   const { data: products, isLoading } = useQuery({
     queryKey: ["products", debounced, similarIds],
@@ -107,6 +108,20 @@ export default function ProductSearch() {
       return data ?? [];
     },
   });
+
+  // Group products by similarity bucket when in photo-search mode
+  const similarityBuckets = useMemo(() => {
+    if (!similarMatches || !products) return null;
+    const simMap = new Map(similarMatches.map((m) => [m.product_id, m.similarity]));
+    const exact: any[] = [], veryHigh: any[] = [], similar: any[] = [];
+    for (const p of products as any[]) {
+      const s = simMap.get(p.id) ?? 0;
+      if (s >= 0.92) exact.push({ ...p, _sim: s });
+      else if (s >= 0.80) veryHigh.push({ ...p, _sim: s });
+      else similar.push({ ...p, _sim: s });
+    }
+    return { exact, veryHigh, similar };
+  }, [similarMatches, products]);
 
   const activeFilterCount = useMemo(() => {
     let n = 0;
