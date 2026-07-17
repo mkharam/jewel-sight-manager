@@ -183,8 +183,8 @@ export default function ProductSearch() {
           </div>
           <ImageSearchButton
             categories={categories ?? undefined}
-            onResults={({ productIds }) => {
-              setSimilarIds(productIds.length > 0 ? productIds : []);
+            onResults={({ matches }) => {
+              setSimilarMatches(matches.length > 0 ? matches : []);
             }}
           />
           <Sheet>
