@@ -31,7 +31,7 @@ export default function ImageSearchButton({ categories, onResults }: Props) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
-  const [matches, setMatches] = useState<Match[] | null>(null);
+  const [matches, setMatches] = useState<PhotoMatch[] | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
