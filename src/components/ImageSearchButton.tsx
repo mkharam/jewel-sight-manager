@@ -15,15 +15,15 @@ interface Analysis {
   description_ar?: string;
 }
 
-interface Match {
+export interface PhotoMatch {
   product_id: string;
   similarity: number;
 }
 
 interface Props {
   categories?: { id: string; name: string }[];
-  /** Called with product IDs ordered by similarity (best first). */
-  onResults: (payload: { productIds: string[]; analysis: Analysis }) => void;
+  /** Called with matches (with similarity scores) ordered best first. */
+  onResults: (payload: { matches: PhotoMatch[]; analysis: Analysis }) => void;
 }
 
 export default function ImageSearchButton({ categories, onResults }: Props) {
@@ -31,7 +31,7 @@ export default function ImageSearchButton({ categories, onResults }: Props) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
-  const [matches, setMatches] = useState<Match[] | null>(null);
+  const [matches, setMatches] = useState<PhotoMatch[] | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
@@ -85,13 +85,14 @@ export default function ImageSearchButton({ categories, onResults }: Props) {
 
   const apply = () => {
     if (!matches || !analysis) return;
-    onResults({ productIds: matches.map((m) => m.product_id), analysis });
+    onResults({ matches, analysis });
     setOpen(false);
     reset();
     const n = matches.length;
+    const exact = matches.filter((m) => m.similarity >= 0.92).length;
     toast({
-      title: n > 0 ? `${n} قطعة مشابهة` : "لا توجد نتائج",
-      description: n > 0 ? "أعلى القطع تشابهاً معروضة" : "لم نجد قطعاً مشابهة بالصورة",
+      title: exact > 0 ? `🎯 ${exact} قطعة مطابقة` : n > 0 ? `${n} قطعة مشابهة` : "لا توجد نتائج",
+      description: exact > 0 ? "تم إيجاد قطعة مطابقة تماماً" : n > 0 ? "أعلى القطع تشابهاً معروضة" : "لم نجد قطعاً مشابهة بالصورة",
     });
   };
 
