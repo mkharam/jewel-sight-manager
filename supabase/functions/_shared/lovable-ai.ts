@@ -142,6 +142,81 @@ export async function analyzeJewelryImage(params: {
 }
 
 /**
+ * Groq Vision call — احتياطي مجاني (30 RPM, 14400/day).
+ * يستخدم Llama 3.2 Vision. جودة تحليل عربية جيدة.
+ */
+export async function analyzeJewelryImageGroq(params: {
+  imageBase64: string;
+  mimeType: string;
+  categoryNames: string[];
+}): Promise<JewelryAnalysis> {
+  const key = Deno.env.get("GROQ_API_KEY")?.trim();
+  if (!key) throw Object.assign(new Error("GROQ_API_KEY not set"), { status: 500 });
+
+  const { imageBase64, mimeType, categoryNames } = params;
+  const catList = categoryNames.length
+    ? categoryNames.join("، ")
+    : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
+
+  const systemPrompt =
+    `أنت خبير مجوهرات عربي. أعد JSON فقط بهذا الشكل بالضبط بدون أي نص إضافي:\n` +
+    `{"name_ar":"...","category_name":"...","karat":"21K","metal_color":"yellow","style":[],"gemstones":[],"description_ar":"..."}\n\n` +
+    `القيم المسموحة:\n` +
+    `- karat: 18K, 21K, 22K, 24K, ألماس, فضة, أخرى, null\n` +
+    `- metal_color: yellow, white, rose, mixed, null\n` +
+    `- category_name يطابق واحدة من: ${catList} أو null\n\n` +
+    `قواعد:\n` +
+    `- السطح الأبيض اللامع بدون أحجار مقطّعة شفافة = ذهب أبيض (18K/21K)، ليس ألماس.\n` +
+    `- "ألماس" فقط عند رؤية أحجار شفافة لها facets واضحة.\n` +
+    `- القطع الصفراء الليبية الافتراضي 21K.`;
+
+  const body = {
+    model: "meta-llama/llama-4-scout-17b-16e-instruct",
+    messages: [
+      { role: "system", content: systemPrompt },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "حلّل هذه القطعة وأعد JSON فقط." },
+          {
+            type: "image_url",
+            image_url: { url: `data:${mimeType};base64,${imageBase64}` },
+          },
+        ],
+      },
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0.2,
+    max_tokens: 800,
+  };
+
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error("Groq error", res.status, text);
+    throw Object.assign(new Error(text || `Groq ${res.status}`), { status: res.status });
+  }
+
+  const data = await res.json();
+  const raw = data?.choices?.[0]?.message?.content ?? "{}";
+  try {
+    return JSON.parse(raw) as JewelryAnalysis;
+  } catch {
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (m) return JSON.parse(m[0]);
+    throw new Error("Groq returned invalid JSON");
+  }
+}
+
+/**
  * Embedding call: 1536-dim vector matching product_images.ai_embedding.
  */
 export async function embedText(text: string): Promise<number[]> {
