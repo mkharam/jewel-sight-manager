@@ -131,7 +131,11 @@ export default function BulkImport() {
           const msg = e?.message ?? "فشل التحليل";
           if (msg.includes("429") || msg.toLowerCase().includes("rate") || msg.includes("مشغول")) {
             attempts++;
-            await new Promise((r) => setTimeout(r, 15000));
+            if (attempts >= 3) {
+              setError(it, "تم تجاوز حد الذكاء الاصطناعي مؤقتاً — جرّب لاحقاً");
+              break;
+            }
+            await new Promise((r) => setTimeout(r, 20000));
             continue;
           }
           setError(it, msg);
