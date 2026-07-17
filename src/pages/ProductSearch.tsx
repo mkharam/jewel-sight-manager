@@ -284,14 +284,28 @@ export default function ProductSearch() {
         )}
       </div>
 
-      {similarIds !== null && (
+      {similarIds !== null && similarityBuckets && (
         <div className="flex items-center justify-between rounded-xl bg-gold-soft border border-primary/20 px-3 py-2">
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex items-center gap-2 text-sm flex-wrap">
             <Sparkles className="size-4 text-primary" />
-            <span className="font-semibold">قطع مشابهة بالصورة</span>
-            <span className="text-muted-foreground text-xs">({similarIds.length} نتيجة)</span>
+            <span className="font-semibold">بحث بالصورة</span>
+            {similarityBuckets.exact.length > 0 && (
+              <span className="px-2 py-0.5 rounded-full bg-green-600 text-white text-[10px] font-bold">
+                🎯 {similarityBuckets.exact.length} مطابقة
+              </span>
+            )}
+            {similarityBuckets.veryHigh.length > 0 && (
+              <span className="px-2 py-0.5 rounded-full bg-primary/20 text-primary text-[10px] font-bold">
+                ✨ {similarityBuckets.veryHigh.length} شبه مطابقة
+              </span>
+            )}
+            {similarityBuckets.similar.length > 0 && (
+              <span className="px-2 py-0.5 rounded-full bg-muted text-foreground text-[10px] font-semibold">
+                📌 {similarityBuckets.similar.length} مقاربة
+              </span>
+            )}
           </div>
-          <Button size="sm" variant="ghost" onClick={() => setSimilarIds(null)}>
+          <Button size="sm" variant="ghost" onClick={() => setSimilarMatches(null)}>
             <X className="size-4 ml-1" /> إلغاء
           </Button>
         </div>
@@ -314,6 +328,38 @@ export default function ProductSearch() {
             <div key={i} className="aspect-square rounded-xl bg-muted animate-pulse" />
           ))}
         </div>
+      ) : similarityBuckets ? (
+        <div className="space-y-5">
+          {similarityBuckets.exact.length > 0 && (
+            <SimilaritySection
+              title="🎯 قطع مطابقة تماماً"
+              subtitle="نفس القطعة موجودة في مخزون آخر"
+              tone="success"
+              products={similarityBuckets.exact}
+            />
+          )}
+          {similarityBuckets.veryHigh.length > 0 && (
+            <SimilaritySection
+              title="✨ قطع شبه مطابقة"
+              subtitle="تصميم قريب جداً — قد يهم العميل"
+              tone="primary"
+              products={similarityBuckets.veryHigh}
+            />
+          )}
+          {similarityBuckets.similar.length > 0 && (
+            <SimilaritySection
+              title="📌 قطع مقاربة في الشكل"
+              subtitle="بديل محتمل"
+              tone="muted"
+              products={similarityBuckets.similar}
+            />
+          )}
+          {similarityBuckets.exact.length === 0 && similarityBuckets.veryHigh.length === 0 && similarityBuckets.similar.length === 0 && (
+            <div className="text-center py-16 bg-muted/30 rounded-xl">
+              <p className="text-muted-foreground">لم نعثر على قطع مشابهة. جرّب صورة أوضح أو أضف القطعة.</p>
+            </div>
+          )}
+        </div>
       ) : products && products.length > 0 ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           {products.map((p: any) => <ProductCard key={p.id} product={p} />)}
@@ -323,6 +369,48 @@ export default function ProductSearch() {
           <p className="text-muted-foreground">لا توجد نتائج. جرّب تعديل البحث أو إضافة منتج جديد.</p>
         </div>
       )}
+    </div>
+  );
+}
+
+function SimilaritySection({
+  title,
+  subtitle,
+  tone,
+  products,
+}: {
+  title: string;
+  subtitle: string;
+  tone: "success" | "primary" | "muted";
+  products: any[];
+}) {
+  const badgeCls =
+    tone === "success"
+      ? "bg-green-600 text-white"
+      : tone === "primary"
+      ? "bg-gold-gradient text-primary-foreground"
+      : "bg-muted text-foreground";
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-2 px-1">
+        <h3 className="text-sm font-bold flex items-center gap-2">
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${badgeCls}`}>{products.length}</span>
+          {title}
+        </h3>
+        <span className="text-[11px] text-muted-foreground">{subtitle}</span>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        {products.map((p: any) => (
+          <div key={p.id} className="relative">
+            <ProductCard product={p} />
+            {typeof p._sim === "number" && (
+              <span className="absolute top-1 left-1 z-10 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/60 text-white backdrop-blur">
+                {Math.round(p._sim * 100)}%
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
