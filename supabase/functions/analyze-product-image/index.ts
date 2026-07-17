@@ -83,7 +83,8 @@ async function analyzeWithGemini(params: {
   }
 }
 
-// يحاول Gemini المباشر أولاً (مجاني)، وعند فشله يستخدم Lovable AI Gateway كاحتياطي.
+// يحاول Gemini المباشر أولاً، وعند أي فشل من المزود (بما فيه 429/نفاد الرصيد)
+// يستخدم Lovable AI Gateway كاحتياطي حتى لا يتوقف الاستيراد.
 async function analyzeWithFallback(params: {
   imageBase64: string;
   mimeType: string;
@@ -95,8 +96,6 @@ async function analyzeWithFallback(params: {
     } catch (e) {
       const msg = (e as Error)?.message ?? "";
       const status = (e as any)?.status;
-      // 429 = rate limit → دع الواجهة تنتظر بدل التبديل
-      if (status === 429) throw e;
       console.warn("Gemini failed, falling back to Lovable Gateway:", status, msg.slice(0, 200));
     }
   }
@@ -163,6 +162,11 @@ Deno.serve(async (req) => {
     return json({ ...analysis, category_id: categoryId });
   } catch (e) {
     const { status, message } = friendlyError(e);
+    // لا نعيد HTTP 429 للمتصفح: استدعاء الدالة يعتبره Runtime Error وقد
+    // يقطع تدفق الواجهة. النتيجة المنظمة تسمح للواجهة بإعادة المحاولة بأمان.
+    if (status === 429) {
+      return json({ error: message, code: "AI_BUSY", retryable: true }, 200);
+    }
     return json({ error: message }, status);
   }
 });
