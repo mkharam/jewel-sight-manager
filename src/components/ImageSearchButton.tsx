@@ -15,15 +15,15 @@ interface Analysis {
   description_ar?: string;
 }
 
-interface Match {
+export interface PhotoMatch {
   product_id: string;
   similarity: number;
 }
 
 interface Props {
   categories?: { id: string; name: string }[];
-  /** Called with product IDs ordered by similarity (best first). */
-  onResults: (payload: { productIds: string[]; analysis: Analysis }) => void;
+  /** Called with matches (with similarity scores) ordered best first. */
+  onResults: (payload: { matches: PhotoMatch[]; analysis: Analysis }) => void;
 }
 
 export default function ImageSearchButton({ categories, onResults }: Props) {
