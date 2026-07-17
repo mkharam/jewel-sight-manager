@@ -305,18 +305,32 @@ export default function BulkImport() {
                     {it.status === "uploading" ? "جارٍ الرفع…" : it.status === "pending" ? "بانتظار التحليل…" : "جارٍ التحليل…"}
                   </p>
                 )}
-                {it.status === "error" && <p className="text-xs text-destructive">⚠️ {it.error}</p>}
+                {it.status === "error" && (
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs text-destructive flex-1">⚠️ {it.error}</p>
+                    <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => retryOne(it)}>
+                      <RotateCw className="size-3 ml-1" /> إعادة
+                    </Button>
+                  </div>
+                )}
                 {it.status === "ready" && (
                   <>
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        id={`inc-${i}`}
-                        checked={it.include}
-                        onCheckedChange={(v) => updateItem(i, { include: !!v })}
-                      />
-                      <label htmlFor={`inc-${i}`} className="text-xs text-muted-foreground">
-                        تضمين في الحفظ
-                      </label>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id={`inc-${i}`}
+                          checked={it.include}
+                          onCheckedChange={(v) => updateItem(i, { include: !!v })}
+                        />
+                        <label htmlFor={`inc-${i}`} className="text-xs text-muted-foreground">
+                          تضمين في الحفظ
+                        </label>
+                      </div>
+                      {it.provider && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono">
+                          {it.provider}
+                        </span>
+                      )}
                     </div>
                     <Input
                       value={it.name}
