@@ -8,6 +8,7 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   analyzeJewelryImage,
+  analyzeJewelryImageGroq,
   analysisToEmbeddingText,
   embedText,
   friendlyError,
@@ -68,8 +69,7 @@ async function analyzeWithGemini(params: {
   if (!res.ok) {
     const text = await res.text();
     console.error("Gemini error", res.status, text);
-    const status = res.status;
-    throw Object.assign(new Error(text || `Gemini ${res.status}`), { status });
+    throw Object.assign(new Error(text || `Gemini ${res.status}`), { status: res.status });
   }
 
   const data = await res.json();
@@ -83,23 +83,33 @@ async function analyzeWithGemini(params: {
   }
 }
 
-// يحاول Gemini المباشر أولاً، وعند أي فشل من المزود (بما فيه 429/نفاد الرصيد)
-// يستخدم Lovable AI Gateway كاحتياطي حتى لا يتوقف الاستيراد.
+// سلسلة 3-مستويات: Gemini → Groq → Lovable AI Gateway
+// عند فشل أي مزود بـ 429/5xx ينتقل للمزود التالي تلقائياً.
 async function analyzeWithFallback(params: {
   imageBase64: string;
   mimeType: string;
   categoryNames: string[];
-}): Promise<JewelryAnalysis> {
-  if (getGeminiKey()) {
+}): Promise<{ analysis: JewelryAnalysis; provider: string }> {
+  const providers: Array<{ name: string; fn: () => Promise<JewelryAnalysis> }> = [];
+  if (getGeminiKey()) providers.push({ name: "gemini", fn: () => analyzeWithGemini(params) });
+  if (Deno.env.get("GROQ_API_KEY")) providers.push({ name: "groq", fn: () => analyzeJewelryImageGroq(params) });
+  providers.push({ name: "lovable", fn: () => analyzeJewelryImage(params) });
+
+  let lastErr: unknown = null;
+  for (const p of providers) {
     try {
-      return await analyzeWithGemini(params);
+      const analysis = await p.fn();
+      return { analysis, provider: p.name };
     } catch (e) {
-      const msg = (e as Error)?.message ?? "";
+      lastErr = e;
       const status = (e as any)?.status;
-      console.warn("Gemini failed, falling back to Lovable Gateway:", status, msg.slice(0, 200));
+      const msg = (e as Error)?.message?.slice(0, 200) ?? "";
+      console.warn(`Provider ${p.name} failed [${status}], trying next:`, msg);
+      // 400/401/403 = مشكلة مفتاح أو طلب — لا معنى للفشل نفسه على المزود التالي بنفس المشكلة
+      // لكن نستمر لأن كل مزود له مفتاحه الخاص
     }
   }
-  return await analyzeJewelryImage(params);
+  throw lastErr ?? new Error("All AI providers failed");
 }
 
 Deno.serve(async (req) => {
