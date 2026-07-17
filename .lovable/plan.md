@@ -1,65 +1,71 @@
-## هدف
+# الخطة: Groq fallback + بحث بالصورة محسّن
 
-توحيد صفحات الاستيراد في صفحة واحدة (رفع من الجهاز)، إلغاء صفحة العميل/الكشك، تحسين تحليل الصور لتفريق **الذهب الأبيض** عن **الألماس**، إضافة نظام **SKU** مرتبط بالفرع، وإنهاء اللمسات الأخيرة قبل النشر للموظفين.
-
----
-
-### 1) إلغاء صفحة العميل (Kiosk)
-- عدم بناء صفحة `/kiosk` أو دور `kiosk` — يتم إسقاط الميزة كلياً. (لم يُضف كود سابقاً — فقط إسقاط الفكرة.)
-
-### 2) توحيد صفحات الاستيراد في صفحة واحدة
-- **حذف** `src/pages/ImportProducts.tsx` (الاستيراد القديم).
-- **حذف** `src/pages/ImportSocial.tsx` بشكله الحالي.
-- **إنشاء** `src/pages/BulkImport.tsx` جديدة تستقبل فقط **مجلد أو صور من الجهاز** ثم تحلّلها بالذكاء الاصطناعي وتحفظها كمسودات قابلة للتصنيف لاحقاً.
-- **حذف** المسارات القديمة `/import` و `/import-social` من `App.tsx` وإبقاء مسار وحيد `/import` يشير إلى `BulkImport`.
-- **تحديث** روابط `AppLayout.tsx`: زر واحد فقط باسم "استيراد صور" بأيقونة رفع.
-- **حذف** edge function `social-fetch-images` (لم تعد مستخدمة).
-- **حذف** `social-analyze-image` واعتماد `analyze-product-image` كمحلل موحّد لجميع الصور (Lovable AI Gateway).
-
-### 3) تحسين المحلل: تمييز الذهب الأبيض من الألماس
-تحديث prompt و schema في `supabase/functions/_shared/lovable-ai.ts`:
-- إضافة حقل جديد `metal_color` (yellow / white / rose / mixed).
-- تحسين تعليمات karat:
-  - سطح لامع أبيض/فضي بدون أحجار بارزة ⇒ ذهب أبيض 18K/21K (**ليس ألماس**).
-  - "ألماس" تُستخدم فقط عندما تظهر **أحجار كريمة شفافة مقطّعة (facets)** مثبتة في القطعة.
-  - "فضة" فقط إذا كان الطراز واضح فضي (تصميم/ختم).
-- schema يجبر النموذج على ذكر سبب مختصر في `description_ar` عند اختيار "ألماس".
-- تحديث `analysisToEmbeddingText` ليشمل `metal_color` لتحسين البحث بالصورة.
-
-### 4) نظام SKU مرتبط بالفرع
-- إضافة عمود `code TEXT` لجدول `branches` (رمز مختصر مثل JRB, AND, BNS, NFL, QDS) وتعبئته للفروع الحالية.
-- في `ProductForm.tsx` عند حفظ منتج جديد، توليد SKU تلقائي بصيغة:
-  - `{BRANCH_CODE}-{CAT}-{YYMM}-{SEQ4}` مثال: `JRB-RNG-2607-0018`.
-  - CAT = أول 3 أحرف لاتينية من `category.name_en` أو أول 3 من الاسم.
-  - SEQ4 = عدّاد شهري لكل فرع (count منتجات الفرع في الشهر + 1، مبطّن بأصفار).
-- إظهار SKU في `ProductCard` وصفحة `ProductDetail`.
-
-### 5) اللمسات الأخيرة للنشر
-- تنظيف imports غير المستخدمة في `App.tsx` و `AppLayout.tsx`.
-- إزالة أي مراجع لـ Firecrawl/Instagram/Facebook من الواجهة والنصوص.
-- التأكد من مسح فحص الأمان (`security--get_scan_results`) قبل الطلب من المستخدم زر النشر.
-- إبقاء أدوار Staff كما هي (admin/manager/employee) بدون kiosk.
+## الهدف
+1. لا تظهر أخطاء rate limit أثناء استيراد دفعات كبيرة.
+2. عند البحث بصورة: يعرض الموظف "قطعة مطابقة" أو "قطع مشابهة" بترتيب وضوح.
 
 ---
 
-## ملخص الملفات
+## الجزء 1: نظام 3-مستويات للتحليل (استيراد بدون أخطاء)
 
-**حذف:**
-- `src/pages/ImportProducts.tsx`
-- `src/pages/ImportSocial.tsx`
-- `supabase/functions/social-fetch-images/`
-- `supabase/functions/social-analyze-image/`
+### طلب مفتاح Groq
+- تسجيل مجاني في console.groq.com → إنشاء API Key.
+- حفظه كـ `GROQ_API_KEY` عبر `add_secret`.
+- الحد المجاني: **30 طلب/دقيقة، 14,400/يوم** (ضعف Gemini).
 
-**إنشاء:**
-- `src/pages/BulkImport.tsx`
+### تعديل `analyze-product-image` edge function
+سلسلة fallback تلقائية عند فشل أي مزود بـ 429/5xx:
 
-**تعديل:**
-- `src/App.tsx` — تنظيف المسارات.
-- `src/components/AppLayout.tsx` — تنظيف روابط التنقل.
-- `src/pages/ProductForm.tsx` — توليد SKU تلقائي.
-- `src/components/ProductCard.tsx` + `src/pages/ProductDetail.tsx` — إظهار SKU.
-- `supabase/functions/_shared/lovable-ai.ts` — تحسين prompt/schema.
-- `supabase/functions/analyze-product-image/index.ts` — دعم metal_color.
+```text
+1. Gemini (google/gemini-flash-latest)     ← الأساسي، أدق للعربية
+   ↓ فشل 429
+2. Groq (llama-3.2-90b-vision-preview)     ← احتياطي سريع
+   ↓ فشل 429
+3. Lovable AI Gateway (gemini-3-flash)     ← أخير، مضمون لكن يستهلك credits
+```
 
-**Migration:**
-- `ALTER TABLE branches ADD COLUMN code TEXT` + UPDATE للرموز.
+- لكل مزود schema JSON موحّد: `{ name_ar, category, karat, metal_color, description, weight_estimate }`.
+- توحيد الاستجابة قبل إرجاعها للـ frontend.
+
+### تحسين `BulkImport.tsx`
+- إبطاء التأخير من 4.5s → **2.5s** بين الصور (Groq يقبل 30 RPM = صورة كل 2s).
+- عند فشل صورة: تظهر زر "إعادة محاولة" فقط لتلك الصورة بدل توقف الدفعة.
+- شارة تعرض المزود المستخدم لكل صورة (Gemini / Groq / Cloud).
+
+---
+
+## الجزء 2: تحسين البحث بالصورة
+
+الوضع الحالي: `image-search` يستخدم embeddings ويرجع قائمة قطع بترتيب similarity، لكن الموظف ما يعرف أيها **مطابقة** وأيها **مشابهة فقط**.
+
+### تصنيف النتائج بحسب درجة التشابه
+في `ProductSearch.tsx` عند نتائج البحث بالصورة:
+
+| Similarity | التصنيف | العرض |
+|---|---|---|
+| ≥ 0.92 | 🎯 **مطابقة تامة** | بانر أخضر: "قطعة مطابقة موجودة في فرع X" |
+| 0.80 - 0.92 | ✨ **مشابهة جداً** | قسم منفصل بعنوان "قطع شبه مطابقة" |
+| 0.65 - 0.80 | 📌 **مشابهة** | قسم "قطع مقاربة في الشكل" |
+| < 0.65 | يُستبعد | لا تُعرض |
+
+### تحسين `analyze-product-image` لحفظ embeddings أفضل
+- توليد embedding للصورة **بعد** التحليل (بدل قبل) — استخدام `google/gemini-embedding-2` مع النص العربي المولّد + الصورة معاً (multimodal input).
+- هذا يعطي vectors أدق لأنها تحمل معنى القطعة (سلسلة ذهب 21K) وليس فقط شكلها.
+
+### إضافة "أظهر تفاصيل التشابه"
+- عند فتح نتيجة مشابهة: مقارنة جنباً إلى جنب (صورة القطعة الأصلية | القطعة الموجودة) + الاختلافات المكتشفة (وزن، عيار، فرع، سعر آخر).
+
+---
+
+## الملفات المتأثرة
+- `supabase/functions/analyze-product-image/index.ts` — fallback chain
+- `supabase/functions/image-search/index.ts` — إرجاع similarity score لكل نتيجة
+- `src/pages/BulkImport.tsx` — تأخير أقل + retry لكل صورة
+- `src/pages/ProductSearch.tsx` — تصنيف النتائج بحسب similarity
+- `src/components/ImageSearchButton.tsx` — تمرير scores للـ UI
+- سر جديد: `GROQ_API_KEY`
+
+## الشيء المطلوب منك قبل البدء
+- إنشاء مفتاح Groq من https://console.groq.com/keys (مجاني، لا يحتاج بطاقة).
+
+بعد موافقتك على الخطة، سأطلب المفتاح ثم أنفّذ كل شي.
