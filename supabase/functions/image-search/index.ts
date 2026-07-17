@@ -57,9 +57,9 @@ Deno.serve(async (req) => {
         bestByProduct.set(m.product_id, { product_id: m.product_id, similarity: m.similarity });
       }
     }
-    const productMatches = Array.from(bestByProduct.values()).sort(
-      (a, b) => b.similarity - a.similarity,
-    );
+    const productMatches = Array.from(bestByProduct.values())
+      .filter((m) => m.similarity >= 0.55) // فلترة النتائج الضعيفة جداً
+      .sort((a, b) => b.similarity - a.similarity);
 
     return json({ analysis, matches: productMatches });
   } catch (e) {
