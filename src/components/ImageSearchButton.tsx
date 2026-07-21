@@ -32,14 +32,16 @@ export default function ImageSearchButton({ categories, onResults }: Props) {
   const [loading, setLoading] = useState(false);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [matches, setMatches] = useState<PhotoMatch[] | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const uploadRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
     setPreviewUrl(null);
     setAnalysis(null);
     setMatches(null);
     setLoading(false);
-    if (inputRef.current) inputRef.current.value = "";
+    if (uploadRef.current) uploadRef.current.value = "";
+    if (cameraRef.current) cameraRef.current.value = "";
   };
 
   const handleFile = async (file: File) => {
