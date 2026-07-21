@@ -217,6 +217,99 @@ export async function analyzeJewelryImageGroq(params: {
 }
 
 /**
+ * Direct Gemini vision call (uses GOOGLE_API_KEY or GEMINI_API_KEY).
+ * 1500 requests/day free tier, 15 RPM.
+ */
+export async function analyzeJewelryImageGemini(params: {
+  imageBase64: string;
+  mimeType: string;
+  categoryNames: string[];
+}): Promise<JewelryAnalysis> {
+  const raw = Deno.env.get("GOOGLE_API_KEY") ?? Deno.env.get("GEMINI_API_KEY") ?? "";
+  const key = raw.trim().replace(/^["']|["']$/g, "");
+  if (!key) throw Object.assign(new Error("GEMINI_API_KEY not set"), { status: 500 });
+
+  const { imageBase64, mimeType, categoryNames } = params;
+  const catList = categoryNames.length
+    ? categoryNames.join("، ")
+    : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
+
+  const systemPrompt =
+    `أنت خبير مجوهرات عربي. حلّل الصورة وأعد JSON فقط:\n` +
+    `{"name_ar": string, "category_name": string|null, "karat": "18K"|"21K"|"22K"|"24K"|"ألماس"|"فضة"|"أخرى"|null, "metal_color": "yellow"|"white"|"rose"|"mixed"|null, "style": string[], "gemstones": string[], "description_ar": string}\n\n` +
+    `قواعد: السطح الأبيض اللامع بدون أحجار مقطّعة = ذهب أبيض 18K/21K (ليس ألماس). ` +
+    `"ألماس" فقط عند رؤية أحجار شفافة لها facets. القطع الصفراء الليبية = 21K افتراضياً. ` +
+    `category_name يطابق واحدة من: ${catList} أو null.`;
+
+  const res = await fetch(
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-goog-api-key": key },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: [{
+          role: "user",
+          parts: [
+            { text: "حلّل هذه القطعة وأعد JSON فقط." },
+            { inlineData: { mimeType, data: imageBase64 } },
+          ],
+        }],
+        generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
+      }),
+    },
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error("Gemini error", res.status, text);
+    throw Object.assign(new Error(text || `Gemini ${res.status}`), { status: res.status });
+  }
+
+  const data = await res.json();
+  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+  try {
+    return JSON.parse(rawText) as JewelryAnalysis;
+  } catch {
+    const m = rawText.match(/\{[\s\S]*\}/);
+    if (m) return JSON.parse(m[0]);
+    throw new Error("Gemini returned invalid JSON");
+  }
+}
+
+/**
+ * 3-tier fallback: Gemini (best) → Groq (fast) → Lovable AI Gateway (guaranteed).
+ * Skips providers whose keys are missing. Returns which provider succeeded.
+ */
+export async function analyzeWithFallback(params: {
+  imageBase64: string;
+  mimeType: string;
+  categoryNames: string[];
+}): Promise<{ analysis: JewelryAnalysis; provider: string }> {
+  const providers: Array<{ name: string; fn: () => Promise<JewelryAnalysis> }> = [];
+  if (Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY")) {
+    providers.push({ name: "gemini", fn: () => analyzeJewelryImageGemini(params) });
+  }
+  if (Deno.env.get("GROQ_API_KEY")) {
+    providers.push({ name: "groq", fn: () => analyzeJewelryImageGroq(params) });
+  }
+  providers.push({ name: "lovable", fn: () => analyzeJewelryImage(params) });
+
+  let lastErr: unknown = null;
+  for (const p of providers) {
+    try {
+      const analysis = await p.fn();
+      return { analysis, provider: p.name };
+    } catch (e) {
+      lastErr = e;
+      const status = (e as any)?.status;
+      console.warn(`Provider ${p.name} failed [${status}], trying next`);
+    }
+  }
+  throw lastErr ?? new Error("All AI providers failed");
+}
+
+/**
  * Embedding call: 1536-dim vector matching product_images.ai_embedding.
  */
 export async function embedText(text: string): Promise<number[]> {
