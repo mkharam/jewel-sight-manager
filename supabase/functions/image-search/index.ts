@@ -9,7 +9,7 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   analysisToEmbeddingText,
-  analyzeJewelryImage,
+  analyzeWithFallback,
   embedText,
   friendlyError,
 } from "../_shared/lovable-ai.ts";
@@ -26,7 +26,7 @@ Deno.serve(async (req) => {
 
     if (!imageBase64) return json({ error: "imageBase64 required" }, 400);
 
-    const analysis = await analyzeJewelryImage({
+    const { analysis } = await analyzeWithFallback({
       imageBase64,
       mimeType,
       categoryNames: categories.map((c) => c.name),
