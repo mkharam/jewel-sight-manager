@@ -32,14 +32,16 @@ export default function ImageSearchButton({ categories, onResults }: Props) {
   const [loading, setLoading] = useState(false);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [matches, setMatches] = useState<PhotoMatch[] | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const uploadRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
     setPreviewUrl(null);
     setAnalysis(null);
     setMatches(null);
     setLoading(false);
-    if (inputRef.current) inputRef.current.value = "";
+    if (uploadRef.current) uploadRef.current.value = "";
+    if (cameraRef.current) cameraRef.current.value = "";
   };
 
   const handleFile = async (file: File) => {
@@ -124,15 +126,26 @@ export default function ImageSearchButton({ categories, onResults }: Props) {
 
           <div className="space-y-4">
             {!previewUrl ? (
-              <button
-                type="button"
-                onClick={() => inputRef.current?.click()}
-                className="w-full aspect-video rounded-xl border-2 border-dashed border-border hover:border-primary hover:bg-muted/30 transition flex flex-col items-center justify-center gap-2 text-muted-foreground"
-              >
-                <Upload className="size-8" />
-                <span className="text-sm font-medium">اضغط لرفع صورة أو التقاطها</span>
-                <span className="text-xs">JPG / PNG · حد أقصى 5 ميغابايت</span>
-              </button>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => uploadRef.current?.click()}
+                  className="aspect-square rounded-xl border-2 border-dashed border-border hover:border-primary hover:bg-muted/30 transition flex flex-col items-center justify-center gap-2 text-muted-foreground"
+                >
+                  <Upload className="size-8" />
+                  <span className="text-sm font-medium">رفع صورة</span>
+                  <span className="text-xs">من المعرض</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => cameraRef.current?.click()}
+                  className="aspect-square rounded-xl border-2 border-dashed border-border hover:border-primary hover:bg-muted/30 transition flex flex-col items-center justify-center gap-2 text-muted-foreground"
+                >
+                  <Camera className="size-8" />
+                  <span className="text-sm font-medium">التقاط صورة</span>
+                  <span className="text-xs">من الكاميرا</span>
+                </button>
+              </div>
             ) : (
               <div className="relative">
                 <img src={previewUrl} alt="preview" className="w-full aspect-video object-contain rounded-xl bg-muted" />
@@ -148,7 +161,17 @@ export default function ImageSearchButton({ categories, onResults }: Props) {
             )}
 
             <input
-              ref={inputRef}
+              ref={uploadRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleFile(f);
+              }}
+            />
+            <input
+              ref={cameraRef}
               type="file"
               accept="image/*"
               capture="environment"
