@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -40,10 +40,15 @@ function loadSavedFilters(): Filters {
   }
 }
 
+const PAGE_SIZE = 48;
+
 export default function ProductSearch() {
   const { profile, roles } = useAuth();
   const [filters, setFilters] = useState<Filters>(loadSavedFilters);
   const [debounced, setDebounced] = useState(filters);
+  const [pages, setPages] = useState(1); // كم صفحة تم تحميلها
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
@@ -57,10 +62,25 @@ export default function ProductSearch() {
   useEffect(() => {
     const t = setTimeout(() => {
       setDebounced(filters);
+      setPages(1); // reset pagination on filter change
       try { localStorage.setItem(SAVED_FILTERS_KEY, JSON.stringify(filters)); } catch {}
     }, 250);
     return () => clearTimeout(t);
   }, [filters]);
+
+  // اختصار: اضغط "/" لتركيز شريط البحث بسرعة
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      e.preventDefault();
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
@@ -76,18 +96,17 @@ export default function ProductSearch() {
   const [similarMatches, setSimilarMatches] = useState<{ product_id: string; similarity: number }[] | null>(null);
   const similarIds = useMemo(() => similarMatches?.map((m) => m.product_id) ?? null, [similarMatches]);
 
-  const { data: products, isLoading } = useQuery({
-    queryKey: ["products", debounced, similarIds],
+  const { data: products, isLoading, isFetching } = useQuery({
+    queryKey: ["products", debounced, similarIds, similarIds ? 0 : pages],
     queryFn: async () => {
       let q = supabase
         .from("products")
-        .select("id,name,sku,karat,weight_grams,ring_size,sale_price,promo_price,status,branch_id,branch:branches(name),category:categories(name),images:product_images(storage_path,is_primary)")
-        .limit(120);
+        .select("id,name,sku,karat,weight_grams,ring_size,sale_price,promo_price,status,branch_id,branch:branches(name),category:categories(name),images:product_images(storage_path,is_primary)");
 
       if (similarIds && similarIds.length > 0) {
-        q = q.in("id", similarIds);
+        q = q.in("id", similarIds).limit(120);
       } else {
-        q = q.order("created_at", { ascending: false });
+        q = q.order("created_at", { ascending: false }).range(0, pages * PAGE_SIZE - 1);
         if (debounced.q) q = q.or(`name.ilike.%${debounced.q}%,sku.ilike.%${debounced.q}%,description.ilike.%${debounced.q}%`);
         if (debounced.karat !== "all") q = q.eq("karat", debounced.karat);
         if (debounced.branchId !== "all") q = q.eq("branch_id", debounced.branchId);
@@ -107,7 +126,22 @@ export default function ProductSearch() {
       }
       return data ?? [];
     },
+    placeholderData: (prev) => prev,
   });
+
+  // هل يمكن تحميل المزيد؟ (يقتصر على البحث العادي، ليس على بحث الصورة)
+  const hasMore = !similarIds && (products?.length ?? 0) >= pages * PAGE_SIZE;
+
+  // Infinite scroll — عند اقتراب حافة الصفحة، حمّل الصفحة التالية
+  useEffect(() => {
+    if (!sentinelRef.current || !hasMore || isFetching) return;
+    const el = sentinelRef.current;
+    const io = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) setPages((p) => p + 1);
+    }, { rootMargin: "600px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasMore, isFetching]);
 
   // Group products by similarity bucket when in photo-search mode
   const similarityBuckets = useMemo(() => {
