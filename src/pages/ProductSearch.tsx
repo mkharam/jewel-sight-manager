@@ -199,10 +199,12 @@ export default function ProductSearch() {
             <div className="relative flex-1">
               <SearchIcon className="absolute right-3 top-1/2 -translate-y-1/2 size-5 text-muted-foreground" />
               <Input
-                placeholder="ابحث: خاتم، سلسلة، 21K..."
+                ref={searchInputRef}
+                placeholder="ابحث: خاتم، سلسلة، 21K... (اضغط / للتركيز)"
                 value={filters.q}
                 onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
                 className="pr-10 pl-10 h-12 text-base bg-card border-0 shadow-card"
+                enterKeyHint="search"
               />
               {filters.q && (
                 <button
@@ -395,9 +397,19 @@ export default function ProductSearch() {
           )}
         </div>
       ) : products && products.length > 0 ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {products.map((p: any) => <ProductCard key={p.id} product={p} />)}
-        </div>
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {products.map((p: any) => <ProductCard key={p.id} product={p} />)}
+          </div>
+          {hasMore && (
+            <div ref={sentinelRef} className="py-6 flex items-center justify-center text-xs text-muted-foreground">
+              {isFetching ? "جارٍ تحميل المزيد…" : "مرّر للأسفل لتحميل المزيد"}
+            </div>
+          )}
+          {!hasMore && !similarIds && (products?.length ?? 0) > PAGE_SIZE && (
+            <p className="text-center text-xs text-muted-foreground py-4">— لا مزيد من النتائج —</p>
+          )}
+        </>
       ) : (
         <div className="text-center py-16 bg-muted/30 rounded-xl">
           <p className="text-muted-foreground">لا توجد نتائج. جرّب تعديل البحث أو إضافة منتج جديد.</p>
