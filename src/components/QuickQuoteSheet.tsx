@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -19,6 +19,21 @@ interface Props {
   fullWidthButton?: boolean;
 }
 
+// عملاء متكررون — يُخزَّنون محلياً لتجنب إعادة الكتابة
+const RECENT_CUSTOMERS_KEY = "lamaa.recentCustomers.v1";
+type RecentCustomer = { name: string; phone: string };
+function loadRecentCustomers(): RecentCustomer[] {
+  try { return JSON.parse(localStorage.getItem(RECENT_CUSTOMERS_KEY) ?? "[]"); } catch { return []; }
+}
+function pushRecentCustomer(c: RecentCustomer) {
+  if (!c.name && !c.phone) return;
+  const list = loadRecentCustomers();
+  const key = (x: RecentCustomer) => `${x.phone || ""}|${x.name || ""}`.toLowerCase();
+  const k = key(c);
+  const next = [c, ...list.filter((x) => key(x) !== k)].slice(0, 50);
+  try { localStorage.setItem(RECENT_CUSTOMERS_KEY, JSON.stringify(next)); } catch {}
+}
+
 export default function QuickQuoteSheet({ productId, productName, branchId, trigger, fullWidthButton }: Props) {
   const { user, profile } = useAuth();
   const qc = useQueryClient();
@@ -28,6 +43,7 @@ export default function QuickQuoteSheet({ productId, productName, branchId, trig
   const [phone, setPhone] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const recentCustomers = useMemo(() => (open ? loadRecentCustomers() : []), [open]);
 
   const myBranchId = profile?.branch_id ?? branchId ?? null;
 
@@ -77,6 +93,7 @@ export default function QuickQuoteSheet({ productId, productName, branchId, trig
       entity_id: productId,
       details: { price: p, customer: name },
     });
+    pushRecentCustomer({ name: name.trim(), phone: phone.trim() });
     toast.success("تم تسجيل السعر");
     setPrice(""); setName(""); setPhone(""); setNotes("");
     setOpen(false);
@@ -146,12 +163,51 @@ export default function QuickQuoteSheet({ productId, productName, branchId, trig
           <div className="grid grid-cols-2 gap-2">
             <div>
               <Label>اسم العميل</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
+              <Input
+                value={name}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setName(v);
+                  // ملء الهاتف تلقائياً إن كان الاسم متطابقاً مع عميل سابق
+                  if (!phone) {
+                    const hit = recentCustomers.find((c) => c.name && c.name === v);
+                    if (hit?.phone) setPhone(hit.phone);
+                  }
+                }}
+                maxLength={100}
+                list="lamaa-recent-customer-names"
+                autoComplete="off"
+              />
             </div>
             <div>
               <Label>الهاتف</Label>
-              <Input value={phone} onChange={(e) => setPhone(e.target.value)} maxLength={30} dir="ltr" inputMode="tel" />
+              <Input
+                value={phone}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setPhone(v);
+                  if (!name) {
+                    const hit = recentCustomers.find((c) => c.phone && c.phone === v);
+                    if (hit?.name) setName(hit.name);
+                  }
+                }}
+                maxLength={30}
+                dir="ltr"
+                inputMode="tel"
+                list="lamaa-recent-customer-phones"
+                autoComplete="off"
+              />
             </div>
+            <datalist id="lamaa-recent-customer-names">
+              {recentCustomers.filter((c) => c.name).slice(0, 30).map((c, i) => (
+                <option key={`n-${i}`} value={c.name}>{c.phone}</option>
+              ))}
+            </datalist>
+            <datalist id="lamaa-recent-customer-phones">
+              {recentCustomers.filter((c) => c.phone).slice(0, 30).map((c, i) => (
+                <option key={`p-${i}`} value={c.phone}>{c.name}</option>
+              ))}
+            </datalist>
           </div>
           <div>
             <Label>ملاحظات</Label>
