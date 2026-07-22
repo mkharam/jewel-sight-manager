@@ -318,7 +318,7 @@ export default function ProductForm() {
       <form onSubmit={submit} className="space-y-4">
         <Card className="p-5 space-y-4">
           <Field label="اسم القطعة *" aiHint={aiApplied.has("name")}>
-            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required maxLength={150} />
+            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required maxLength={150} autoFocus={!editing} />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="الفئة" aiHint={aiApplied.has("category_id")}>
@@ -343,7 +343,7 @@ export default function ProductForm() {
               </Select>
             </Field>
             <Field label="الوزن (غ)">
-              <Input type="number" step="0.001" value={form.weight_grams} onChange={(e) => setForm({ ...form, weight_grams: e.target.value })} dir="ltr" />
+              <Input type="number" step="0.001" inputMode="decimal" value={form.weight_grams} onChange={(e) => setForm({ ...form, weight_grams: e.target.value })} dir="ltr" />
             </Field>
             <Field label="المقاس">
               <Input value={form.ring_size} onChange={(e) => setForm({ ...form, ring_size: e.target.value })} maxLength={20} dir="ltr" />
@@ -377,9 +377,9 @@ export default function ProductForm() {
         <Card className="p-5 space-y-4">
           <h2 className="font-bold">الأسعار</h2>
           <div className="grid grid-cols-3 gap-3">
-            <Field label="التكلفة"><Input type="number" step="0.01" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} dir="ltr" /></Field>
-            <Field label="سعر البيع"><Input type="number" step="0.01" value={form.sale_price} onChange={(e) => setForm({ ...form, sale_price: e.target.value })} dir="ltr" /></Field>
-            <Field label="سعر العرض"><Input type="number" step="0.01" value={form.promo_price} onChange={(e) => setForm({ ...form, promo_price: e.target.value })} dir="ltr" /></Field>
+            <Field label="التكلفة"><Input type="number" step="0.01" inputMode="decimal" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} dir="ltr" /></Field>
+            <Field label="سعر البيع"><Input type="number" step="0.01" inputMode="decimal" value={form.sale_price} onChange={(e) => setForm({ ...form, sale_price: e.target.value })} dir="ltr" /></Field>
+            <Field label="سعر العرض"><Input type="number" step="0.01" inputMode="decimal" value={form.promo_price} onChange={(e) => setForm({ ...form, promo_price: e.target.value })} dir="ltr" /></Field>
           </div>
         </Card>
 
