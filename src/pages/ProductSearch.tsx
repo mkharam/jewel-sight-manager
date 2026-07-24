@@ -500,7 +500,16 @@ export default function ProductSearch() {
       ) : products && products.length > 0 ? (
         <>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {products.map((p: any) => <ProductCard key={p.id} product={p} />)}
+            {products.map((p: any) => (
+              <ProductCard
+                key={p.id}
+                product={p}
+                selectable={selectionMode}
+                selected={selectedIds.has(p.id)}
+                onToggleSelect={toggleSelect}
+                onStatusChanged={refreshProducts}
+              />
+            ))}
           </div>
           {hasMore && (
             <div ref={sentinelRef} className="py-6 flex items-center justify-center text-xs text-muted-foreground">
