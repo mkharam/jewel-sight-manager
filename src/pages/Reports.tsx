@@ -273,6 +273,91 @@ export default function Reports() {
         <StatCard icon={<Package className="size-4" />} label="قطع جديدة أُضيفت" value={fmt(totals.newProducts)} />
       </div>
 
+      {/* Live inventory snapshot — قيمة المخزون الحالية + القطع الراكدة */}
+      <div className="rounded-2xl bg-gold-soft border border-primary/20 p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Package className="size-4 text-primary" />
+          <h2 className="font-bold text-sm">جرد المخزون الحالي (المتوفر)</h2>
+          <span className="text-[11px] text-muted-foreground mr-auto">لحظي — لا يتأثر بالشهر المختار</span>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <StatCard icon={<Package className="size-4" />} label="قطع متوفرة" value={fmt(inventoryTotals.count)} />
+          <StatCard icon={<DollarSign className="size-4" />} label="قيمة البيع الإجمالية" value={`${fmt(inventoryTotals.valueSale)} د.ل`} />
+          <StatCard icon={<DollarSign className="size-4" />} label="قيمة التكلفة" value={`${fmt(inventoryTotals.valueCost)} د.ل`} />
+          <StatCard icon={<AlertTriangle className="size-4" />} label="راكد +180 يوم" value={fmt(inventoryTotals.stale)} />
+        </div>
+      </div>
+
+      {/* Aging report per branch */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Clock className="size-4 text-primary" />
+            القطع الراكدة حسب الفرع
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>الفرع</TableHead>
+                <TableHead className="text-center">إجمالي متوفر</TableHead>
+                <TableHead className="text-center">أقل من 60 يوم</TableHead>
+                <TableHead className="text-center">60 - 90</TableHead>
+                <TableHead className="text-center text-amber-600">90 - 180</TableHead>
+                <TableHead className="text-center text-destructive">أكثر من 180</TableHead>
+                <TableHead className="text-center">قيمة البيع (د.ل)</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {inventoryByBranch.map((r) => (
+                <TableRow key={r.branch_id}>
+                  <TableCell className="font-semibold">{r.name}</TableCell>
+                  <TableCell className="text-center">{fmt(r.count)}</TableCell>
+                  <TableCell className="text-center">{fmt(r.age60)}</TableCell>
+                  <TableCell className="text-center">{fmt(r.age90)}</TableCell>
+                  <TableCell className="text-center text-amber-600 font-semibold">{fmt(r.age180)}</TableCell>
+                  <TableCell className="text-center text-destructive font-bold">{fmt(r.agePlus)}</TableCell>
+                  <TableCell className="text-center font-mono">{fmt(r.valueSale)}</TableCell>
+                </TableRow>
+              ))}
+              {inventoryByBranch.length === 0 && (
+                <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">لا يوجد مخزون متوفر</TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* Top stalest pieces to prioritize for sale / transfer */}
+      {stalestPieces.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <AlertTriangle className="size-4 text-destructive" />
+              أقدم 10 قطع راكدة (اقتراح للبيع أو النقل)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="max-h-80 overflow-y-auto">
+            <ul className="space-y-2 text-sm">
+              {stalestPieces.map((p: any) => (
+                <li key={p.id} className="flex justify-between items-center border-b border-border/60 pb-1">
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{p.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {p.sku ?? "—"} · {branches.find((b) => b.id === p.branch_id)?.name ?? "—"}
+                    </p>
+                  </div>
+                  <span className="text-xs px-2 py-1 rounded bg-destructive/10 text-destructive font-bold whitespace-nowrap">
+                    {p.days} يوم
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader><CardTitle className="text-base">ملخص كل فرع</CardTitle></CardHeader>
         <CardContent className="overflow-x-auto">
