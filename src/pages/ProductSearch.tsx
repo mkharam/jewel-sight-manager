@@ -45,10 +45,67 @@ const PAGE_SIZE = 48;
 
 export default function ProductSearch() {
   const { profile, roles } = useAuth();
+  const queryClient = useQueryClient();
   const [filters, setFilters] = useState<Filters>(loadSavedFilters);
   const [debounced, setDebounced] = useState(filters);
   const [pages, setPages] = useState(1); // كم صفحة تم تحميلها
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  // Bulk selection mode
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState<ProductStatus | "">("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const isAdmin = roles.includes("admin");
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const clearSelection = () => setSelectedIds(new Set());
+  const exitSelection = () => { setSelectionMode(false); clearSelection(); };
+
+  const refreshProducts = () => queryClient.invalidateQueries({ queryKey: ["products"] });
+
+  const applyBulkStatus = async () => {
+    if (!bulkStatus || selectedIds.size === 0) return;
+    setBulkBusy(true);
+    try {
+      const ids = Array.from(selectedIds);
+      const { error } = await supabase.from("products").update({ status: bulkStatus }).in("id", ids);
+      if (error) throw error;
+      toast.success(`تم تحديث ${ids.length} قطعة إلى: ${PRODUCT_STATUS[bulkStatus].label}`);
+      exitSelection();
+      setBulkStatus("");
+      refreshProducts();
+    } catch (e: any) {
+      toast.error(e.message ?? "تعذّر التحديث الجماعي");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const bulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`حذف ${selectedIds.size} قطعة نهائياً؟ لا يمكن التراجع.`)) return;
+    setBulkBusy(true);
+    try {
+      const ids = Array.from(selectedIds);
+      const { error } = await supabase.from("products").delete().in("id", ids);
+      if (error) throw error;
+      toast.success(`تم حذف ${ids.length} قطعة`);
+      exitSelection();
+      refreshProducts();
+    } catch (e: any) {
+      toast.error(e.message ?? "تعذّر الحذف");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const greeting = useMemo(() => {
