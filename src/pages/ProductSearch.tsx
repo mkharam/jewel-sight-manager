@@ -404,16 +404,60 @@ export default function ProductSearch() {
         </div>
       )}
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <p className="text-sm text-muted-foreground">
           {isLoading ? "جارٍ..." : `${products?.length ?? 0} نتيجة`}
+          {selectionMode && selectedIds.size > 0 && (
+            <span className="mr-2 text-primary font-semibold">· {selectedIds.size} محدّدة</span>
+          )}
         </p>
-        <Link to="/products/new">
-          <Button size="sm" className="bg-gold-gradient text-primary-foreground shadow-gold">
-            <Plus className="size-4 ml-1" /> إضافة قطعة
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant={selectionMode ? "default" : "outline"}
+            onClick={() => (selectionMode ? exitSelection() : setSelectionMode(true))}
+            className={selectionMode ? "bg-primary text-primary-foreground" : ""}
+          >
+            <CheckSquare className="size-4 ml-1" />
+            {selectionMode ? "إلغاء التحديد" : "تحديد متعدد"}
           </Button>
-        </Link>
+          <Link to="/products/new">
+            <Button size="sm" className="bg-gold-gradient text-primary-foreground shadow-gold">
+              <Plus className="size-4 ml-1" /> إضافة قطعة
+            </Button>
+          </Link>
+        </div>
       </div>
+
+      {/* Bulk actions bar — sticky when items selected */}
+      {selectionMode && selectedIds.size > 0 && (
+        <div className="sticky top-2 z-30 rounded-2xl bg-card border border-primary/30 shadow-elevated p-3 flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-semibold px-2">
+            {selectedIds.size} قطعة محدّدة
+          </span>
+          <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v as ProductStatus)}>
+            <SelectTrigger className="h-9 w-40">
+              <SelectValue placeholder="تغيير الحالة إلى…" />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(PRODUCT_STATUS).map(([k, v]) => (
+                <SelectItem key={k} value={k}>{v.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button size="sm" onClick={applyBulkStatus} disabled={!bulkStatus || bulkBusy}>
+            {bulkBusy ? <Loader2 className="size-4 animate-spin" /> : "تطبيق"}
+          </Button>
+          {isAdmin && (
+            <Button size="sm" variant="destructive" onClick={bulkDelete} disabled={bulkBusy}>
+              <Trash2 className="size-4 ml-1" /> حذف
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={clearSelection} disabled={bulkBusy}>
+            مسح التحديد
+          </Button>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
