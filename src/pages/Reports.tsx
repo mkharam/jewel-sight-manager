@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { BarChart3, Download, TrendingUp, ArrowLeftRight, Package, DollarSign } from "lucide-react";
+import { BarChart3, Download, TrendingUp, ArrowLeftRight, Package, DollarSign, Clock, AlertTriangle } from "lucide-react";
 
 type Branch = { id: string; name: string; code: string | null };
 
@@ -82,6 +82,18 @@ export default function Reports() {
     },
   });
 
+  // جميع القطع المتوفرة حالياً — للجرد الحيّ (قيمة المخزون + القطع الراكدة)
+  const { data: availableProducts = [] } = useQuery({
+    queryKey: ["report-inventory-snapshot"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("products")
+        .select("id, branch_id, sale_price, cost_price, created_at, name, sku")
+        .eq("status", "available");
+      return data ?? [];
+    },
+  });
+
   const summary = useMemo(() => {
     const map = new Map<string, {
       branch_id: string;
@@ -140,6 +152,64 @@ export default function Reports() {
       { quotes: 0, revenue: 0, transfersOut: 0, newProducts: 0 },
     );
   }, [summary]);
+
+  // Inventory value + aging (available stock only)
+  const inventoryByBranch = useMemo(() => {
+    const now = Date.now();
+    const map = new Map<string, {
+      branch_id: string;
+      name: string;
+      count: number;
+      valueSale: number;
+      valueCost: number;
+      age60: number;
+      age90: number;
+      age180: number;
+      agePlus: number;
+    }>();
+    for (const b of branches) {
+      map.set(b.id, {
+        branch_id: b.id, name: b.name, count: 0, valueSale: 0, valueCost: 0,
+        age60: 0, age90: 0, age180: 0, agePlus: 0,
+      });
+    }
+    for (const p of availableProducts as any[]) {
+      if (!p.branch_id) continue;
+      const row = map.get(p.branch_id);
+      if (!row) continue;
+      row.count += 1;
+      row.valueSale += Number(p.sale_price ?? 0);
+      row.valueCost += Number(p.cost_price ?? 0);
+      const days = (now - new Date(p.created_at).getTime()) / (1000 * 60 * 60 * 24);
+      if (days < 60) row.age60 += 1;
+      else if (days < 90) row.age90 += 1;
+      else if (days < 180) row.age180 += 1;
+      else row.agePlus += 1;
+    }
+    return Array.from(map.values());
+  }, [branches, availableProducts]);
+
+  const inventoryTotals = useMemo(() => {
+    return inventoryByBranch.reduce(
+      (acc, r) => ({
+        count: acc.count + r.count,
+        valueSale: acc.valueSale + r.valueSale,
+        valueCost: acc.valueCost + r.valueCost,
+        stale: acc.stale + r.age180 + r.agePlus,
+      }),
+      { count: 0, valueSale: 0, valueCost: 0, stale: 0 },
+    );
+  }, [inventoryByBranch]);
+
+  // Top 10 stalest available pieces (oldest first)
+  const stalestPieces = useMemo(() => {
+    const now = Date.now();
+    return [...(availableProducts as any[])]
+      .map((p) => ({ ...p, days: Math.floor((now - new Date(p.created_at).getTime()) / (1000 * 60 * 60 * 24)) }))
+      .filter((p) => p.days >= 90)
+      .sort((a, b) => b.days - a.days)
+      .slice(0, 10);
+  }, [availableProducts]);
 
   useEffect(() => {
     document.title = `جرد شهري | ${monthOptions.find((o) => o.value === month)?.label ?? ""}`;
@@ -202,6 +272,91 @@ export default function Reports() {
         <StatCard icon={<ArrowLeftRight className="size-4" />} label="تحويلات بين الفروع" value={fmt(totals.transfersOut)} />
         <StatCard icon={<Package className="size-4" />} label="قطع جديدة أُضيفت" value={fmt(totals.newProducts)} />
       </div>
+
+      {/* Live inventory snapshot — قيمة المخزون الحالية + القطع الراكدة */}
+      <div className="rounded-2xl bg-gold-soft border border-primary/20 p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Package className="size-4 text-primary" />
+          <h2 className="font-bold text-sm">جرد المخزون الحالي (المتوفر)</h2>
+          <span className="text-[11px] text-muted-foreground mr-auto">لحظي — لا يتأثر بالشهر المختار</span>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <StatCard icon={<Package className="size-4" />} label="قطع متوفرة" value={fmt(inventoryTotals.count)} />
+          <StatCard icon={<DollarSign className="size-4" />} label="قيمة البيع الإجمالية" value={`${fmt(inventoryTotals.valueSale)} د.ل`} />
+          <StatCard icon={<DollarSign className="size-4" />} label="قيمة التكلفة" value={`${fmt(inventoryTotals.valueCost)} د.ل`} />
+          <StatCard icon={<AlertTriangle className="size-4" />} label="راكد +180 يوم" value={fmt(inventoryTotals.stale)} />
+        </div>
+      </div>
+
+      {/* Aging report per branch */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Clock className="size-4 text-primary" />
+            القطع الراكدة حسب الفرع
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>الفرع</TableHead>
+                <TableHead className="text-center">إجمالي متوفر</TableHead>
+                <TableHead className="text-center">أقل من 60 يوم</TableHead>
+                <TableHead className="text-center">60 - 90</TableHead>
+                <TableHead className="text-center text-amber-600">90 - 180</TableHead>
+                <TableHead className="text-center text-destructive">أكثر من 180</TableHead>
+                <TableHead className="text-center">قيمة البيع (د.ل)</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {inventoryByBranch.map((r) => (
+                <TableRow key={r.branch_id}>
+                  <TableCell className="font-semibold">{r.name}</TableCell>
+                  <TableCell className="text-center">{fmt(r.count)}</TableCell>
+                  <TableCell className="text-center">{fmt(r.age60)}</TableCell>
+                  <TableCell className="text-center">{fmt(r.age90)}</TableCell>
+                  <TableCell className="text-center text-amber-600 font-semibold">{fmt(r.age180)}</TableCell>
+                  <TableCell className="text-center text-destructive font-bold">{fmt(r.agePlus)}</TableCell>
+                  <TableCell className="text-center font-mono">{fmt(r.valueSale)}</TableCell>
+                </TableRow>
+              ))}
+              {inventoryByBranch.length === 0 && (
+                <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">لا يوجد مخزون متوفر</TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* Top stalest pieces to prioritize for sale / transfer */}
+      {stalestPieces.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <AlertTriangle className="size-4 text-destructive" />
+              أقدم 10 قطع راكدة (اقتراح للبيع أو النقل)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="max-h-80 overflow-y-auto">
+            <ul className="space-y-2 text-sm">
+              {stalestPieces.map((p: any) => (
+                <li key={p.id} className="flex justify-between items-center border-b border-border/60 pb-1">
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{p.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {p.sku ?? "—"} · {branches.find((b) => b.id === p.branch_id)?.name ?? "—"}
+                    </p>
+                  </div>
+                  <span className="text-xs px-2 py-1 rounded bg-destructive/10 text-destructive font-bold whitespace-nowrap">
+                    {p.days} يوم
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader><CardTitle className="text-base">ملخص كل فرع</CardTitle></CardHeader>

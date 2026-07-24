@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store } from "lucide-react";
+import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store, CheckSquare, Trash2, Loader2 } from "lucide-react";
 import ProductCard from "@/components/ProductCard";
 import ImageSearchButton from "@/components/ImageSearchButton";
 import { PRODUCT_STATUS, KARAT_OPTIONS, ProductStatus } from "@/lib/constants";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 
 interface Filters {
   q: string;
@@ -44,11 +45,67 @@ const PAGE_SIZE = 48;
 
 export default function ProductSearch() {
   const { profile, roles } = useAuth();
+  const queryClient = useQueryClient();
   const [filters, setFilters] = useState<Filters>(loadSavedFilters);
   const [debounced, setDebounced] = useState(filters);
   const [pages, setPages] = useState(1); // كم صفحة تم تحميلها
   const searchInputRef = useRef<HTMLInputElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
+
+  // Bulk selection mode
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState<ProductStatus | "">("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const isAdmin = roles.includes("admin");
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const clearSelection = () => setSelectedIds(new Set());
+  const exitSelection = () => { setSelectionMode(false); clearSelection(); };
+
+  const refreshProducts = () => queryClient.invalidateQueries({ queryKey: ["products"] });
+
+  const applyBulkStatus = async () => {
+    if (!bulkStatus || selectedIds.size === 0) return;
+    setBulkBusy(true);
+    try {
+      const ids = Array.from(selectedIds);
+      const { error } = await supabase.from("products").update({ status: bulkStatus }).in("id", ids);
+      if (error) throw error;
+      toast.success(`تم تحديث ${ids.length} قطعة إلى: ${PRODUCT_STATUS[bulkStatus].label}`);
+      exitSelection();
+      setBulkStatus("");
+      refreshProducts();
+    } catch (e: any) {
+      toast.error(e.message ?? "تعذّر التحديث الجماعي");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const bulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`حذف ${selectedIds.size} قطعة نهائياً؟ لا يمكن التراجع.`)) return;
+    setBulkBusy(true);
+    try {
+      const ids = Array.from(selectedIds);
+      const { error } = await supabase.from("products").delete().in("id", ids);
+      if (error) throw error;
+      toast.success(`تم حذف ${ids.length} قطعة`);
+      exitSelection();
+      refreshProducts();
+    } catch (e: any) {
+      toast.error(e.message ?? "تعذّر الحذف");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
@@ -347,16 +404,60 @@ export default function ProductSearch() {
         </div>
       )}
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <p className="text-sm text-muted-foreground">
           {isLoading ? "جارٍ..." : `${products?.length ?? 0} نتيجة`}
+          {selectionMode && selectedIds.size > 0 && (
+            <span className="mr-2 text-primary font-semibold">· {selectedIds.size} محدّدة</span>
+          )}
         </p>
-        <Link to="/products/new">
-          <Button size="sm" className="bg-gold-gradient text-primary-foreground shadow-gold">
-            <Plus className="size-4 ml-1" /> إضافة قطعة
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant={selectionMode ? "default" : "outline"}
+            onClick={() => (selectionMode ? exitSelection() : setSelectionMode(true))}
+            className={selectionMode ? "bg-primary text-primary-foreground" : ""}
+          >
+            <CheckSquare className="size-4 ml-1" />
+            {selectionMode ? "إلغاء التحديد" : "تحديد متعدد"}
           </Button>
-        </Link>
+          <Link to="/products/new">
+            <Button size="sm" className="bg-gold-gradient text-primary-foreground shadow-gold">
+              <Plus className="size-4 ml-1" /> إضافة قطعة
+            </Button>
+          </Link>
+        </div>
       </div>
+
+      {/* Bulk actions bar — sticky when items selected */}
+      {selectionMode && selectedIds.size > 0 && (
+        <div className="sticky top-2 z-30 rounded-2xl bg-card border border-primary/30 shadow-elevated p-3 flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-semibold px-2">
+            {selectedIds.size} قطعة محدّدة
+          </span>
+          <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v as ProductStatus)}>
+            <SelectTrigger className="h-9 w-40">
+              <SelectValue placeholder="تغيير الحالة إلى…" />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(PRODUCT_STATUS).map(([k, v]) => (
+                <SelectItem key={k} value={k}>{v.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button size="sm" onClick={applyBulkStatus} disabled={!bulkStatus || bulkBusy}>
+            {bulkBusy ? <Loader2 className="size-4 animate-spin" /> : "تطبيق"}
+          </Button>
+          {isAdmin && (
+            <Button size="sm" variant="destructive" onClick={bulkDelete} disabled={bulkBusy}>
+              <Trash2 className="size-4 ml-1" /> حذف
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={clearSelection} disabled={bulkBusy}>
+            مسح التحديد
+          </Button>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -399,7 +500,16 @@ export default function ProductSearch() {
       ) : products && products.length > 0 ? (
         <>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {products.map((p: any) => <ProductCard key={p.id} product={p} />)}
+            {products.map((p: any) => (
+              <ProductCard
+                key={p.id}
+                product={p}
+                selectable={selectionMode}
+                selected={selectedIds.has(p.id)}
+                onToggleSelect={toggleSelect}
+                onStatusChanged={refreshProducts}
+              />
+            ))}
           </div>
           {hasMore && (
             <div ref={sentinelRef} className="py-6 flex items-center justify-center text-xs text-muted-foreground">
