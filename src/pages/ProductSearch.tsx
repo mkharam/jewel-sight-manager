@@ -106,7 +106,6 @@ export default function ProductSearch() {
       setBulkBusy(false);
     }
   };
-  const sentinelRef = useRef<HTMLDivElement>(null);
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
