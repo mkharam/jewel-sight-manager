@@ -82,6 +82,18 @@ export default function Reports() {
     },
   });
 
+  // جميع القطع المتوفرة حالياً — للجرد الحيّ (قيمة المخزون + القطع الراكدة)
+  const { data: availableProducts = [] } = useQuery({
+    queryKey: ["report-inventory-snapshot"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("products")
+        .select("id, branch_id, sale_price, cost_price, created_at, name, sku")
+        .eq("status", "available");
+      return data ?? [];
+    },
+  });
+
   const summary = useMemo(() => {
     const map = new Map<string, {
       branch_id: string;
