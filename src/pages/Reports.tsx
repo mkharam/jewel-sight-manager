@@ -153,6 +153,64 @@ export default function Reports() {
     );
   }, [summary]);
 
+  // Inventory value + aging (available stock only)
+  const inventoryByBranch = useMemo(() => {
+    const now = Date.now();
+    const map = new Map<string, {
+      branch_id: string;
+      name: string;
+      count: number;
+      valueSale: number;
+      valueCost: number;
+      age60: number;
+      age90: number;
+      age180: number;
+      agePlus: number;
+    }>();
+    for (const b of branches) {
+      map.set(b.id, {
+        branch_id: b.id, name: b.name, count: 0, valueSale: 0, valueCost: 0,
+        age60: 0, age90: 0, age180: 0, agePlus: 0,
+      });
+    }
+    for (const p of availableProducts as any[]) {
+      if (!p.branch_id) continue;
+      const row = map.get(p.branch_id);
+      if (!row) continue;
+      row.count += 1;
+      row.valueSale += Number(p.sale_price ?? 0);
+      row.valueCost += Number(p.cost_price ?? 0);
+      const days = (now - new Date(p.created_at).getTime()) / (1000 * 60 * 60 * 24);
+      if (days < 60) row.age60 += 1;
+      else if (days < 90) row.age90 += 1;
+      else if (days < 180) row.age180 += 1;
+      else row.agePlus += 1;
+    }
+    return Array.from(map.values());
+  }, [branches, availableProducts]);
+
+  const inventoryTotals = useMemo(() => {
+    return inventoryByBranch.reduce(
+      (acc, r) => ({
+        count: acc.count + r.count,
+        valueSale: acc.valueSale + r.valueSale,
+        valueCost: acc.valueCost + r.valueCost,
+        stale: acc.stale + r.age180 + r.agePlus,
+      }),
+      { count: 0, valueSale: 0, valueCost: 0, stale: 0 },
+    );
+  }, [inventoryByBranch]);
+
+  // Top 10 stalest available pieces (oldest first)
+  const stalestPieces = useMemo(() => {
+    const now = Date.now();
+    return [...(availableProducts as any[])]
+      .map((p) => ({ ...p, days: Math.floor((now - new Date(p.created_at).getTime()) / (1000 * 60 * 60 * 24)) }))
+      .filter((p) => p.days >= 90)
+      .sort((a, b) => b.days - a.days)
+      .slice(0, 10);
+  }, [availableProducts]);
+
   useEffect(() => {
     document.title = `جرد شهري | ${monthOptions.find((o) => o.value === month)?.label ?? ""}`;
   }, [month, monthOptions]);
