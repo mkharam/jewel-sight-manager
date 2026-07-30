@@ -249,7 +249,7 @@ export default function ProductSearch() {
               <Store className="size-3" />
               {myBranchName ?? "بدون فرع محدد"}
             </span>
-            <span className="text-[11px] text-primary-foreground/80">{roleLabel} · لمعة</span>
+            <span className="text-[11px] text-primary-foreground/80">{roleLabel} · مخرّم</span>
           </div>
 
           <div className="flex gap-2 mt-4">
