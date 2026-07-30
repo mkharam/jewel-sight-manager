@@ -89,7 +89,7 @@ export default function AppLayout() {
               <Sparkles className="size-4 sm:size-5 text-primary-foreground" />
             </div>
             <div className="leading-tight">
-              <h1 className="text-base sm:text-lg font-extrabold text-gold-gradient">لمعة</h1>
+              <h1 className="text-base sm:text-lg font-extrabold text-gold-gradient">مخرّم</h1>
               <p className="text-[9px] sm:text-[10px] text-muted-foreground -mt-0.5 hidden sm:block">إدارة المجوهرات</p>
             </div>
           </Link>

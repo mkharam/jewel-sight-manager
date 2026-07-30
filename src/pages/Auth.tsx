@@ -70,7 +70,7 @@ export default function Auth() {
           <div className="size-16 mx-auto rounded-2xl bg-gold-gradient flex items-center justify-center shadow-gold mb-3">
             <Sparkles className="size-8 text-primary-foreground" />
           </div>
-          <h1 className="text-3xl font-extrabold text-gold-gradient">لمعة</h1>
+          <h1 className="text-3xl font-extrabold text-gold-gradient">مخرّم</h1>
           <p className="text-sm text-muted-foreground mt-1">نظام إدارة محلات الذهب والمجوهرات</p>
         </div>
 
