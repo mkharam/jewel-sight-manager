@@ -339,11 +339,16 @@ export async function analyzeWithFallback(params: {
   if (Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY")) {
     all.push({ name: "gemini", fn: () => analyzeJewelryImageGemini(params) });
   }
+  // شبكة أمان أخيرة: Lovable AI (تستهلك أرصدة) حتى لا يتوقف النظام إن فشل المجاني
+  if (Deno.env.get("LOVABLE_API_KEY")) {
+    all.push({ name: "lovable", fn: () => analyzeJewelryImage(params) });
+  }
   if (!all.length) {
-    throw Object.assign(new Error("لا يوجد مفتاح ذكاء اصطناعي مجاني (GROQ_API_KEY أو GOOGLE_API_KEY)"), {
+    throw Object.assign(new Error("لا يوجد مفتاح ذكاء اصطناعي متاح"), {
       status: 500,
     });
   }
+
 
   const now = Date.now();
   const active = all.filter((p) => (cooldown.get(p.name) ?? 0) < now);
