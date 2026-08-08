@@ -278,10 +278,9 @@ export async function analyzeJewelryImageGemini(params: {
 }
 
 /**
- * Fallback chain. Lovable Gateway first (fastest + always available), then the
- * free keys as backup. Providers that fail with a hard error (quota exhausted,
- * bad key, missing model) are put on a 10-minute cooldown so we stop wasting
- * a round-trip per image on them — this is what made analysis feel slow.
+ * مجاني بالكامل: Groq أولاً (سريع جداً وحد مجاني كبير) ثم Gemini.
+ * لا يُستخدم Lovable Gateway هنا إطلاقاً حتى لا تُستهلك أي أرصدة.
+ * المزوّد الذي يفشل فشلاً صريحاً يُستبعد 10 دقائق لتسريع البقية.
  */
 const cooldown = new Map<string, number>();
 const COOLDOWN_MS = 10 * 60 * 1000;
@@ -292,14 +291,17 @@ export async function analyzeWithFallback(params: {
   mimeType: string;
   categoryNames: string[];
 }): Promise<{ analysis: JewelryAnalysis; provider: string }> {
-  const all: Array<{ name: string; fn: () => Promise<JewelryAnalysis> }> = [
-    { name: "lovable", fn: () => analyzeJewelryImage(params) },
-  ];
+  const all: Array<{ name: string; fn: () => Promise<JewelryAnalysis> }> = [];
+  if (Deno.env.get("GROQ_API_KEY")) {
+    all.push({ name: "groq", fn: () => analyzeJewelryImageGroq(params) });
+  }
   if (Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY")) {
     all.push({ name: "gemini", fn: () => analyzeJewelryImageGemini(params) });
   }
-  if (Deno.env.get("GROQ_API_KEY")) {
-    all.push({ name: "groq", fn: () => analyzeJewelryImageGroq(params) });
+  if (!all.length) {
+    throw Object.assign(new Error("لا يوجد مفتاح ذكاء اصطناعي مجاني (GROQ_API_KEY أو GOOGLE_API_KEY)"), {
+      status: 500,
+    });
   }
 
   const now = Date.now();
@@ -321,6 +323,7 @@ export async function analyzeWithFallback(params: {
   }
   throw lastErr ?? new Error("All AI providers failed");
 }
+
 
 
 /**
