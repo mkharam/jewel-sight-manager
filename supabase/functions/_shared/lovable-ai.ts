@@ -170,8 +170,33 @@ export async function analyzeJewelryImageGroq(params: {
     `- "ألماس" فقط عند رؤية أحجار شفافة لها facets واضحة.\n` +
     `- القطع الصفراء الليبية الافتراضي 21K.`;
 
-  const body = {
-    model: "meta-llama/llama-4-maverick-17b-128e-instruct",
+  // موديلات Groq القادرة على الرؤية، بالأفضلية — نكتشف المتاح لهذا المفتاح
+  const PREFERRED = [
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
+    "groq/compound",
+    "groq/compound-mini",
+    "qwen/qwen3.6-27b",
+  ];
+  let GROQ_VISION_MODELS = PREFERRED;
+  try {
+    const ml = await fetch("https://api.groq.com/openai/v1/models", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (ml.ok) {
+      const allIds: string[] = ((await ml.json())?.data ?? []).map((m: any) => String(m?.id ?? ""));
+      const available = PREFERRED.filter((m) => allIds.includes(m));
+      const extra = allIds.filter((id) => /vision|llama-4|scout|maverick|-vl|gemma-3/i.test(id) && !available.includes(id));
+      const list = [...available, ...extra];
+      console.log("Groq vision candidates:", list.join(", ") || "none");
+      if (list.length) GROQ_VISION_MODELS = list;
+    }
+  } catch (_e) { /* استخدم القائمة الافتراضية */ }
+
+
+
+  const makeBody = (model: string) => ({
+    model,
     messages: [
       { role: "system", content: systemPrompt },
       {
@@ -188,22 +213,32 @@ export async function analyzeJewelryImageGroq(params: {
     response_format: { type: "json_object" },
     temperature: 0.2,
     max_tokens: 800,
-  };
-
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify(body),
   });
 
-  if (!res.ok) {
-    const text = await res.text();
-    console.error("Groq error", res.status, text);
-    throw Object.assign(new Error(text || `Groq ${res.status}`), { status: res.status });
+  let res: Response | null = null;
+  let lastText = "";
+  let lastStatus = 500;
+  for (const model of GROQ_VISION_MODELS) {
+    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify(makeBody(model)),
+    });
+    if (r.ok) {
+      res = r;
+      break;
+    }
+    lastText = await r.text();
+    lastStatus = r.status;
+    console.error("Groq error", r.status, model, lastText);
+    // 404/400 = موديل غير متاح → جرّب التالي، غير ذلك أوقف
+    if (r.status !== 404 && r.status !== 400) break;
   }
+
+  if (!res) {
+    throw Object.assign(new Error(lastText || `Groq ${lastStatus}`), { status: lastStatus });
+  }
+
 
   const data = await res.json();
   const raw = data?.choices?.[0]?.message?.content ?? "{}";
@@ -291,18 +326,29 @@ export async function analyzeWithFallback(params: {
   mimeType: string;
   categoryNames: string[];
 }): Promise<{ analysis: JewelryAnalysis; provider: string }> {
+  // تنظيف: قبول data URL أو base64 خام
+  const m = /^data:([^;]+);base64,(.*)$/s.exec(params.imageBase64.trim());
+  if (m) params = { ...params, mimeType: m[1], imageBase64: m[2] };
+  params = { ...params, imageBase64: params.imageBase64.replace(/\s/g, "") };
+
   const all: Array<{ name: string; fn: () => Promise<JewelryAnalysis> }> = [];
+
   if (Deno.env.get("GROQ_API_KEY")) {
     all.push({ name: "groq", fn: () => analyzeJewelryImageGroq(params) });
   }
   if (Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY")) {
     all.push({ name: "gemini", fn: () => analyzeJewelryImageGemini(params) });
   }
+  // شبكة أمان أخيرة: Lovable AI (تستهلك أرصدة) حتى لا يتوقف النظام إن فشل المجاني
+  if (Deno.env.get("LOVABLE_API_KEY")) {
+    all.push({ name: "lovable", fn: () => analyzeJewelryImage(params) });
+  }
   if (!all.length) {
-    throw Object.assign(new Error("لا يوجد مفتاح ذكاء اصطناعي مجاني (GROQ_API_KEY أو GOOGLE_API_KEY)"), {
+    throw Object.assign(new Error("لا يوجد مفتاح ذكاء اصطناعي متاح"), {
       status: 500,
     });
   }
+
 
   const now = Date.now();
   const active = all.filter((p) => (cooldown.get(p.name) ?? 0) < now);
