@@ -170,8 +170,16 @@ export async function analyzeJewelryImageGroq(params: {
     `- "ألماس" فقط عند رؤية أحجار شفافة لها facets واضحة.\n` +
     `- القطع الصفراء الليبية الافتراضي 21K.`;
 
-  const body = {
-    model: "meta-llama/llama-4-maverick-17b-128e-instruct",
+  // موديلات رؤية Groq بالترتيب — نجرّب التالي إذا كان الموديل غير متاح للمفتاح
+  const GROQ_VISION_MODELS = [
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
+    "llama-3.2-90b-vision-preview",
+    "llama-3.2-11b-vision-preview",
+  ];
+
+  const makeBody = (model: string) => ({
+    model,
     messages: [
       { role: "system", content: systemPrompt },
       {
@@ -188,22 +196,32 @@ export async function analyzeJewelryImageGroq(params: {
     response_format: { type: "json_object" },
     temperature: 0.2,
     max_tokens: 800,
-  };
-
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify(body),
   });
 
-  if (!res.ok) {
-    const text = await res.text();
-    console.error("Groq error", res.status, text);
-    throw Object.assign(new Error(text || `Groq ${res.status}`), { status: res.status });
+  let res: Response | null = null;
+  let lastText = "";
+  let lastStatus = 500;
+  for (const model of GROQ_VISION_MODELS) {
+    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify(makeBody(model)),
+    });
+    if (r.ok) {
+      res = r;
+      break;
+    }
+    lastText = await r.text();
+    lastStatus = r.status;
+    console.error("Groq error", r.status, model, lastText);
+    // 404/400 = موديل غير متاح → جرّب التالي، غير ذلك أوقف
+    if (r.status !== 404 && r.status !== 400) break;
   }
+
+  if (!res) {
+    throw Object.assign(new Error(lastText || `Groq ${lastStatus}`), { status: lastStatus });
+  }
+
 
   const data = await res.json();
   const raw = data?.choices?.[0]?.message?.content ?? "{}";
