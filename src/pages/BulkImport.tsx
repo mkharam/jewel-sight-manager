@@ -146,7 +146,8 @@ export default function BulkImport() {
             setError(it, "كل المزودات مشغولة الآن — اضغط ↻ للإعادة");
             return;
           }
-          await new Promise((r) => setTimeout(r, 15000));
+          await new Promise((r) => setTimeout(r, 6000));
+
           continue;
         }
         setError(it, msg);
