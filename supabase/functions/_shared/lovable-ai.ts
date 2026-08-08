@@ -170,13 +170,32 @@ export async function analyzeJewelryImageGroq(params: {
     `- "ألماس" فقط عند رؤية أحجار شفافة لها facets واضحة.\n` +
     `- القطع الصفراء الليبية الافتراضي 21K.`;
 
-  // موديلات رؤية Groq بالترتيب — نجرّب التالي إذا كان الموديل غير متاح للمفتاح
-  const GROQ_VISION_MODELS = [
+  // اكتشاف موديلات الرؤية المتاحة لهذا المفتاح ديناميكياً
+  const fallbackList = [
     "meta-llama/llama-4-scout-17b-16e-instruct",
     "meta-llama/llama-4-maverick-17b-128e-instruct",
     "llama-3.2-90b-vision-preview",
     "llama-3.2-11b-vision-preview",
   ];
+  let GROQ_VISION_MODELS = fallbackList;
+  try {
+    const ml = await fetch("https://api.groq.com/openai/v1/models", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (ml.ok) {
+      const ids: string[] = ((await ml.json())?.data ?? [])
+        .map((m: any) => String(m?.id ?? ""))
+        .filter((id: string) => /vision|llama-4|scout|maverick/i.test(id));
+      console.log("Groq available vision models:", ids.join(", ") || "none");
+      if (ids.length) {
+        GROQ_VISION_MODELS = [
+          ...fallbackList.filter((m) => ids.includes(m)),
+          ...ids.filter((m) => !fallbackList.includes(m)),
+        ];
+      }
+    }
+  } catch (_e) { /* استخدم القائمة الافتراضية */ }
+
 
   const makeBody = (model: string) => ({
     model,
