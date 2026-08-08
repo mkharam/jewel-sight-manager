@@ -327,9 +327,35 @@ export async function analyzeWithFallback(params: {
 
 
 /**
- * Embedding call: 1536-dim vector matching product_images.ai_embedding.
+ * Embedding مجاني عبر Google (gemini-embedding-001) بأبعاد 1536
+ * لمطابقة product_images.ai_embedding. يستخدم Lovable Gateway فقط إن لم يوجد مفتاح Google.
  */
 export async function embedText(text: string): Promise<number[]> {
+  const gkey = (Deno.env.get("GOOGLE_API_KEY") ?? Deno.env.get("GEMINI_API_KEY") ?? "")
+    .trim()
+    .replace(/^["']|["']$/g, "");
+
+  if (gkey) {
+    const res = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-goog-api-key": gkey },
+        body: JSON.stringify({
+          content: { parts: [{ text }] },
+          outputDimensionality: 1536,
+        }),
+      },
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const vec = data?.embedding?.values;
+      if (Array.isArray(vec)) return vec;
+    } else {
+      console.error("Google embed error", res.status, await res.text());
+    }
+  }
+
   const res = await fetch(`${GATEWAY}/embeddings`, {
     method: "POST",
     headers: {
@@ -356,6 +382,7 @@ export async function embedText(text: string): Promise<number[]> {
   if (!Array.isArray(vec)) throw new Error("Embedding missing from response");
   return vec;
 }
+
 
 /** Build a compact text representation of an analysis for embedding. */
 export function analysisToEmbeddingText(a: JewelryAnalysis): string {
