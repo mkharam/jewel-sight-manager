@@ -79,13 +79,16 @@ export default function BulkImport() {
   const processAll = async (list: Item[]) => {
     setProcessing(true);
 
-    // ===== المرحلة 1: رفع الصور مع تحديد التوازي (6 معاً) لتفادي اختناق المتصفح =====
-    const UPLOAD_CONCURRENCY = 6;
-    let uploadIdx = 0;
-    const uploadWorker = async () => {
-      while (uploadIdx < list.length) {
-        const i = uploadIdx++;
+    // خط أنابيب متوازي: كل صورة تُرفع ثم تُحلَّل فوراً دون انتظار بقية الصور.
+    // نستخدم عدة عمال متوازيين (رفع + تحليل داخل نفس العامل) لتسريع كل شيء.
+    const CONCURRENCY = 4;
+    let idx = 0;
+
+    const worker = async () => {
+      while (idx < list.length) {
+        const i = idx++;
         const it = list[i];
+        // 1) الرفع
         try {
           const ext = (it.file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
           const path = `imports/${user!.id}/${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}.${ext || "jpg"}`;
@@ -95,20 +98,17 @@ export default function BulkImport() {
           setItems((prev) => prev.map((x) => (x === it ? { ...x, storagePath: path, status: "pending" } : x)));
         } catch (e: any) {
           setError(it, e?.message ?? "فشل رفع الصورة");
+          continue;
         }
+        // 2) التحليل فوراً بعد رفع هذه الصورة
+        await analyzeOne(it);
       }
     };
-    await Promise.all(Array.from({ length: UPLOAD_CONCURRENCY }, uploadWorker));
 
-    // ===== المرحلة 2: التحليل بالتسلسل مع احترام حد المعدل =====
-    for (const it of list) {
-      if (it.status === "error" || !it.storagePath) continue;
-      await analyzeOne(it);
-      // ~24 صورة/دقيقة (أقل من حد Groq 30 و Gemini 15 مع 3 مزودين بالتناوب)
-      await new Promise((r) => setTimeout(r, 2500));
-    }
+    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
     setProcessing(false);
   };
+
 
   // تحليل صورة واحدة (يُستخدم للمرة الأولى وللإعادة اليدوية).
   const analyzeOne = async (it: Item) => {
