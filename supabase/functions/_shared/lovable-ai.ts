@@ -183,10 +183,11 @@ export async function analyzeJewelryImageGroq(params: {
       headers: { Authorization: `Bearer ${key}` },
     });
     if (ml.ok) {
-      const ids: string[] = ((await ml.json())?.data ?? [])
-        .map((m: any) => String(m?.id ?? ""))
-        .filter((id: string) => /vision|llama-4|scout|maverick/i.test(id));
+      const allIds: string[] = ((await ml.json())?.data ?? []).map((m: any) => String(m?.id ?? ""));
+      console.log("Groq ALL models:", allIds.join(", "));
+      const ids = allIds.filter((id: string) => /vision|llama-4|scout|maverick|vl|gemma-3/i.test(id));
       console.log("Groq available vision models:", ids.join(", ") || "none");
+
       if (ids.length) {
         GROQ_VISION_MODELS = [
           ...fallbackList.filter((m) => ids.includes(m)),
