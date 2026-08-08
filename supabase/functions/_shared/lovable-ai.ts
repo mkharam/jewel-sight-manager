@@ -171,7 +171,7 @@ export async function analyzeJewelryImageGroq(params: {
     `- القطع الصفراء الليبية الافتراضي 21K.`;
 
   const body = {
-    model: "meta-llama/llama-4-scout-17b-16e-instruct",
+    model: "meta-llama/llama-4-maverick-17b-128e-instruct",
     messages: [
       { role: "system", content: systemPrompt },
       {
@@ -278,36 +278,50 @@ export async function analyzeJewelryImageGemini(params: {
 }
 
 /**
- * 3-tier fallback: Gemini (best) → Groq (fast) → Lovable AI Gateway (guaranteed).
- * Skips providers whose keys are missing. Returns which provider succeeded.
+ * Fallback chain. Lovable Gateway first (fastest + always available), then the
+ * free keys as backup. Providers that fail with a hard error (quota exhausted,
+ * bad key, missing model) are put on a 10-minute cooldown so we stop wasting
+ * a round-trip per image on them — this is what made analysis feel slow.
  */
+const cooldown = new Map<string, number>();
+const COOLDOWN_MS = 10 * 60 * 1000;
+const HARD_FAIL = new Set([400, 401, 402, 403, 404, 429]);
+
 export async function analyzeWithFallback(params: {
   imageBase64: string;
   mimeType: string;
   categoryNames: string[];
 }): Promise<{ analysis: JewelryAnalysis; provider: string }> {
-  const providers: Array<{ name: string; fn: () => Promise<JewelryAnalysis> }> = [];
+  const all: Array<{ name: string; fn: () => Promise<JewelryAnalysis> }> = [
+    { name: "lovable", fn: () => analyzeJewelryImage(params) },
+  ];
   if (Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY")) {
-    providers.push({ name: "gemini", fn: () => analyzeJewelryImageGemini(params) });
+    all.push({ name: "gemini", fn: () => analyzeJewelryImageGemini(params) });
   }
   if (Deno.env.get("GROQ_API_KEY")) {
-    providers.push({ name: "groq", fn: () => analyzeJewelryImageGroq(params) });
+    all.push({ name: "groq", fn: () => analyzeJewelryImageGroq(params) });
   }
-  providers.push({ name: "lovable", fn: () => analyzeJewelryImage(params) });
+
+  const now = Date.now();
+  const active = all.filter((p) => (cooldown.get(p.name) ?? 0) < now);
+  const providers = active.length ? active : all;
 
   let lastErr: unknown = null;
   for (const p of providers) {
     try {
       const analysis = await p.fn();
+      cooldown.delete(p.name);
       return { analysis, provider: p.name };
     } catch (e) {
       lastErr = e;
       const status = (e as any)?.status;
+      if (HARD_FAIL.has(status)) cooldown.set(p.name, Date.now() + COOLDOWN_MS);
       console.warn(`Provider ${p.name} failed [${status}], trying next`);
     }
   }
   throw lastErr ?? new Error("All AI providers failed");
 }
+
 
 /**
  * Embedding call: 1536-dim vector matching product_images.ai_embedding.
