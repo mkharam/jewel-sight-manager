@@ -278,10 +278,9 @@ export async function analyzeJewelryImageGemini(params: {
 }
 
 /**
- * Fallback chain. Lovable Gateway first (fastest + always available), then the
- * free keys as backup. Providers that fail with a hard error (quota exhausted,
- * bad key, missing model) are put on a 10-minute cooldown so we stop wasting
- * a round-trip per image on them — this is what made analysis feel slow.
+ * مجاني بالكامل: Groq أولاً (سريع جداً وحد مجاني كبير) ثم Gemini.
+ * لا يُستخدم Lovable Gateway هنا إطلاقاً حتى لا تُستهلك أي أرصدة.
+ * المزوّد الذي يفشل فشلاً صريحاً يُستبعد 10 دقائق لتسريع البقية.
  */
 const cooldown = new Map<string, number>();
 const COOLDOWN_MS = 10 * 60 * 1000;
@@ -292,14 +291,17 @@ export async function analyzeWithFallback(params: {
   mimeType: string;
   categoryNames: string[];
 }): Promise<{ analysis: JewelryAnalysis; provider: string }> {
-  const all: Array<{ name: string; fn: () => Promise<JewelryAnalysis> }> = [
-    { name: "lovable", fn: () => analyzeJewelryImage(params) },
-  ];
+  const all: Array<{ name: string; fn: () => Promise<JewelryAnalysis> }> = [];
+  if (Deno.env.get("GROQ_API_KEY")) {
+    all.push({ name: "groq", fn: () => analyzeJewelryImageGroq(params) });
+  }
   if (Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY")) {
     all.push({ name: "gemini", fn: () => analyzeJewelryImageGemini(params) });
   }
-  if (Deno.env.get("GROQ_API_KEY")) {
-    all.push({ name: "groq", fn: () => analyzeJewelryImageGroq(params) });
+  if (!all.length) {
+    throw Object.assign(new Error("لا يوجد مفتاح ذكاء اصطناعي مجاني (GROQ_API_KEY أو GOOGLE_API_KEY)"), {
+      status: 500,
+    });
   }
 
   const now = Date.now();
@@ -323,10 +325,37 @@ export async function analyzeWithFallback(params: {
 }
 
 
+
 /**
- * Embedding call: 1536-dim vector matching product_images.ai_embedding.
+ * Embedding مجاني عبر Google (gemini-embedding-001) بأبعاد 1536
+ * لمطابقة product_images.ai_embedding. يستخدم Lovable Gateway فقط إن لم يوجد مفتاح Google.
  */
 export async function embedText(text: string): Promise<number[]> {
+  const gkey = (Deno.env.get("GOOGLE_API_KEY") ?? Deno.env.get("GEMINI_API_KEY") ?? "")
+    .trim()
+    .replace(/^["']|["']$/g, "");
+
+  if (gkey) {
+    const res = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-goog-api-key": gkey },
+        body: JSON.stringify({
+          content: { parts: [{ text }] },
+          outputDimensionality: 1536,
+        }),
+      },
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const vec = data?.embedding?.values;
+      if (Array.isArray(vec)) return vec;
+    } else {
+      console.error("Google embed error", res.status, await res.text());
+    }
+  }
+
   const res = await fetch(`${GATEWAY}/embeddings`, {
     method: "POST",
     headers: {
@@ -353,6 +382,7 @@ export async function embedText(text: string): Promise<number[]> {
   if (!Array.isArray(vec)) throw new Error("Embedding missing from response");
   return vec;
 }
+
 
 /** Build a compact text representation of an analysis for embedding. */
 export function analysisToEmbeddingText(a: JewelryAnalysis): string {
