@@ -291,7 +291,13 @@ export async function analyzeWithFallback(params: {
   mimeType: string;
   categoryNames: string[];
 }): Promise<{ analysis: JewelryAnalysis; provider: string }> {
+  // تنظيف: قبول data URL أو base64 خام
+  const m = /^data:([^;]+);base64,(.*)$/s.exec(params.imageBase64.trim());
+  if (m) params = { ...params, mimeType: m[1], imageBase64: m[2] };
+  params = { ...params, imageBase64: params.imageBase64.replace(/\s/g, "") };
+
   const all: Array<{ name: string; fn: () => Promise<JewelryAnalysis> }> = [];
+
   if (Deno.env.get("GROQ_API_KEY")) {
     all.push({ name: "groq", fn: () => analyzeJewelryImageGroq(params) });
   }
