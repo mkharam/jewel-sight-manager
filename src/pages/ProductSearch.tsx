@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -22,10 +22,12 @@ interface Filters {
   status: string;
   minWeight: string;
   maxWeight: string;
+  /** وسم من تحليل الذكاء الاصطناعي (لون المعدن، حجر، ستايل…) */
+  tag: string;
 }
 
 const initialFilters: Filters = {
-  q: "", karat: "all", branchId: "all", categoryId: "all", status: "all", minWeight: "", maxWeight: "",
+  q: "", karat: "all", branchId: "all", categoryId: "all", status: "all", minWeight: "", maxWeight: "", tag: "",
 };
 
 const SAVED_FILTERS_KEY = "lamaa.lastSearch.v1";
@@ -40,6 +42,9 @@ function loadSavedFilters(): Filters {
     return initialFilters;
   }
 }
+
+/** تنظيف نص البحث من الرموز التي تُفسد صياغة فلتر PostgREST. */
+const sanitizeTerm = (s: string) => s.replace(/[,(){}"\\]/g, " ").trim();
 
 const PAGE_SIZE = 48;
 
@@ -149,22 +154,88 @@ export default function ProductSearch() {
     queryFn: async () => (await supabase.from("categories").select("id,name").order("sort_order")).data ?? [],
   });
 
+  // وسوم الذكاء الاصطناعي المتاحة (لون المعدن، أحجار، ستايل…) لعرضها كفلاتر سريعة
+  const { data: aiTags } = useQuery({
+    queryKey: ["ai-tags"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("products")
+        .select("search_tags")
+        .not("search_tags", "eq", "{}")
+        .limit(500);
+      const counts = new Map<string, number>();
+      for (const row of data ?? []) {
+        for (const t of (row.search_tags ?? []) as string[]) {
+          counts.set(t, (counts.get(t) ?? 0) + 1);
+        }
+      }
+      return Array.from(counts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 14)
+        .map(([tag, count]) => ({ tag, count }));
+    },
+  });
+
   // Image-search results — when set, overrides normal query with similarity-ranked matches.
   const [similarMatches, setSimilarMatches] = useState<{ product_id: string; similarity: number }[] | null>(null);
   const similarIds = useMemo(() => similarMatches?.map((m) => m.product_id) ?? null, [similarMatches]);
+
+  // "قطع مشابهة" من صفحة القطعة: /?similar=<productId> — يستخدم البصمة المحفوظة (بدون تحليل جديد)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const similarTo = searchParams.get("similar");
+  const [similarLoading, setSimilarLoading] = useState(false);
+  useEffect(() => {
+    if (!similarTo) return;
+    let cancelled = false;
+    (async () => {
+      setSimilarLoading(true);
+      const { data, error } = await supabase.rpc("match_similar_products", {
+        _product_id: similarTo,
+        match_count: 24,
+      });
+      if (cancelled) return;
+      setSimilarLoading(false);
+      if (error) {
+        toast.error("تعذّر جلب القطع المشابهة");
+        return;
+      }
+      const matches = (data ?? [])
+        .filter((m: any) => m.similarity >= 0.55)
+        .map((m: any) => ({ product_id: m.product_id, similarity: m.similarity }));
+      setSimilarMatches(matches);
+      if (!matches.length) toast.info("لا توجد قطع مشابهة مفهرسة بعد");
+    })();
+    return () => { cancelled = true; };
+  }, [similarTo]);
+
+  const clearSimilar = () => {
+    setSimilarMatches(null);
+    if (similarTo) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("similar");
+      setSearchParams(next, { replace: true });
+    }
+  };
 
   const { data: products, isLoading, isFetching } = useQuery({
     queryKey: ["products", debounced, similarIds, similarIds ? 0 : pages],
     queryFn: async () => {
       let q = supabase
         .from("products")
-        .select("id,name,sku,karat,weight_grams,ring_size,sale_price,promo_price,status,branch_id,branch:branches(name),category:categories(name),images:product_images(storage_path,is_primary)");
+        .select("id,name,sku,karat,weight_grams,ring_size,sale_price,promo_price,status,branch_id,search_tags,branch:branches(name),category:categories(name),images:product_images(storage_path,is_primary)");
 
       if (similarIds && similarIds.length > 0) {
         q = q.in("id", similarIds).limit(120);
       } else {
         q = q.order("created_at", { ascending: false }).range(0, pages * PAGE_SIZE - 1);
-        if (debounced.q) q = q.or(`name.ilike.%${debounced.q}%,sku.ilike.%${debounced.q}%,description.ilike.%${debounced.q}%`);
+        const term = sanitizeTerm(debounced.q);
+        if (term) {
+          // يشمل وسوم الذكاء الاصطناعي (ذهب أبيض، لؤلؤ، زركون…) إلى جانب الاسم/SKU/الوصف
+          q = q.or(
+            `name.ilike.%${term}%,sku.ilike.%${term}%,description.ilike.%${term}%,search_tags.cs.{"${term}"}`,
+          );
+        }
+        if (debounced.tag) q = q.contains("search_tags", [debounced.tag]);
         if (debounced.karat !== "all") q = q.eq("karat", debounced.karat);
         if (debounced.branchId !== "all") q = q.eq("branch_id", debounced.branchId);
         if (debounced.categoryId !== "all") q = q.eq("category_id", debounced.categoryId);
@@ -222,6 +293,7 @@ export default function ProductSearch() {
     if (filters.status !== "all") n++;
     if (filters.minWeight) n++;
     if (filters.maxWeight) n++;
+    if (filters.tag) n++;
     return n;
   }, [filters]);
 
@@ -370,18 +442,45 @@ export default function ProductSearch() {
             onClick={() => setFilters((f) => ({ ...f, categoryId: f.categoryId === c.id ? "all" : c.id }))}
           >{c.name}</Chip>
         ))}
-        {(filters.karat !== "all" || filters.categoryId !== "all" || filters.branchId !== "all" || filters.status !== "all" || filters.minWeight || filters.maxWeight) && (
+        {(filters.karat !== "all" || filters.categoryId !== "all" || filters.branchId !== "all" || filters.status !== "all" || filters.minWeight || filters.maxWeight || filters.tag) && (
           <Chip onClick={() => setFilters(initialFilters)} active={false}>
             <X className="size-3 inline" /> مسح
           </Chip>
         )}
       </div>
 
+      {/* وسوم الذكاء الاصطناعي — مستخرجة تلقائياً من تحليل صور القطع */}
+      {aiTags && aiTags.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-[11px] text-muted-foreground flex items-center gap-1 px-1">
+            <Sparkles className="size-3 text-primary" /> وسوم مكتشفة بالذكاء الاصطناعي
+          </p>
+          <div className="flex gap-2 overflow-x-auto -mx-3 px-3 pb-1 scrollbar-none">
+            {aiTags.map(({ tag, count }) => (
+              <Chip
+                key={tag}
+                active={filters.tag === tag}
+                onClick={() => setFilters((f) => ({ ...f, tag: f.tag === tag ? "" : tag }))}
+              >
+                {tag} <span className="opacity-60">{count}</span>
+              </Chip>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {similarLoading && (
+        <div className="flex items-center gap-2 rounded-xl bg-gold-soft border border-primary/20 px-3 py-2 text-sm">
+          <Loader2 className="size-4 animate-spin text-primary" />
+          جارٍ البحث عن قطع مشابهة…
+        </div>
+      )}
+
       {similarIds !== null && similarityBuckets && (
         <div className="flex items-center justify-between rounded-xl bg-gold-soft border border-primary/20 px-3 py-2">
           <div className="flex items-center gap-2 text-sm flex-wrap">
             <Sparkles className="size-4 text-primary" />
-            <span className="font-semibold">بحث بالصورة</span>
+            <span className="font-semibold">{similarTo ? "قطع مشابهة لهذه القطعة" : "بحث بالصورة"}</span>
             {similarityBuckets.exact.length > 0 && (
               <span className="px-2 py-0.5 rounded-full bg-green-600 text-white text-[10px] font-bold">
                 🎯 {similarityBuckets.exact.length} مطابقة
@@ -398,7 +497,7 @@ export default function ProductSearch() {
               </span>
             )}
           </div>
-          <Button size="sm" variant="ghost" onClick={() => setSimilarMatches(null)}>
+          <Button size="sm" variant="ghost" onClick={clearSimilar}>
             <X className="size-4 ml-1" /> إلغاء
           </Button>
         </div>
