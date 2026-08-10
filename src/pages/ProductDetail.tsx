@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowRight, Edit, ImageIcon, MapPin, MessageCircle, Tag, Trash2, User, ArrowLeftRight } from "lucide-react";
+import { ArrowRight, Edit, ImageIcon, MapPin, MessageCircle, Tag, Trash2, User, ArrowLeftRight, Sparkles } from "lucide-react";
 import { PRODUCT_STATUS, formatCurrency, formatDate, formatWeight, getImageUrl } from "@/lib/constants";
 import { toast } from "sonner";
 import QuickQuoteSheet from "@/components/QuickQuoteSheet";
@@ -202,6 +202,12 @@ export default function ProductDetail() {
           <Link to={`/transfers?product=${id}&name=${encodeURIComponent(product.name)}`} className="block">
             <Button variant="outline" size="lg" className="w-full">
               <ArrowLeftRight className="size-4 ml-1" /> طلب تحويل لفرعي
+            </Button>
+          </Link>
+          {/* بحث بصري بالبصمة المحفوظة لهذه القطعة — بدون تحليل جديد */}
+          <Link to={`/?similar=${id}`} className="block">
+            <Button variant="outline" size="lg" className="w-full">
+              <Sparkles className="size-4 ml-1" /> قطع مشابهة في المخزون
             </Button>
           </Link>
         </div>

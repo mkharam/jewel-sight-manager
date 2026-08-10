@@ -316,6 +316,7 @@ export type Database = {
           promo_price: number | null
           ring_size: string | null
           sale_price: number | null
+          search_tags: string[]
           sku: string | null
           status: Database["public"]["Enums"]["product_status"]
           updated_at: string
@@ -337,6 +338,7 @@ export type Database = {
           promo_price?: number | null
           ring_size?: string | null
           sale_price?: number | null
+          search_tags?: string[]
           sku?: string | null
           status?: Database["public"]["Enums"]["product_status"]
           updated_at?: string
@@ -358,6 +360,7 @@ export type Database = {
           promo_price?: number | null
           ring_size?: string | null
           sale_price?: number | null
+          search_tags?: string[]
           sku?: string | null
           status?: Database["public"]["Enums"]["product_status"]
           updated_at?: string
@@ -581,6 +584,14 @@ export type Database = {
           thumb_path: string
         }[]
       }
+      match_similar_products: {
+        Args: { _product_id: string; match_count?: number }
+        Returns: {
+          product_id: string
+          similarity: number
+        }[]
+      }
+      tags_from_ai_labels: { Args: { labels: Json }; Returns: string[] }
     }
     Enums: {
       app_role: "admin" | "manager" | "employee" | "kiosk"

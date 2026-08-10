@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BarChart3, Download, TrendingUp, ArrowLeftRight, Package, DollarSign, Clock, AlertTriangle } from "lucide-react";
+import ReindexImagesCard from "@/components/ReindexImagesCard";
 
 type Branch = { id: string; name: string; code: string | null };
 
@@ -287,6 +288,9 @@ export default function Reports() {
           <StatCard icon={<AlertTriangle className="size-4" />} label="راكد +180 يوم" value={fmt(inventoryTotals.stale)} />
         </div>
       </div>
+
+      {/* صيانة الذكاء الاصطناعي — إعادة فهرسة الصور غير المحلَّلة */}
+      <ReindexImagesCard />
 
       {/* Aging report per branch */}
       <Card>

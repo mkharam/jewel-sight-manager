@@ -177,7 +177,7 @@ export default function BulkImport() {
     if (!user) return toast.error("سجّل الدخول أولاً");
 
     setSaving(true);
-    let ok = 0, failed = 0;
+    let ok = 0, failed = 0, notIndexed = 0;
     // إبقاء الفرع فارغاً افتراضياً — الموظف يوزّع لاحقاً يدوياً
     const defaultBranch: string | null = null;
 
@@ -209,27 +209,55 @@ export default function BulkImport() {
           .single();
         if (e2 || !img) { failed++; continue; }
         ok++;
-        // Persist embedding so the photo is searchable via image-search later.
-        // Fire-and-forget with the pre-computed analysis (no extra Gemini cost).
-        if (it.analysis) {
-          supabase.functions
-            .invoke("analyze-product-image", {
-              body: {
-                imageId: img.id,
-                analysis: it.analysis,
-                categories: categories ?? [],
-              },
-            })
-            .catch((err) => console.warn("embed failed", err));
-        }
+
+        // حفظ التحليل + بصمة البحث. ننتظر النتيجة (مع إعادة محاولة) حتى لا تبقى
+        // صورة بدون وسوم أو بدون بصمة بصمت — لأن ذلك يخفيها عن البحث بالصورة.
+        const indexed = await persistIndex(img.id, it.analysis);
+        if (!indexed) notIndexed++;
       } catch {
         failed++;
       }
     }
     setSaving(false);
     toast.success(`تم حفظ ${ok} قطعة كمسودة` + (failed ? ` (${failed} فشل)` : ""));
+    if (notIndexed) {
+      toast.warning(
+        `${notIndexed} صورة لم تُفهرس للبحث بالصورة — المدير يمكنه إكمالها من "الجرد ← إعادة فهرسة الصور"`,
+        { duration: 8000 },
+      );
+    }
     if (ok) setItems([]);
     void branches; // للاحتفاظ بالاستعلام جاهزاً
+  };
+
+  /** يحفظ ai_labels + ai_embedding للصورة، مع إعادة محاولة عند ازدحام المزود. */
+  const persistIndex = async (imageId: string, analysis: any): Promise<boolean> => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const { data, error } = await supabase.functions.invoke("analyze-product-image", {
+          body: {
+            imageId,
+            // إن كان التحليل موجوداً نستخدمه (بلا تكلفة إضافية)، وإلا يُحلّل الخادم الصورة من جديد
+            ...(analysis ? { analysis } : {}),
+            categories: categories ?? [],
+          },
+        });
+        if (error) throw error;
+        const err = (data as any)?.error;
+        if (err) throw new Error(err);
+        return true;
+      } catch (e: any) {
+        const msg = String(e?.message ?? "");
+        const retryable =
+          msg.includes("429") || msg.toLowerCase().includes("rate") || msg.includes("AI_BUSY") || msg.includes("مشغول");
+        if (!retryable || attempt === 2) {
+          console.warn("index failed", imageId, msg);
+          return false;
+        }
+        await new Promise((r) => setTimeout(r, 4000 * (attempt + 1)));
+      }
+    }
+    return false;
   };
 
 
