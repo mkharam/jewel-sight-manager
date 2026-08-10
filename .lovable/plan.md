@@ -1,71 +1,52 @@
-# الخطة: Groq fallback + بحث بالصورة محسّن
+# AI photo analysis + attribute & similarity search
 
-## الهدف
-1. لا تظهر أخطاء rate limit أثناء استيراد دفعات كبيرة.
-2. عند البحث بصورة: يعرض الموظف "قطعة مطابقة" أو "قطع مشابهة" بترتيب وضوح.
+## Where the system already stands (verified in code)
 
----
+Most of what you described is already built and running:
 
-## الجزء 1: نظام 3-مستويات للتحليل (استيراد بدون أخطاء)
+- **Vision auto-tagging** — `supabase/functions/_shared/lovable-ai.ts` returns a structured analysis for every uploaded photo: `name_ar`, `category_name`, `karat`, `metal_color`, `style[]`, `gemstones[]`, `description_ar`, through a Groq → Gemini → Lovable AI fallback chain.
+- **Storage** — `product_images.ai_labels` (jsonb) holds that analysis, `product_images.ai_embedding` (pgvector) holds the vector.
+- **Visual similarity search** — `image-search` edge function embeds the query photo's description and runs the `match_product_images` pgvector RPC; `ProductSearch.tsx` already buckets results as مطابقة (≥0.92) / شبه مطابقة (0.80–0.92) / مقاربة (0.65–0.80).
+- **Bulk upload** — `BulkImport.tsx` uploads and analyzes in a 4-worker parallel pipeline, and persists the embedding on save.
 
-### طلب مفتاح Groq
-- تسجيل مجاني في console.groq.com → إنشاء API Key.
-- حفظه كـ `GROQ_API_KEY` عبر `add_secret`.
-- الحد المجاني: **30 طلب/دقيقة، 14,400/يوم** (ضعف Gemini).
+So the answer to your question 1 is: **both, and both already exist.** The vision model does the naming/tagging (human-readable, editable, filterable), the embedding does visual/attribute similarity. They are chained — the embedding is built from the AI's description text, which is why similarity respects "gold chain 21K" and not just shape.
 
-### تعديل `analyze-product-image` edge function
-سلسلة fallback تلقائية عند فشل أي مزود بـ 429/5xx:
+## What is actually missing
 
-```text
-1. Gemini (google/gemini-flash-latest)     ← الأساسي، أدق للعربية
-   ↓ فشل 429
-2. Groq (llama-3.2-90b-vision-preview)     ← احتياطي سريع
-   ↓ فشل 429
-3. Lovable AI Gateway (gemini-3-flash)     ← أخير، مضمون لكن يستهلك credits
-```
+Three real gaps between what exists and what you described:
 
-- لكل مزود schema JSON موحّد: `{ name_ar, category, karat, metal_color, description, weight_estimate }`.
-- توحيد الاستجابة قبل إرجاعها للـ frontend.
+1. **Tags are stored but not searchable.** Text search only hits `products.name`, `sku`, `description` (`ProductSearch.tsx:167`). Nothing queries `ai_labels`, so a search for "لؤلؤ" or "ذهب أبيض" finds nothing even though the AI detected it.
+2. **No "find similar" from an existing piece.** Similarity search only starts from a freshly uploaded photo. There is no button on a product to say "show me pieces like this one" using the vector already stored.
+3. **Old photos have no analysis.** Images imported before the pipeline (and any where the embedding step failed) have empty `ai_labels` / null `ai_embedding`, so they are invisible to photo search.
 
-### تحسين `BulkImport.tsx`
-- إبطاء التأخير من 4.5s → **2.5s** بين الصور (Groq يقبل 30 RPM = صورة كل 2s).
-- عند فشل صورة: تظهر زر "إعادة محاولة" فقط لتلك الصورة بدل توقف الدفعة.
-- شارة تعرض المزود المستخدم لكل صورة (Gemini / Groq / Cloud).
+## Proposed scope
 
----
+### Part 1 — Make AI tags searchable (small)
+- Migration: add a generated/maintained `search_tags text[]` on `products`, filled from the primary image's `ai_labels` (karat, metal color, style, gemstones, category) plus a GIN index. Populated by a trigger on `product_images` update so it stays in sync.
+- `ProductSearch.tsx`: include tags in the text query, and add tappable filter chips (لون المعدن، أحجار، ستايل) built from the distinct tag values.
 
-## الجزء 2: تحسين البحث بالصورة
+### Part 2 — "Find similar" on a product (small)
+- New RPC `match_similar_products(product_id, match_count)` that reuses the stored embedding of that product's primary image and excludes itself.
+- Button on `ProductDetail.tsx` → routes to `ProductSearch` in similarity mode, reusing the existing bucket UI. No new AI call, no cost.
 
-الوضع الحالي: `image-search` يستخدم embeddings ويرجع قائمة قطع بترتيب similarity، لكن الموظف ما يعرف أيها **مطابقة** وأيها **مشابهة فقط**.
+### Part 3 — Backfill / re-index (small–medium)
+- Admin-only "إعادة فهرسة الصور" action that finds images with null `ai_embedding` and processes them in batches through the existing fallback chain, with a progress count.
+- Same code path as bulk import, so no new AI logic.
 
-### تصنيف النتائج بحسب درجة التشابه
-في `ProductSearch.tsx` عند نتائج البحث بالصورة:
+## Technical notes
 
-| Similarity | التصنيف | العرض |
-|---|---|---|
-| ≥ 0.92 | 🎯 **مطابقة تامة** | بانر أخضر: "قطعة مطابقة موجودة في فرع X" |
-| 0.80 - 0.92 | ✨ **مشابهة جداً** | قسم منفصل بعنوان "قطع شبه مطابقة" |
-| 0.65 - 0.80 | 📌 **مشابهة** | قسم "قطع مقاربة في الشكل" |
-| < 0.65 | يُستبعد | لا تُعرض |
+- No new AI provider or model needed; the existing `analyzeWithFallback` and `embedText` cover it.
+- Schema changes are additive only: one `text[]` column + GIN index on `products`, one trigger, one new SQL function. No table rewrites, no data loss.
+- Embeddings already stored are reused for Part 2, so it adds latency of a single pgvector query.
 
-### تحسين `analyze-product-image` لحفظ embeddings أفضل
-- توليد embedding للصورة **بعد** التحليل (بدل قبل) — استخدام `google/gemini-embedding-2` مع النص العربي المولّد + الصورة معاً (multimodal input).
-- هذا يعطي vectors أدق لأنها تحمل معنى القطعة (سلسلة ذهب 21K) وليس فقط شكلها.
+## Complexity
 
-### إضافة "أظهر تفاصيل التشابه"
-- عند فتح نتيجة مشابهة: مقارنة جنباً إلى جنب (صورة القطعة الأصلية | القطعة الموجودة) + الاختلافات المكتشفة (وزن، عيار، فرع، سعر آخر).
+- Part 1: ~1 migration + 1 page edit.
+- Part 2: ~1 migration + 2 small component edits.
+- Part 3: ~1 edge function + 1 admin UI block.
 
----
+Overall: a focused follow-on to the existing pipeline rather than a new build.
 
-## الملفات المتأثرة
-- `supabase/functions/analyze-product-image/index.ts` — fallback chain
-- `supabase/functions/image-search/index.ts` — إرجاع similarity score لكل نتيجة
-- `src/pages/BulkImport.tsx` — تأخير أقل + retry لكل صورة
-- `src/pages/ProductSearch.tsx` — تصنيف النتائج بحسب similarity
-- `src/components/ImageSearchButton.tsx` — تمرير scores للـ UI
-- سر جديد: `GROQ_API_KEY`
+## Assumption to confirm
 
-## الشيء المطلوب منك قبل البدء
-- إنشاء مفتاح Groq من https://console.groq.com/keys (مجاني، لا يحتاج بطاقة).
-
-بعد موافقتك على الخطة، سأطلب المفتاح ثم أنفّذ كل شي.
+I am assuming you want tags derived from the **primary image only** (one product = one representative tag set). If you'd rather union tags across all images of a product, say so and I'll adjust Part 1.
