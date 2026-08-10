@@ -1,6 +1,6 @@
 // إعادة فهرسة صور القطع: يبحث عن الصور التي لا تحتوي تحليل (ai_labels) أو بصمة (ai_embedding)
 // ويعيد تحليلها بنفس سلسلة المزودين (Groq → Gemini → Lovable) ثم يحفظ النتيجة.
-// للمدير العام فقط.
+// للمدير العام فقط (يتحقق من الدور في الكود).
 //
 // Body: { limit?: number }   الافتراضي 8 صور لكل نداء (لتجنّب مهلة 150 ثانية)
 // Response: { processed, failed, remaining, rateLimited, results: [{ imageId, ok, provider?, error? }] }
