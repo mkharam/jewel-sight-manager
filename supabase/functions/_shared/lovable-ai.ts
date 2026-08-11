@@ -1,14 +1,7 @@
-// Shared helpers to call Lovable AI Gateway from edge functions.
-// Uses raw fetch (no AI SDK) to keep the function light.
-// Gateway is OpenAI-compatible: baseURL + Lovable-API-Key header.
+// Shared AI helpers for the jewelry photo pipeline — FREE PROVIDERS ONLY.
+// Vision: Groq → Gemini.  Embeddings: Google gemini-embedding-001.
+// Lovable AI Gateway is intentionally NOT used anywhere here (no credits).
 
-const GATEWAY = "https://ai.gateway.lovable.dev/v1";
-
-export function getLovableKey(): string {
-  const k = Deno.env.get("LOVABLE_API_KEY");
-  if (!k) throw new Error("LOVABLE_API_KEY not configured");
-  return k;
-}
 
 export type JewelryAnalysis = {
   name_ar: string;
