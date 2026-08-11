@@ -288,7 +288,12 @@ export default function BulkImport() {
       } catch (e: any) {
         const msg = String(e?.message ?? "");
         const retryable =
-          msg.includes("429") || msg.toLowerCase().includes("rate") || msg.includes("AI_BUSY") || msg.includes("مشغول");
+          msg.includes("429") ||
+          msg.toLowerCase().includes("rate") ||
+          msg.includes("AI_BUSY") ||
+          msg.includes("ممتلئ") ||
+          msg.includes("مشغول");
+
         if (!retryable || attempt === 2) {
           console.warn("index failed", imageId, msg);
           return false;
