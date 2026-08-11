@@ -79,35 +79,48 @@ export default function BulkImport() {
   const processAll = async (list: Item[]) => {
     setProcessing(true);
 
-    // خط أنابيب متوازي: كل صورة تُرفع ثم تُحلَّل فوراً دون انتظار بقية الصور.
-    // نستخدم عدة عمال متوازيين (رفع + تحليل داخل نفس العامل) لتسريع كل شيء.
-    const CONCURRENCY = 4;
-    let idx = 0;
-
-    const worker = async () => {
-      while (idx < list.length) {
-        const i = idx++;
-        const it = list[i];
-        // 1) الرفع
-        try {
-          const ext = (it.file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
-          const path = `imports/${user!.id}/${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}.${ext || "jpg"}`;
-          const { error: upErr } = await supabase.storage.from("product-images").upload(path, it.file);
-          if (upErr) throw upErr;
-          it.storagePath = path;
-          setItems((prev) => prev.map((x) => (x === it ? { ...x, storagePath: path, status: "pending" } : x)));
-        } catch (e: any) {
-          setError(it, e?.message ?? "فشل رفع الصورة");
-          continue;
+    // مرحلتان مستقلتان تعملان في نفس الوقت:
+    //  • الرفع (6 معاً) — لا ينتظر التحليل.
+    //  • التحليل (3 معاً) — يبدأ فوراً على الصورة المحلية بدون انتظار انتهاء أي رفع.
+    // النتيجة: أول صورة تبدأ التحليل خلال أجزاء من الثانية، وليس بعد رفع الكل.
+    const uploadPool = async (concurrency: number) => {
+      let i = 0;
+      const worker = async () => {
+        while (i < list.length) {
+          const k = i++;
+          const it = list[k];
+          try {
+            const ext = (it.file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
+            const path = `imports/${user!.id}/${Date.now()}-${k}-${Math.random().toString(36).slice(2, 7)}.${ext || "jpg"}`;
+            const { error: upErr } = await supabase.storage.from("product-images").upload(path, it.file);
+            if (upErr) throw upErr;
+            it.storagePath = path;
+            setItems((prev) => prev.map((x) => (x === it ? { ...x, storagePath: path } : x)));
+          } catch (e: any) {
+            setError(it, e?.message ?? "فشل رفع الصورة");
+          }
         }
-        // 2) التحليل فوراً بعد رفع هذه الصورة
-        await analyzeOne(it);
-      }
+      };
+      await Promise.all(Array.from({ length: concurrency }, worker));
     };
 
-    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+    const analyzePool = async (concurrency: number) => {
+      let i = 0;
+      const worker = async () => {
+        while (i < list.length) {
+          const it = list[i++];
+          if (it.status === "error") continue;
+          await analyzeOne(it);
+        }
+      };
+      await Promise.all(Array.from({ length: concurrency }, worker));
+    };
+
+    await Promise.all([uploadPool(6), analyzePool(3)]);
     setProcessing(false);
   };
+
+
 
 
   // تحليل صورة واحدة (يُستخدم للمرة الأولى وللإعادة اليدوية).
@@ -261,7 +274,7 @@ export default function BulkImport() {
   };
 
 
-  const readyCount = items.filter((it) => it.include && it.status === "ready").length;
+  const readyCount = items.filter((it) => it.include && it.status === "ready" && it.storagePath).length;
 
   return (
     <div className="max-w-5xl mx-auto space-y-4">
