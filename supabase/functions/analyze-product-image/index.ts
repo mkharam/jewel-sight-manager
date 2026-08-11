@@ -1,4 +1,4 @@
-// تحليل صورة مجوهرات — سلسلة 3 مستويات (Gemini → Groq → Lovable) موحّدة مع البحث بالصورة.
+// تحليل صورة مجوهرات — مزوّدات مجانية فقط (Groq → Gemini)، بدون Lovable AI.
 // Body: { imageBase64, mimeType?, categories?, imageId?, analysis? }
 
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
