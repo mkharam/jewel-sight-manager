@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { KARAT_OPTIONS } from "@/lib/constants";
 
 type Item = {
+  id: string; // معرّف ثابت — المطابقة بالمرجع تفشل بعد أي تحديث للحالة
   previewUrl: string;
   file: File;
   status: "pending" | "uploading" | "analyzing" | "ready" | "error";
@@ -28,10 +29,12 @@ type Item = {
   karat: string;
   description: string;
   error?: string;
-  provider?: string; // gemini | groq | lovable | cached
+  provider?: string; // gemini | groq | cached
   // Full analysis kept so we can persist embedding on save (photo search).
   analysis?: any;
+  base64?: string; // cache: لا نعيد قراءة الملف في كل محاولة
 };
+
 
 
 export default function BulkImport() {
