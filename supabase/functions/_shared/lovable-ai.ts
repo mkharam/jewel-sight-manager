@@ -268,60 +268,56 @@ export async function analyzeWithFallback(params: {
 
 /**
  * Embedding مجاني عبر Google (gemini-embedding-001) بأبعاد 1536
- * لمطابقة product_images.ai_embedding. يستخدم Lovable Gateway فقط إن لم يوجد مفتاح Google.
+ * لمطابقة product_images.ai_embedding.
+ * لا يوجد أي احتياطي مدفوع: إن لم يوجد مفتاح Google نرفع خطأً واضحاً.
  */
 export async function embedText(text: string): Promise<number[]> {
   const gkey = (Deno.env.get("GOOGLE_API_KEY") ?? Deno.env.get("GEMINI_API_KEY") ?? "")
     .trim()
     .replace(/^["']|["']$/g, "");
 
-  if (gkey) {
+  if (!gkey) {
+    throw Object.assign(
+      new Error("لا يمكن إنشاء بصمة البحث: مفتاح GOOGLE_API_KEY غير مضبوط (أضفه من إعدادات المشروع)."),
+      { status: 500 },
+    );
+  }
+
+  const input = (text || "").trim().slice(0, 8000) || "قطعة مجوهرات";
+  let lastStatus = 500;
+  let lastText = "";
+
+  for (let attempt = 0; attempt < 3; attempt++) {
     const res = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent",
       {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-goog-api-key": gkey },
         body: JSON.stringify({
-          content: { parts: [{ text }] },
+          content: { parts: [{ text: input }] },
           outputDimensionality: 1536,
         }),
       },
     );
+
     if (res.ok) {
       const data = await res.json();
       const vec = data?.embedding?.values;
-      if (Array.isArray(vec)) return vec;
-    } else {
-      console.error("Google embed error", res.status, await res.text());
+      if (Array.isArray(vec) && vec.length === 1536) return vec;
+      throw Object.assign(new Error("بصمة غير صالحة من Google (أبعاد غير متوقعة)"), { status: 500 });
     }
+
+    lastStatus = res.status;
+    lastText = await res.text();
+    console.error("Google embed error", lastStatus, lastText);
+    const retryable = lastStatus === 429 || lastStatus >= 500;
+    if (!retryable || attempt === 2) break;
+    await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
   }
 
-  const res = await fetch(`${GATEWAY}/embeddings`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Lovable-API-Key": getLovableKey(),
-    },
-    body: JSON.stringify({
-      model: "openai/text-embedding-3-small",
-      input: text,
-      dimensions: 1536,
-    }),
-  });
-
-  if (!res.ok) {
-    const t = await res.text();
-    console.error("Gateway embed error", res.status, t);
-    const err = new Error(t || `Gateway ${res.status}`);
-    (err as any).status = res.status;
-    throw err;
-  }
-
-  const data = await res.json();
-  const vec = data?.data?.[0]?.embedding;
-  if (!Array.isArray(vec)) throw new Error("Embedding missing from response");
-  return vec;
+  throw Object.assign(new Error(lastText || `Google embed ${lastStatus}`), { status: lastStatus });
 }
+
 
 
 /** Build a compact text representation of an analysis for embedding. */
