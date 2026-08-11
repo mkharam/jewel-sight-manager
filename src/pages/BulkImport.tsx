@@ -274,7 +274,7 @@ export default function BulkImport() {
   };
 
 
-  const readyCount = items.filter((it) => it.include && it.status === "ready").length;
+  const readyCount = items.filter((it) => it.include && it.status === "ready" && it.storagePath).length;
 
   return (
     <div className="max-w-5xl mx-auto space-y-4">
