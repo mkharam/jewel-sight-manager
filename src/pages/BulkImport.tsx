@@ -260,7 +260,12 @@ export default function BulkImport() {
         { duration: 8000 },
       );
     }
-    if (ok) setItems([]);
+    // نحذف المحفوظة فقط ونُبقي الفاشلة لإعادة المحاولة
+    if (ok) {
+      const savedIds = new Set(ready.map((r) => r.id));
+      setItems((prev) => prev.filter((x) => !savedIds.has(x.id)));
+    }
+
     void branches; // للاحتفاظ بالاستعلام جاهزاً
   };
 
