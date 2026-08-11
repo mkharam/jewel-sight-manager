@@ -1,14 +1,7 @@
-// Shared helpers to call Lovable AI Gateway from edge functions.
-// Uses raw fetch (no AI SDK) to keep the function light.
-// Gateway is OpenAI-compatible: baseURL + Lovable-API-Key header.
+// Shared AI helpers for the jewelry photo pipeline — FREE PROVIDERS ONLY.
+// Vision: Groq → Gemini.  Embeddings: Google gemini-embedding-001.
+// Lovable AI Gateway is intentionally NOT used anywhere here (no credits).
 
-const GATEWAY = "https://ai.gateway.lovable.dev/v1";
-
-export function getLovableKey(): string {
-  const k = Deno.env.get("LOVABLE_API_KEY");
-  if (!k) throw new Error("LOVABLE_API_KEY not configured");
-  return k;
-}
 
 export type JewelryAnalysis = {
   name_ar: string;
@@ -20,126 +13,10 @@ export type JewelryAnalysis = {
   description_ar: string;
 };
 
-const JEWELRY_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    name_ar: { type: "string", description: "اسم مختصر بالعربية للقطعة، 2-6 كلمات" },
-    category_name: { type: ["string", "null"], description: "اسم الفئة الأقرب من القائمة، أو null" },
-    karat: {
-      type: ["string", "null"],
-      enum: ["18K", "21K", "22K", "24K", "ألماس", "فضة", "أخرى", null],
-    },
-    metal_color: {
-      type: ["string", "null"],
-      enum: ["yellow", "white", "rose", "mixed", null],
-      description: "لون المعدن الظاهر في الصورة",
-    },
-    style: {
-      type: "array",
-      items: { type: "string" },
-      description: "1-3 كلمات وصف للتصميم بالعربية",
-    },
-    gemstones: {
-      type: "array",
-      items: { type: "string" },
-      description: "أنواع الأحجار الظاهرة أو مصفوفة فارغة",
-    },
-    description_ar: { type: "string", description: "وصف بالعربية بجملة أو جملتين" },
-  },
-  required: ["name_ar", "category_name", "karat", "metal_color", "style", "gemstones", "description_ar"],
-};
+// ملاحظة: لا توجد دالة تحليل عبر Lovable AI Gateway — تم إزالتها نهائياً
+// حتى لا يستهلك النظام أي أرصدة. المزوّدات المتاحة: Groq ثم Gemini فقط.
 
-/**
- * Vision call: analyze a jewelry photo and return structured fields.
- */
-export async function analyzeJewelryImage(params: {
-  imageBase64: string;
-  mimeType: string;
-  categoryNames: string[];
-}): Promise<JewelryAnalysis> {
-  const { imageBase64, mimeType, categoryNames } = params;
 
-  const catList = categoryNames.length
-    ? categoryNames.join("، ")
-    : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
-
-  const systemPrompt =
-    `أنت خبير مجوهرات عربي متخصص في تمييز أنواع المعادن والأحجار الكريمة.\n` +
-    `\n` +
-    `قواعد التمييز الحاسمة (طبّقها بصرامة):\n` +
-    `1) لون المعدن (metal_color):\n` +
-    `   • yellow = ذهب أصفر لامع/دافئ.\n` +
-    `   • white  = ذهب أبيض أو بلاتين أو فضة (سطح فضي/رمادي فاتح).\n` +
-    `   • rose   = ذهب وردي/نحاسي.\n` +
-    `   • mixed  = القطعة تجمع لونين أو أكثر.\n` +
-    `\n` +
-    `2) قواعد اختيار karat — مهمة جداً:\n` +
-    `   • القطع الصفراء الشائعة في ليبيا ⇐ اختر 21K افتراضياً ما لم يظهر ختم آخر.\n` +
-    `   • السطح الأبيض/الفضي اللامع بدون أحجار شفافة مقطّعة (facets) = ذهب أبيض ⇐ اختر 18K أو 21K حسب اللمعان (ليس "ألماس" وليس "فضة" تلقائياً).\n` +
-    `   • لا تختر "ألماس" إلا إذا رأيت بوضوح أحجاراً شفافة مقطّعة (لها أوجه/facets تعكس الضوء بألوان قزحية) مثبّتة في القطعة. مجرد اللمعان أو اللون الأبيض لا يعني ألماس.\n` +
-    `   • "فضة" فقط إذا كان التصميم بسيطاً/عصرياً بنمط فضي واضح أو يظهر ختم فضة.\n` +
-    `\n` +
-    `3) gemstones: اذكر الأحجار الظاهرة فعلياً (ألماس، زركون، ياقوت، زمرد، لؤلؤ...). إن لم تكن متأكداً اتركها فارغة.\n` +
-    `\n` +
-    `4) category_name: اختر فقط من هذه القائمة (طابق الاسم حرفياً): ${catList}. إن لم تكن الفئة واضحة اجعلها null.\n` +
-    `\n` +
-    `5) description_ar: جملة قصيرة تصف الشكل واللون والحجم النسبي.\n` +
-    `\n` +
-    `أعد فقط JSON مطابق للـ schema، بدون أي نص إضافي.`;
-
-  const body = {
-    model: "google/gemini-3-flash-preview",
-    messages: [
-      { role: "system", content: systemPrompt },
-      {
-        role: "user",
-        content: [
-          { type: "text", text: "حلّل هذه القطعة بدقة عالية:" },
-          {
-            type: "image_url",
-            image_url: { url: `data:${mimeType};base64,${imageBase64}` },
-          },
-        ],
-      },
-    ],
-    response_format: {
-      type: "json_schema",
-      json_schema: {
-        name: "jewelry_analysis",
-        strict: true,
-        schema: JEWELRY_SCHEMA,
-      },
-    },
-  };
-
-  const res = await fetch(`${GATEWAY}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Lovable-API-Key": getLovableKey(),
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    console.error("Gateway vision error", res.status, text);
-    const err = new Error(text || `Gateway ${res.status}`);
-    (err as any).status = res.status;
-    throw err;
-  }
-
-  const data = await res.json();
-  const raw = data?.choices?.[0]?.message?.content ?? "{}";
-  try {
-    return JSON.parse(raw) as JewelryAnalysis;
-  } catch {
-    const m = raw.match(/\{[\s\S]*\}/);
-    if (m) return JSON.parse(m[0]);
-    throw new Error("AI returned invalid JSON");
-  }
-}
 
 /**
  * Groq Vision call — احتياطي مجاني (30 RPM, 14400/day).
@@ -318,8 +195,10 @@ export async function analyzeJewelryImageGemini(params: {
  * المزوّد الذي يفشل فشلاً صريحاً يُستبعد 10 دقائق لتسريع البقية.
  */
 const cooldown = new Map<string, number>();
-const COOLDOWN_MS = 10 * 60 * 1000;
-const HARD_FAIL = new Set([400, 401, 402, 403, 404, 429]);
+/** مفتاح/موديل غير صالح = استبعاد طويل. ازدحام مؤقت = استبعاد قصير. */
+const COOLDOWN_HARD_MS = 10 * 60 * 1000;
+const COOLDOWN_SOFT_MS = 45 * 1000;
+const HARD_FAIL = new Set([400, 401, 402, 403, 404]);
 
 export async function analyzeWithFallback(params: {
   imageBase64: string;
@@ -330,6 +209,9 @@ export async function analyzeWithFallback(params: {
   const m = /^data:([^;]+);base64,(.*)$/s.exec(params.imageBase64.trim());
   if (m) params = { ...params, mimeType: m[1], imageBase64: m[2] };
   params = { ...params, imageBase64: params.imageBase64.replace(/\s/g, "") };
+  if (!params.imageBase64) {
+    throw Object.assign(new Error("الصورة فارغة أو غير صالحة"), { status: 400 });
+  }
 
   const all: Array<{ name: string; fn: () => Promise<JewelryAnalysis> }> = [];
 
@@ -339,20 +221,19 @@ export async function analyzeWithFallback(params: {
   if (Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY")) {
     all.push({ name: "gemini", fn: () => analyzeJewelryImageGemini(params) });
   }
-  // شبكة أمان أخيرة: Lovable AI (تستهلك أرصدة) حتى لا يتوقف النظام إن فشل المجاني
-  if (Deno.env.get("LOVABLE_API_KEY")) {
-    all.push({ name: "lovable", fn: () => analyzeJewelryImage(params) });
-  }
+  // لا يوجد أي احتياطي مدفوع (Lovable AI) — مجاني فقط.
   if (!all.length) {
-    throw Object.assign(new Error("لا يوجد مفتاح ذكاء اصطناعي متاح"), {
-      status: 500,
-    });
+    throw Object.assign(
+      new Error("لا يوجد مفتاح ذكاء اصطناعي مجاني (GROQ_API_KEY أو GOOGLE_API_KEY) — أضفه من إعدادات المشروع."),
+      { status: 500 },
+    );
   }
-
 
   const now = Date.now();
-  const active = all.filter((p) => (cooldown.get(p.name) ?? 0) < now);
-  const providers = active.length ? active : all;
+  // نبدأ بالمزوّدات النشِطة ثم نجرّب المستبعدة كمحاولة أخيرة (بدل تجاهلها).
+  const fresh = all.filter((p) => (cooldown.get(p.name) ?? 0) < now);
+  const cooled = all.filter((p) => (cooldown.get(p.name) ?? 0) >= now);
+  const providers = [...fresh, ...cooled];
 
   let lastErr: unknown = null;
   for (const p of providers) {
@@ -362,72 +243,81 @@ export async function analyzeWithFallback(params: {
       return { analysis, provider: p.name };
     } catch (e) {
       lastErr = e;
-      const status = (e as any)?.status;
-      if (HARD_FAIL.has(status)) cooldown.set(p.name, Date.now() + COOLDOWN_MS);
+      const status = (e as any)?.status ?? 500;
+      cooldown.set(
+        p.name,
+        Date.now() + (HARD_FAIL.has(status) ? COOLDOWN_HARD_MS : COOLDOWN_SOFT_MS),
+      );
       console.warn(`Provider ${p.name} failed [${status}], trying next`);
     }
   }
-  throw lastErr ?? new Error("All AI providers failed");
+  // كل المزودات المجانية فشلت — نُبلّغ الواجهة بوضوح بدل الرجوع لمزوّد مدفوع.
+  const status = (lastErr as any)?.status ?? 429;
+  throw Object.assign(
+    new Error(
+      status === 429
+        ? "كل مزودات الذكاء الاصطناعي المجانية مشغولة الآن (Groq/Gemini) — أعد المحاولة بعد قليل."
+        : `فشل تحليل الصورة: ${(lastErr as Error)?.message ?? "خطأ غير معروف"}`,
+    ),
+    { status },
+  );
 }
+
 
 
 
 /**
  * Embedding مجاني عبر Google (gemini-embedding-001) بأبعاد 1536
- * لمطابقة product_images.ai_embedding. يستخدم Lovable Gateway فقط إن لم يوجد مفتاح Google.
+ * لمطابقة product_images.ai_embedding.
+ * لا يوجد أي احتياطي مدفوع: إن لم يوجد مفتاح Google نرفع خطأً واضحاً.
  */
 export async function embedText(text: string): Promise<number[]> {
   const gkey = (Deno.env.get("GOOGLE_API_KEY") ?? Deno.env.get("GEMINI_API_KEY") ?? "")
     .trim()
     .replace(/^["']|["']$/g, "");
 
-  if (gkey) {
+  if (!gkey) {
+    throw Object.assign(
+      new Error("لا يمكن إنشاء بصمة البحث: مفتاح GOOGLE_API_KEY غير مضبوط (أضفه من إعدادات المشروع)."),
+      { status: 500 },
+    );
+  }
+
+  const input = (text || "").trim().slice(0, 8000) || "قطعة مجوهرات";
+  let lastStatus = 500;
+  let lastText = "";
+
+  for (let attempt = 0; attempt < 3; attempt++) {
     const res = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent",
       {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-goog-api-key": gkey },
         body: JSON.stringify({
-          content: { parts: [{ text }] },
+          content: { parts: [{ text: input }] },
           outputDimensionality: 1536,
         }),
       },
     );
+
     if (res.ok) {
       const data = await res.json();
       const vec = data?.embedding?.values;
-      if (Array.isArray(vec)) return vec;
-    } else {
-      console.error("Google embed error", res.status, await res.text());
+      if (Array.isArray(vec) && vec.length === 1536) return vec;
+      throw Object.assign(new Error("بصمة غير صالحة من Google (أبعاد غير متوقعة)"), { status: 500 });
     }
+
+    lastStatus = res.status;
+    lastText = await res.text();
+    console.error("Google embed error", lastStatus, lastText);
+    const retryable = lastStatus === 429 || lastStatus >= 500;
+    if (!retryable || attempt === 2) break;
+    await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
   }
 
-  const res = await fetch(`${GATEWAY}/embeddings`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Lovable-API-Key": getLovableKey(),
-    },
-    body: JSON.stringify({
-      model: "openai/text-embedding-3-small",
-      input: text,
-      dimensions: 1536,
-    }),
-  });
-
-  if (!res.ok) {
-    const t = await res.text();
-    console.error("Gateway embed error", res.status, t);
-    const err = new Error(t || `Gateway ${res.status}`);
-    (err as any).status = res.status;
-    throw err;
-  }
-
-  const data = await res.json();
-  const vec = data?.data?.[0]?.embedding;
-  if (!Array.isArray(vec)) throw new Error("Embedding missing from response");
-  return vec;
+  throw Object.assign(new Error(lastText || `Google embed ${lastStatus}`), { status: lastStatus });
 }
+
 
 
 /** Build a compact text representation of an analysis for embedding. */
@@ -446,12 +336,13 @@ export function analysisToEmbeddingText(a: JewelryAnalysis): string {
 /** Map an AI-friendly error to user-facing Arabic + status code. */
 export function friendlyError(e: unknown): { status: number; message: string } {
   const status = (e as any)?.status ?? 500;
-  if (status === 402) {
-    return { status: 402, message: "انتهى رصيد الذكاء الاصطناعي، تواصل مع المدير لشحن الرصيد." };
+  if (status === 401 || status === 403) {
+    return { status, message: "مفتاح الذكاء الاصطناعي المجاني غير صالح — راجع GROQ_API_KEY / GOOGLE_API_KEY." };
   }
-  if (status === 429) {
-    return { status: 429, message: "الذكاء الاصطناعي مشغول الآن، حاول بعد قليل." };
+  if (status === 402 || status === 429) {
+    return { status: 429, message: "حد الاستخدام المجاني ممتلئ الآن (Groq/Gemini)، حاول بعد قليل." };
   }
+
   const msg = e instanceof Error ? e.message : "خطأ غير متوقع";
   return { status: 500, message: msg };
 }

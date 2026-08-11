@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { KARAT_OPTIONS } from "@/lib/constants";
 
 type Item = {
+  id: string; // معرّف ثابت — المطابقة بالمرجع تفشل بعد أي تحديث للحالة
   previewUrl: string;
   file: File;
   status: "pending" | "uploading" | "analyzing" | "ready" | "error";
@@ -28,10 +29,12 @@ type Item = {
   karat: string;
   description: string;
   error?: string;
-  provider?: string; // gemini | groq | lovable | cached
+  provider?: string; // gemini | groq | cached
   // Full analysis kept so we can persist embedding on save (photo search).
   analysis?: any;
+  base64?: string; // cache: لا نعيد قراءة الملف في كل محاولة
 };
+
 
 
 export default function BulkImport() {
@@ -60,7 +63,8 @@ export default function BulkImport() {
     const arr = Array.from(files).filter((f) => f.type.startsWith("image/") && f.size <= 8 * 1024 * 1024);
     if (!arr.length) return toast.error("اختر صوراً (JPG/PNG/WEBP) حجم كل صورة ≤ 8MB");
 
-    const newItems: Item[] = arr.map((f) => ({
+    const newItems: Item[] = arr.map((f, idx) => ({
+      id: `${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 8)}`,
       previewUrl: URL.createObjectURL(f),
       file: f,
       status: "uploading",
@@ -71,10 +75,13 @@ export default function BulkImport() {
       description: "",
     }));
     setItems((prev) => [...prev, ...newItems]);
-    toast.success(`${newItems.length} صورة — يجري الرفع أولاً ثم التحليل تلقائياً`);
-    // 1) رفع الكل بالتوازي (سريع جداً)، 2) تحليل واحدة تلو الأخرى (احتراماً لحد Gemini المجاني 15 طلب/دقيقة)
+    toast.success(`${newItems.length} صورة — الرفع والتحليل يعملان معاً`);
     processAll(newItems);
   };
+
+  /** تحديث عنصر بالمعرّف الثابت (المطابقة بالمرجع تفشل بعد أي setItems). */
+  const patch = (id: string, p: Partial<Item>) =>
+    setItems((prev) => prev.map((x) => (x.id === id ? { ...x, ...p } : x)));
 
   const processAll = async (list: Item[]) => {
     setProcessing(true);
@@ -82,23 +89,12 @@ export default function BulkImport() {
     // مرحلتان مستقلتان تعملان في نفس الوقت:
     //  • الرفع (6 معاً) — لا ينتظر التحليل.
     //  • التحليل (3 معاً) — يبدأ فوراً على الصورة المحلية بدون انتظار انتهاء أي رفع.
-    // النتيجة: أول صورة تبدأ التحليل خلال أجزاء من الثانية، وليس بعد رفع الكل.
     const uploadPool = async (concurrency: number) => {
       let i = 0;
       const worker = async () => {
         while (i < list.length) {
           const k = i++;
-          const it = list[k];
-          try {
-            const ext = (it.file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
-            const path = `imports/${user!.id}/${Date.now()}-${k}-${Math.random().toString(36).slice(2, 7)}.${ext || "jpg"}`;
-            const { error: upErr } = await supabase.storage.from("product-images").upload(path, it.file);
-            if (upErr) throw upErr;
-            it.storagePath = path;
-            setItems((prev) => prev.map((x) => (x === it ? { ...x, storagePath: path } : x)));
-          } catch (e: any) {
-            setError(it, e?.message ?? "فشل رفع الصورة");
-          }
+          await uploadOne(list[k], k);
         }
       };
       await Promise.all(Array.from({ length: concurrency }, worker));
@@ -109,7 +105,7 @@ export default function BulkImport() {
       const worker = async () => {
         while (i < list.length) {
           const it = list[i++];
-          if (it.status === "error") continue;
+          if (it.status === "error") continue; // مُحدَّث على الكائن الأصلي في setError
           await analyzeOne(it);
         }
       };
@@ -120,64 +116,89 @@ export default function BulkImport() {
     setProcessing(false);
   };
 
+  /** رفع صورة واحدة للتخزين مع إعادة محاولة واحدة عند فشل الشبكة. */
+  const uploadOne = async (it: Item, k = 0) => {
+    if (it.storagePath) return;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const ext = (it.file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
+        const path = `imports/${user!.id}/${Date.now()}-${k}-${Math.random().toString(36).slice(2, 7)}.${ext || "jpg"}`;
+        const { error: upErr } = await supabase.storage.from("product-images").upload(path, it.file);
+        if (upErr) throw upErr;
+        it.storagePath = path;
+        patch(it.id, { storagePath: path });
+        return;
+      } catch (e: any) {
+        if (attempt === 1) setError(it, e?.message ?? "فشل رفع الصورة");
+        else await new Promise((r) => setTimeout(r, 1500));
+      }
+    }
+  };
+
+
 
 
 
   // تحليل صورة واحدة (يُستخدم للمرة الأولى وللإعادة اليدوية).
   const analyzeOne = async (it: Item) => {
-    setItems((prev) => prev.map((x) => (x === it ? { ...x, status: "analyzing", error: undefined } : x)));
-    let attempts = 0;
-    while (attempts < 3) {
+    it.status = "analyzing";
+    patch(it.id, { status: "analyzing", error: undefined });
+    for (let attempts = 0; attempts < 3; attempts++) {
       try {
-        const base64 = await fileToBase64(it.file);
+        if (!it.base64) it.base64 = await fileToBase64(it.file);
         const { data, error } = await supabase.functions.invoke("analyze-product-image", {
-          body: { imageBase64: base64, mimeType: it.file.type, categories: categories ?? [] },
+          body: { imageBase64: it.base64, mimeType: it.file.type, categories: categories ?? [] },
         });
         if (error) throw error;
         if ((data as any)?.error) throw new Error((data as any).error);
         const a = data as any;
-        setItems((prev) => prev.map((x) =>
-          x === it
-            ? {
-                ...x,
-                status: "ready",
-                name: a.name_ar || "",
-                category: a.category_name || "",
-                karat: a.karat || "",
-                description: a.description_ar || "",
-                provider: a.provider,
-                analysis: a,
-              }
-            : x,
-        ));
+        it.status = "ready";
+        it.analysis = a;
+        patch(it.id, {
+          status: "ready",
+          name: a.name_ar || "",
+          category: a.category_name || "",
+          karat: a.karat || "",
+          description: a.description_ar || "",
+          provider: a.provider,
+          analysis: a,
+        });
         return;
       } catch (e: any) {
         const msg = e?.message ?? "فشل التحليل";
-        if (msg.includes("429") || msg.toLowerCase().includes("rate") || msg.includes("مشغول") || msg.includes("AI_BUSY")) {
-          attempts++;
-          if (attempts >= 3) {
-            setError(it, "كل المزودات مشغولة الآن — اضغط ↻ للإعادة");
-            return;
-          }
-          await new Promise((r) => setTimeout(r, 6000));
-
-          continue;
+        const busy =
+          msg.includes("429") ||
+          msg.toLowerCase().includes("rate") ||
+          msg.includes("مشغول") ||
+          msg.includes("ممتلئ") ||
+          msg.includes("AI_BUSY");
+        if (!busy || attempts === 2) {
+          setError(it, busy ? "الحد المجاني ممتلئ الآن — اضغط ↻ للإعادة" : msg);
+          return;
         }
-        setError(it, msg);
-        return;
+        // تراجع تدريجي: 5s ثم 12s
+        await new Promise((r) => setTimeout(r, attempts === 0 ? 5000 : 12000));
       }
     }
   };
 
+  /** إعادة يدوية: ترفع الصورة إن لم تُرفع، ثم تعيد التحليل. */
   const retryOne = async (it: Item) => {
-    if (!it.storagePath) return;
+    if (!it.storagePath) {
+      it.status = "uploading";
+      patch(it.id, { status: "uploading", error: undefined, include: true });
+      await uploadOne(it);
+      if (!it.storagePath) return;
+    }
+    patch(it.id, { include: true });
     await analyzeOne(it);
   };
 
-
   const setError = (it: Item, msg: string) => {
-    setItems((prev) => prev.map((x) => (x === it ? { ...x, status: "error", include: false, error: msg } : x)));
+    it.status = "error";
+    patch(it.id, { status: "error", include: false, error: msg });
   };
+
 
 
   const updateItem = (i: number, patch: Partial<Item>) =>
@@ -239,7 +260,12 @@ export default function BulkImport() {
         { duration: 8000 },
       );
     }
-    if (ok) setItems([]);
+    // نحذف المحفوظة فقط ونُبقي الفاشلة لإعادة المحاولة
+    if (ok) {
+      const savedIds = new Set(ready.map((r) => r.id));
+      setItems((prev) => prev.filter((x) => !savedIds.has(x.id)));
+    }
+
     void branches; // للاحتفاظ بالاستعلام جاهزاً
   };
 
@@ -262,7 +288,12 @@ export default function BulkImport() {
       } catch (e: any) {
         const msg = String(e?.message ?? "");
         const retryable =
-          msg.includes("429") || msg.toLowerCase().includes("rate") || msg.includes("AI_BUSY") || msg.includes("مشغول");
+          msg.includes("429") ||
+          msg.toLowerCase().includes("rate") ||
+          msg.includes("AI_BUSY") ||
+          msg.includes("ممتلئ") ||
+          msg.includes("مشغول");
+
         if (!retryable || attempt === 2) {
           console.warn("index failed", imageId, msg);
           return false;
