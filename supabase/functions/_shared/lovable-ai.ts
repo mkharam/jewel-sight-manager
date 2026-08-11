@@ -336,12 +336,13 @@ export function analysisToEmbeddingText(a: JewelryAnalysis): string {
 /** Map an AI-friendly error to user-facing Arabic + status code. */
 export function friendlyError(e: unknown): { status: number; message: string } {
   const status = (e as any)?.status ?? 500;
-  if (status === 402) {
-    return { status: 402, message: "انتهى رصيد الذكاء الاصطناعي، تواصل مع المدير لشحن الرصيد." };
+  if (status === 401 || status === 403) {
+    return { status, message: "مفتاح الذكاء الاصطناعي المجاني غير صالح — راجع GROQ_API_KEY / GOOGLE_API_KEY." };
   }
-  if (status === 429) {
-    return { status: 429, message: "الذكاء الاصطناعي مشغول الآن، حاول بعد قليل." };
+  if (status === 402 || status === 429) {
+    return { status: 429, message: "حد الاستخدام المجاني ممتلئ الآن (Groq/Gemini)، حاول بعد قليل." };
   }
+
   const msg = e instanceof Error ? e.message : "خطأ غير متوقع";
   return { status: 500, message: msg };
 }
