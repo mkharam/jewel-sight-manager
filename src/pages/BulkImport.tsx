@@ -63,7 +63,8 @@ export default function BulkImport() {
     const arr = Array.from(files).filter((f) => f.type.startsWith("image/") && f.size <= 8 * 1024 * 1024);
     if (!arr.length) return toast.error("اختر صوراً (JPG/PNG/WEBP) حجم كل صورة ≤ 8MB");
 
-    const newItems: Item[] = arr.map((f) => ({
+    const newItems: Item[] = arr.map((f, idx) => ({
+      id: `${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 8)}`,
       previewUrl: URL.createObjectURL(f),
       file: f,
       status: "uploading",
@@ -74,10 +75,13 @@ export default function BulkImport() {
       description: "",
     }));
     setItems((prev) => [...prev, ...newItems]);
-    toast.success(`${newItems.length} صورة — يجري الرفع أولاً ثم التحليل تلقائياً`);
-    // 1) رفع الكل بالتوازي (سريع جداً)، 2) تحليل واحدة تلو الأخرى (احتراماً لحد Gemini المجاني 15 طلب/دقيقة)
+    toast.success(`${newItems.length} صورة — الرفع والتحليل يعملان معاً`);
     processAll(newItems);
   };
+
+  /** تحديث عنصر بالمعرّف الثابت (المطابقة بالمرجع تفشل بعد أي setItems). */
+  const patch = (id: string, p: Partial<Item>) =>
+    setItems((prev) => prev.map((x) => (x.id === id ? { ...x, ...p } : x)));
 
   const processAll = async (list: Item[]) => {
     setProcessing(true);
@@ -85,23 +89,12 @@ export default function BulkImport() {
     // مرحلتان مستقلتان تعملان في نفس الوقت:
     //  • الرفع (6 معاً) — لا ينتظر التحليل.
     //  • التحليل (3 معاً) — يبدأ فوراً على الصورة المحلية بدون انتظار انتهاء أي رفع.
-    // النتيجة: أول صورة تبدأ التحليل خلال أجزاء من الثانية، وليس بعد رفع الكل.
     const uploadPool = async (concurrency: number) => {
       let i = 0;
       const worker = async () => {
         while (i < list.length) {
           const k = i++;
-          const it = list[k];
-          try {
-            const ext = (it.file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
-            const path = `imports/${user!.id}/${Date.now()}-${k}-${Math.random().toString(36).slice(2, 7)}.${ext || "jpg"}`;
-            const { error: upErr } = await supabase.storage.from("product-images").upload(path, it.file);
-            if (upErr) throw upErr;
-            it.storagePath = path;
-            setItems((prev) => prev.map((x) => (x === it ? { ...x, storagePath: path } : x)));
-          } catch (e: any) {
-            setError(it, e?.message ?? "فشل رفع الصورة");
-          }
+          await uploadOne(list[k], k);
         }
       };
       await Promise.all(Array.from({ length: concurrency }, worker));
@@ -112,7 +105,7 @@ export default function BulkImport() {
       const worker = async () => {
         while (i < list.length) {
           const it = list[i++];
-          if (it.status === "error") continue;
+          if (it.status === "error") continue; // مُحدَّث على الكائن الأصلي في setError
           await analyzeOne(it);
         }
       };
@@ -122,6 +115,26 @@ export default function BulkImport() {
     await Promise.all([uploadPool(6), analyzePool(3)]);
     setProcessing(false);
   };
+
+  /** رفع صورة واحدة للتخزين مع إعادة محاولة واحدة عند فشل الشبكة. */
+  const uploadOne = async (it: Item, k = 0) => {
+    if (it.storagePath) return;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const ext = (it.file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
+        const path = `imports/${user!.id}/${Date.now()}-${k}-${Math.random().toString(36).slice(2, 7)}.${ext || "jpg"}`;
+        const { error: upErr } = await supabase.storage.from("product-images").upload(path, it.file);
+        if (upErr) throw upErr;
+        it.storagePath = path;
+        patch(it.id, { storagePath: path });
+        return;
+      } catch (e: any) {
+        if (attempt === 1) setError(it, e?.message ?? "فشل رفع الصورة");
+        else await new Promise((r) => setTimeout(r, 1500));
+      }
+    }
+  };
+
 
 
 
