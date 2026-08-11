@@ -13,38 +13,9 @@ export type JewelryAnalysis = {
   description_ar: string;
 };
 
-const JEWELRY_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    name_ar: { type: "string", description: "اسم مختصر بالعربية للقطعة، 2-6 كلمات" },
-    category_name: { type: ["string", "null"], description: "اسم الفئة الأقرب من القائمة، أو null" },
-    karat: {
-      type: ["string", "null"],
-      enum: ["18K", "21K", "22K", "24K", "ألماس", "فضة", "أخرى", null],
-    },
-    metal_color: {
-      type: ["string", "null"],
-      enum: ["yellow", "white", "rose", "mixed", null],
-      description: "لون المعدن الظاهر في الصورة",
-    },
-    style: {
-      type: "array",
-      items: { type: "string" },
-      description: "1-3 كلمات وصف للتصميم بالعربية",
-    },
-    gemstones: {
-      type: "array",
-      items: { type: "string" },
-      description: "أنواع الأحجار الظاهرة أو مصفوفة فارغة",
-    },
-    description_ar: { type: "string", description: "وصف بالعربية بجملة أو جملتين" },
-  },
-  required: ["name_ar", "category_name", "karat", "metal_color", "style", "gemstones", "description_ar"],
-};
-
 // ملاحظة: لا توجد دالة تحليل عبر Lovable AI Gateway — تم إزالتها نهائياً
 // حتى لا يستهلك النظام أي أرصدة. المزوّدات المتاحة: Groq ثم Gemini فقط.
+
 
 
 /**
