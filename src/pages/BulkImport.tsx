@@ -141,59 +141,64 @@ export default function BulkImport() {
 
   // تحليل صورة واحدة (يُستخدم للمرة الأولى وللإعادة اليدوية).
   const analyzeOne = async (it: Item) => {
-    setItems((prev) => prev.map((x) => (x === it ? { ...x, status: "analyzing", error: undefined } : x)));
-    let attempts = 0;
-    while (attempts < 3) {
+    it.status = "analyzing";
+    patch(it.id, { status: "analyzing", error: undefined });
+    for (let attempts = 0; attempts < 3; attempts++) {
       try {
-        const base64 = await fileToBase64(it.file);
+        if (!it.base64) it.base64 = await fileToBase64(it.file);
         const { data, error } = await supabase.functions.invoke("analyze-product-image", {
-          body: { imageBase64: base64, mimeType: it.file.type, categories: categories ?? [] },
+          body: { imageBase64: it.base64, mimeType: it.file.type, categories: categories ?? [] },
         });
         if (error) throw error;
         if ((data as any)?.error) throw new Error((data as any).error);
         const a = data as any;
-        setItems((prev) => prev.map((x) =>
-          x === it
-            ? {
-                ...x,
-                status: "ready",
-                name: a.name_ar || "",
-                category: a.category_name || "",
-                karat: a.karat || "",
-                description: a.description_ar || "",
-                provider: a.provider,
-                analysis: a,
-              }
-            : x,
-        ));
+        it.status = "ready";
+        it.analysis = a;
+        patch(it.id, {
+          status: "ready",
+          name: a.name_ar || "",
+          category: a.category_name || "",
+          karat: a.karat || "",
+          description: a.description_ar || "",
+          provider: a.provider,
+          analysis: a,
+        });
         return;
       } catch (e: any) {
         const msg = e?.message ?? "فشل التحليل";
-        if (msg.includes("429") || msg.toLowerCase().includes("rate") || msg.includes("مشغول") || msg.includes("AI_BUSY")) {
-          attempts++;
-          if (attempts >= 3) {
-            setError(it, "كل المزودات مشغولة الآن — اضغط ↻ للإعادة");
-            return;
-          }
-          await new Promise((r) => setTimeout(r, 6000));
-
-          continue;
+        const busy =
+          msg.includes("429") ||
+          msg.toLowerCase().includes("rate") ||
+          msg.includes("مشغول") ||
+          msg.includes("ممتلئ") ||
+          msg.includes("AI_BUSY");
+        if (!busy || attempts === 2) {
+          setError(it, busy ? "الحد المجاني ممتلئ الآن — اضغط ↻ للإعادة" : msg);
+          return;
         }
-        setError(it, msg);
-        return;
+        // تراجع تدريجي: 5s ثم 12s
+        await new Promise((r) => setTimeout(r, attempts === 0 ? 5000 : 12000));
       }
     }
   };
 
+  /** إعادة يدوية: ترفع الصورة إن لم تُرفع، ثم تعيد التحليل. */
   const retryOne = async (it: Item) => {
-    if (!it.storagePath) return;
+    if (!it.storagePath) {
+      it.status = "uploading";
+      patch(it.id, { status: "uploading", error: undefined, include: true });
+      await uploadOne(it);
+      if (!it.storagePath) return;
+    }
+    patch(it.id, { include: true });
     await analyzeOne(it);
   };
 
-
   const setError = (it: Item, msg: string) => {
-    setItems((prev) => prev.map((x) => (x === it ? { ...x, status: "error", include: false, error: msg } : x)));
+    it.status = "error";
+    patch(it.id, { status: "error", include: false, error: msg });
   };
+
 
 
   const updateItem = (i: number, patch: Partial<Item>) =>
