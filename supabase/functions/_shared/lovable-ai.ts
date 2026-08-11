@@ -195,8 +195,10 @@ export async function analyzeJewelryImageGemini(params: {
  * المزوّد الذي يفشل فشلاً صريحاً يُستبعد 10 دقائق لتسريع البقية.
  */
 const cooldown = new Map<string, number>();
-const COOLDOWN_MS = 10 * 60 * 1000;
-const HARD_FAIL = new Set([400, 401, 402, 403, 404, 429]);
+/** مفتاح/موديل غير صالح = استبعاد طويل. ازدحام مؤقت = استبعاد قصير. */
+const COOLDOWN_HARD_MS = 10 * 60 * 1000;
+const COOLDOWN_SOFT_MS = 45 * 1000;
+const HARD_FAIL = new Set([400, 401, 402, 403, 404]);
 
 export async function analyzeWithFallback(params: {
   imageBase64: string;
@@ -207,6 +209,9 @@ export async function analyzeWithFallback(params: {
   const m = /^data:([^;]+);base64,(.*)$/s.exec(params.imageBase64.trim());
   if (m) params = { ...params, mimeType: m[1], imageBase64: m[2] };
   params = { ...params, imageBase64: params.imageBase64.replace(/\s/g, "") };
+  if (!params.imageBase64) {
+    throw Object.assign(new Error("الصورة فارغة أو غير صالحة"), { status: 400 });
+  }
 
   const all: Array<{ name: string; fn: () => Promise<JewelryAnalysis> }> = [];
 
@@ -216,20 +221,19 @@ export async function analyzeWithFallback(params: {
   if (Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY")) {
     all.push({ name: "gemini", fn: () => analyzeJewelryImageGemini(params) });
   }
-  // شبكة أمان أخيرة: Lovable AI (تستهلك أرصدة) حتى لا يتوقف النظام إن فشل المجاني
-  if (Deno.env.get("LOVABLE_API_KEY")) {
-    all.push({ name: "lovable", fn: () => analyzeJewelryImage(params) });
-  }
+  // لا يوجد أي احتياطي مدفوع (Lovable AI) — مجاني فقط.
   if (!all.length) {
-    throw Object.assign(new Error("لا يوجد مفتاح ذكاء اصطناعي متاح"), {
-      status: 500,
-    });
+    throw Object.assign(
+      new Error("لا يوجد مفتاح ذكاء اصطناعي مجاني (GROQ_API_KEY أو GOOGLE_API_KEY) — أضفه من إعدادات المشروع."),
+      { status: 500 },
+    );
   }
-
 
   const now = Date.now();
-  const active = all.filter((p) => (cooldown.get(p.name) ?? 0) < now);
-  const providers = active.length ? active : all;
+  // نبدأ بالمزوّدات النشِطة ثم نجرّب المستبعدة كمحاولة أخيرة (بدل تجاهلها).
+  const fresh = all.filter((p) => (cooldown.get(p.name) ?? 0) < now);
+  const cooled = all.filter((p) => (cooldown.get(p.name) ?? 0) >= now);
+  const providers = [...fresh, ...cooled];
 
   let lastErr: unknown = null;
   for (const p of providers) {
@@ -239,13 +243,26 @@ export async function analyzeWithFallback(params: {
       return { analysis, provider: p.name };
     } catch (e) {
       lastErr = e;
-      const status = (e as any)?.status;
-      if (HARD_FAIL.has(status)) cooldown.set(p.name, Date.now() + COOLDOWN_MS);
+      const status = (e as any)?.status ?? 500;
+      cooldown.set(
+        p.name,
+        Date.now() + (HARD_FAIL.has(status) ? COOLDOWN_HARD_MS : COOLDOWN_SOFT_MS),
+      );
       console.warn(`Provider ${p.name} failed [${status}], trying next`);
     }
   }
-  throw lastErr ?? new Error("All AI providers failed");
+  // كل المزودات المجانية فشلت — نُبلّغ الواجهة بوضوح بدل الرجوع لمزوّد مدفوع.
+  const status = (lastErr as any)?.status ?? 429;
+  throw Object.assign(
+    new Error(
+      status === 429
+        ? "كل مزودات الذكاء الاصطناعي المجانية مشغولة الآن (Groq/Gemini) — أعد المحاولة بعد قليل."
+        : `فشل تحليل الصورة: ${(lastErr as Error)?.message ?? "خطأ غير معروف"}`,
+    ),
+    { status },
+  );
 }
+
 
 
 
