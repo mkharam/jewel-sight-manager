@@ -43,96 +43,9 @@ const JEWELRY_SCHEMA = {
   required: ["name_ar", "category_name", "karat", "metal_color", "style", "gemstones", "description_ar"],
 };
 
-/**
- * Vision call: analyze a jewelry photo and return structured fields.
- */
-export async function analyzeJewelryImage(params: {
-  imageBase64: string;
-  mimeType: string;
-  categoryNames: string[];
-}): Promise<JewelryAnalysis> {
-  const { imageBase64, mimeType, categoryNames } = params;
+// ملاحظة: لا توجد دالة تحليل عبر Lovable AI Gateway — تم إزالتها نهائياً
+// حتى لا يستهلك النظام أي أرصدة. المزوّدات المتاحة: Groq ثم Gemini فقط.
 
-  const catList = categoryNames.length
-    ? categoryNames.join("، ")
-    : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
-
-  const systemPrompt =
-    `أنت خبير مجوهرات عربي متخصص في تمييز أنواع المعادن والأحجار الكريمة.\n` +
-    `\n` +
-    `قواعد التمييز الحاسمة (طبّقها بصرامة):\n` +
-    `1) لون المعدن (metal_color):\n` +
-    `   • yellow = ذهب أصفر لامع/دافئ.\n` +
-    `   • white  = ذهب أبيض أو بلاتين أو فضة (سطح فضي/رمادي فاتح).\n` +
-    `   • rose   = ذهب وردي/نحاسي.\n` +
-    `   • mixed  = القطعة تجمع لونين أو أكثر.\n` +
-    `\n` +
-    `2) قواعد اختيار karat — مهمة جداً:\n` +
-    `   • القطع الصفراء الشائعة في ليبيا ⇐ اختر 21K افتراضياً ما لم يظهر ختم آخر.\n` +
-    `   • السطح الأبيض/الفضي اللامع بدون أحجار شفافة مقطّعة (facets) = ذهب أبيض ⇐ اختر 18K أو 21K حسب اللمعان (ليس "ألماس" وليس "فضة" تلقائياً).\n` +
-    `   • لا تختر "ألماس" إلا إذا رأيت بوضوح أحجاراً شفافة مقطّعة (لها أوجه/facets تعكس الضوء بألوان قزحية) مثبّتة في القطعة. مجرد اللمعان أو اللون الأبيض لا يعني ألماس.\n` +
-    `   • "فضة" فقط إذا كان التصميم بسيطاً/عصرياً بنمط فضي واضح أو يظهر ختم فضة.\n` +
-    `\n` +
-    `3) gemstones: اذكر الأحجار الظاهرة فعلياً (ألماس، زركون، ياقوت، زمرد، لؤلؤ...). إن لم تكن متأكداً اتركها فارغة.\n` +
-    `\n` +
-    `4) category_name: اختر فقط من هذه القائمة (طابق الاسم حرفياً): ${catList}. إن لم تكن الفئة واضحة اجعلها null.\n` +
-    `\n` +
-    `5) description_ar: جملة قصيرة تصف الشكل واللون والحجم النسبي.\n` +
-    `\n` +
-    `أعد فقط JSON مطابق للـ schema، بدون أي نص إضافي.`;
-
-  const body = {
-    model: "google/gemini-3-flash-preview",
-    messages: [
-      { role: "system", content: systemPrompt },
-      {
-        role: "user",
-        content: [
-          { type: "text", text: "حلّل هذه القطعة بدقة عالية:" },
-          {
-            type: "image_url",
-            image_url: { url: `data:${mimeType};base64,${imageBase64}` },
-          },
-        ],
-      },
-    ],
-    response_format: {
-      type: "json_schema",
-      json_schema: {
-        name: "jewelry_analysis",
-        strict: true,
-        schema: JEWELRY_SCHEMA,
-      },
-    },
-  };
-
-  const res = await fetch(`${GATEWAY}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Lovable-API-Key": getLovableKey(),
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    console.error("Gateway vision error", res.status, text);
-    const err = new Error(text || `Gateway ${res.status}`);
-    (err as any).status = res.status;
-    throw err;
-  }
-
-  const data = await res.json();
-  const raw = data?.choices?.[0]?.message?.content ?? "{}";
-  try {
-    return JSON.parse(raw) as JewelryAnalysis;
-  } catch {
-    const m = raw.match(/\{[\s\S]*\}/);
-    if (m) return JSON.parse(m[0]);
-    throw new Error("AI returned invalid JSON");
-  }
-}
 
 /**
  * Groq Vision call — احتياطي مجاني (30 RPM, 14400/day).
