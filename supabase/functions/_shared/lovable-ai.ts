@@ -47,28 +47,36 @@ export async function analyzeJewelryImageGroq(params: {
     `- "ألماس" فقط عند رؤية أحجار شفافة لها facets واضحة.\n` +
     `- القطع الصفراء الليبية الافتراضي 21K.`;
 
-  // موديلات Groq القادرة على الرؤية، بالأفضلية — نكتشف المتاح لهذا المفتاح
-  const PREFERRED = [
+  // موديلات Groq القادرة على الرؤية فقط — لا نستخدم أي موديل نصي
+  const KNOWN_VISION = [
     "meta-llama/llama-4-scout-17b-16e-instruct",
     "meta-llama/llama-4-maverick-17b-128e-instruct",
-    "groq/compound",
-    "groq/compound-mini",
-    "qwen/qwen3.6-27b",
   ];
-  let GROQ_VISION_MODELS = PREFERRED;
+  const VISION_RE = /llama-4|scout|maverick|-vl-|vision/i;
+  let GROQ_VISION_MODELS: string[] = KNOWN_VISION;
   try {
     const ml = await fetch("https://api.groq.com/openai/v1/models", {
       headers: { Authorization: `Bearer ${key}` },
     });
     if (ml.ok) {
       const allIds: string[] = ((await ml.json())?.data ?? []).map((m: any) => String(m?.id ?? ""));
-      const available = PREFERRED.filter((m) => allIds.includes(m));
-      const extra = allIds.filter((id) => /vision|llama-4|scout|maverick|-vl|gemma-3/i.test(id) && !available.includes(id));
+      console.log("Groq available models (raw):", JSON.stringify(allIds));
+      const available = KNOWN_VISION.filter((m) => allIds.includes(m));
+      const extra = allIds.filter((id) => VISION_RE.test(id) && !available.includes(id));
       const list = [...available, ...extra];
       console.log("Groq vision candidates:", list.join(", ") || "none");
-      if (list.length) GROQ_VISION_MODELS = list;
+      GROQ_VISION_MODELS = list;
+    } else {
+      console.log("Groq /models failed:", ml.status, (await ml.text()).slice(0, 300));
     }
-  } catch (_e) { /* استخدم القائمة الافتراضية */ }
+  } catch (e) {
+    console.log("Groq /models error:", String(e));
+  }
+
+  if (!GROQ_VISION_MODELS.length) {
+    throw new Error("No vision-capable Groq model available on this API key");
+  }
+
 
 
 
