@@ -195,6 +195,8 @@ export async function analyzeJewelryImageGemini(params: {
     if (m) return JSON.parse(m[0]);
     throw new Error("Gemini returned invalid JSON");
   }
+}
+
 
 /** موديلات OpenRouter المجانية القادرة على الرؤية (تم التحقق منها من /models). */
 const OPENROUTER_VISION_MODELS = [
