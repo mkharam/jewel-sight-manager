@@ -1,5 +1,5 @@
 // Shared AI helpers for the jewelry photo pipeline — FREE PROVIDERS ONLY.
-// Vision: Groq → Gemini.  Embeddings: Google gemini-embedding-001.
+// Vision: OpenRouter → Groq → Gemini.  Embeddings: Google gemini-embedding-001.
 // Lovable AI Gateway is intentionally NOT used anywhere here (no credits).
 
 
@@ -14,201 +14,43 @@ export type JewelryAnalysis = {
 };
 
 // ملاحظة: لا توجد دالة تحليل عبر Lovable AI Gateway — تم إزالتها نهائياً
-// حتى لا يستهلك النظام أي أرصدة. المزوّدات المتاحة: Groq ثم Gemini فقط.
+// حتى لا يستهلك النظام أي أرصدة. المزوّدات المتاحة: OpenRouter ثم Groq ثم Gemini.
 
-
-
-/**
- * Groq Vision call — احتياطي مجاني (30 RPM, 14400/day).
- * يستخدم Llama 3.2 Vision. جودة تحليل عربية جيدة.
- */
-export async function analyzeJewelryImageGroq(params: {
-  imageBase64: string;
-  mimeType: string;
-  categoryNames: string[];
-}): Promise<JewelryAnalysis> {
-  const key = Deno.env.get("GROQ_API_KEY")?.trim();
-  if (!key) throw Object.assign(new Error("GROQ_API_KEY not set"), { status: 500 });
-
-  const { imageBase64, mimeType, categoryNames } = params;
-  const catList = categoryNames.length
-    ? categoryNames.join("، ")
-    : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
-
-  const systemPrompt =
-    `أنت خبير مجوهرات عربي. أعد JSON فقط بهذا الشكل بالضبط بدون أي نص إضافي:\n` +
-    `{"name_ar":"...","category_name":"...","karat":"21K","metal_color":"yellow","style":[],"gemstones":[],"description_ar":"..."}\n\n` +
+// ============================================================
+// PROMPT مشترك — دقيق وغير افتراضي (لا "ألماس" ولا "21K" كافتراضي)
+// ============================================================
+function buildSystemPrompt(catList: string): string {
+  return (
+    `أنت خبير مجوهرات عربي دقيق الملاحظة. أعد JSON فقط بهذا الشكل بالضبط بدون أي نص إضافي:\n` +
+    `{"name_ar":"...","category_name":"...","karat":null,"metal_color":"yellow","style":[],"gemstones":[],"description_ar":"..."}\n\n` +
     `القيم المسموحة:\n` +
     `- karat: 18K, 21K, 22K, 24K, ألماس, فضة, أخرى, null\n` +
     `- metal_color: yellow, white, rose, mixed, null\n` +
     `- category_name يطابق واحدة من: ${catList} أو null\n\n` +
-    `قواعد:\n` +
-    `- السطح الأبيض اللامع بدون أحجار مقطّعة شفافة = ذهب أبيض (18K/21K)، ليس ألماس.\n` +
-    `- "ألماس" فقط عند رؤية أحجار شفافة لها facets واضحة.\n` +
-    `- القطع الصفراء الليبية الافتراضي 21K.`;
-
-  // موديلات Groq القادرة على الرؤية فقط — لا نستخدم أي موديل نصي
-  const KNOWN_VISION = [
-    "meta-llama/llama-4-scout-17b-16e-instruct",
-    "meta-llama/llama-4-maverick-17b-128e-instruct",
-  ];
-  const VISION_RE = /llama-4|scout|maverick|-vl-|vision/i;
-  let GROQ_VISION_MODELS: string[] = KNOWN_VISION;
-  try {
-    const ml = await fetch("https://api.groq.com/openai/v1/models", {
-      headers: { Authorization: `Bearer ${key}` },
-    });
-    if (ml.ok) {
-      const allIds: string[] = ((await ml.json())?.data ?? []).map((m: any) => String(m?.id ?? ""));
-      console.log("Groq available models (raw):", JSON.stringify(allIds));
-      const available = KNOWN_VISION.filter((m) => allIds.includes(m));
-      const extra = allIds.filter((id) => VISION_RE.test(id) && !available.includes(id));
-      const list = [...available, ...extra];
-      console.log("Groq vision candidates:", list.join(", ") || "none");
-      GROQ_VISION_MODELS = list;
-    } else {
-      console.log("Groq /models failed:", ml.status, (await ml.text()).slice(0, 300));
-    }
-  } catch (e) {
-    console.log("Groq /models error:", String(e));
-  }
-
-  if (!GROQ_VISION_MODELS.length) {
-    throw new Error("No vision-capable Groq model available on this API key");
-  }
-
-
-
-
-  const makeBody = (model: string) => ({
-    model,
-    messages: [
-      { role: "system", content: systemPrompt },
-      {
-        role: "user",
-        content: [
-          { type: "text", text: "حلّل هذه القطعة وأعد JSON فقط." },
-          {
-            type: "image_url",
-            image_url: { url: `data:${mimeType};base64,${imageBase64}` },
-          },
-        ],
-      },
-    ],
-    response_format: { type: "json_object" },
-    temperature: 0.2,
-    max_tokens: 800,
-  });
-
-  let res: Response | null = null;
-  let lastText = "";
-  let lastStatus = 500;
-  for (const model of GROQ_VISION_MODELS) {
-    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      body: JSON.stringify(makeBody(model)),
-    });
-    if (r.ok) {
-      res = r;
-      break;
-    }
-    lastText = await r.text();
-    lastStatus = r.status;
-    console.error("Groq error", r.status, model, lastText);
-    // 404/400 = موديل غير متاح → جرّب التالي، غير ذلك أوقف
-    if (r.status !== 404 && r.status !== 400) break;
-  }
-
-  if (!res) {
-    throw Object.assign(new Error(lastText || `Groq ${lastStatus}`), { status: lastStatus });
-  }
-
-
-  const data = await res.json();
-  const raw = data?.choices?.[0]?.message?.content ?? "{}";
-  try {
-    return JSON.parse(raw) as JewelryAnalysis;
-  } catch {
-    const m = raw.match(/\{[\s\S]*\}/);
-    if (m) return JSON.parse(m[0]);
-    throw new Error("Groq returned invalid JSON");
-  }
+    `قواعد صارمة يجب اتباعها بدقة — لا تخمّن، صف ما تراه فقط:\n` +
+    `- لا تفترض "ألماس" أبداً كقيمة افتراضية لأي حجر أبيض لامع. أي حجر أبيض/شفاف هو على الأرجح زركون مكعب (CZ) أو حجر صناعي — ` +
+    `اذكره في description_ar وgemstones بأنه "أحجار بيضاء لامعة"، وليس "ألماس"، إلا إذا رأيت حجراً واحداً كبيراً بارزاً بوضوح بقطع سوليتير احترافي يوحي فعلاً بألماس حقيقي.\n` +
+    `- لا تفترض "21K" أو أي عيار آخر كقيمة افتراضية. إن لم تستطع تمييز درجة نقاء المعدن من لون/بريق المعدن بثقة كافية، أعد karat كـ null. ` +
+    `لا يوجد عيار افتراضي لأي منشأ أو بلد — كل قطعة تُقيَّم بصرياً فقط ومن دون افتراضات مسبقة.\n` +
+    `- في gemstones، اذكر الألوان الفعلية الظاهرة في الصورة بدقة (مثال: زمردي أخضر، جمشت بنفسجي، ياقوت أحمر، سفير أزرق، سيترين أصفر، أبيض/شفاف) — فقط ما تراه فعلياً في هذه الصورة تحديداً، وليس تخميناً عاماً أو قائمة نمطية.\n` +
+    `- في style، صف شكل القطعة الفعلي بدقة: أقراط متدلية (شاندلير) أو أقراط ستود صغيرة، عقد قريب من الرقبة (شوكر) أو عقد بسلسلة طويلة نازلة، خاتم كلاستر بعدة أحجار أو خاتم سوليتير بحجر واحد مركزي، أسورة بخط أحجار متصل (تنس) أو أسورة عريضة مزخرفة — حسب ما يظهر فعلياً في هذه الصورة.\n` +
+    `- metal_color بحسب اللون الحقيقي الظاهر فعلياً في الصورة: أبيض/روديوم لامع، أصفر ذهبي، أو وردي (روز غولد) — لا تخمّن بناءً على نوع القطعة.\n` +
+    `- description_ar يجب أن يذكر الألوان الفعلية للأحجار وتفاصيل التصميم الحقيقية الظاهرة في هذه الصورة تحديداً ` +
+    `(مثال جيد: "أقراط متدلية بحجر أخضر زمردي شكل كمثرى وأحجار بنفسجية، محاطة بأحجار بيضاء لامعة على تصميم أوراق فضية")، ` +
+    `وليس وصفاً عاماً نمطياً مثل "أقراط ألماس فاخرة".`
+  );
 }
 
 /**
- * Direct Gemini vision call (uses GOOGLE_API_KEY or GEMINI_API_KEY).
- * 1500 requests/day free tier, 15 RPM.
+ * OpenRouter Vision — المزوّد الأساسي المجاني.
+ * يستخدم مصفوفة models لإعادة التوجيه التلقائي بين 3 موديلات مجانية.
  */
-export async function analyzeJewelryImageGemini(params: {
-  imageBase64: string;
-  mimeType: string;
-  categoryNames: string[];
-}): Promise<JewelryAnalysis> {
-  const raw = Deno.env.get("GOOGLE_API_KEY") ?? Deno.env.get("GEMINI_API_KEY") ?? "";
-  const key = raw.trim().replace(/^["']|["']$/g, "");
-  if (!key) throw Object.assign(new Error("GEMINI_API_KEY not set"), { status: 500 });
-
-  const { imageBase64, mimeType, categoryNames } = params;
-  const catList = categoryNames.length
-    ? categoryNames.join("، ")
-    : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
-
-  const systemPrompt =
-    `أنت خبير مجوهرات عربي. حلّل الصورة وأعد JSON فقط:\n` +
-    `{"name_ar": string, "category_name": string|null, "karat": "18K"|"21K"|"22K"|"24K"|"ألماس"|"فضة"|"أخرى"|null, "metal_color": "yellow"|"white"|"rose"|"mixed"|null, "style": string[], "gemstones": string[], "description_ar": string}\n\n` +
-    `قواعد: السطح الأبيض اللامع بدون أحجار مقطّعة = ذهب أبيض 18K/21K (ليس ألماس). ` +
-    `"ألماس" فقط عند رؤية أحجار شفافة لها facets. القطع الصفراء الليبية = 21K افتراضياً. ` +
-    `category_name يطابق واحدة من: ${catList} أو null.`;
-
-  const res = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-goog-api-key": key },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{
-          role: "user",
-          parts: [
-            { text: "حلّل هذه القطعة وأعد JSON فقط." },
-            { inlineData: { mimeType, data: imageBase64 } },
-          ],
-        }],
-        generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
-      }),
-    },
-  );
-
-  if (!res.ok) {
-    const text = await res.text();
-    console.error("Gemini error", res.status, text);
-    throw Object.assign(new Error(text || `Gemini ${res.status}`), { status: res.status });
-  }
-
-  const data = await res.json();
-  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
-  try {
-    return JSON.parse(rawText) as JewelryAnalysis;
-  } catch {
-    const m = rawText.match(/\{[\s\S]*\}/);
-    if (m) return JSON.parse(m[0]);
-    throw new Error("Gemini returned invalid JSON");
-  }
-}
-
-
-/** موديلات OpenRouter المجانية القادرة على الرؤية (تم التحقق منها من /models). */
 const OPENROUTER_VISION_MODELS = [
   "google/gemma-4-31b-it:free",
   "google/gemma-4-26b-a4b-it:free",
   "nvidia/nemotron-nano-12b-v2-vl:free",
 ];
 
-/**
- * OpenRouter Vision — المزوّد الأساسي المجاني.
- * يستخدم مصفوفة models لإعادة التوجيه التلقائي بين 3 موديلات مجانية.
- */
 export async function analyzeJewelryImageOpenRouter(params: {
   imageBase64: string;
   mimeType: string;
@@ -221,18 +63,7 @@ export async function analyzeJewelryImageOpenRouter(params: {
   const catList = categoryNames.length
     ? categoryNames.join("، ")
     : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
-
-  const systemPrompt =
-    `أنت خبير مجوهرات عربي. أعد JSON فقط بهذا الشكل بالضبط بدون أي نص إضافي:\n` +
-    `{"name_ar":"...","category_name":"...","karat":"21K","metal_color":"yellow","style":[],"gemstones":[],"description_ar":"..."}\n\n` +
-    `القيم المسموحة:\n` +
-    `- karat: 18K, 21K, 22K, 24K, ألماس, فضة, أخرى, null\n` +
-    `- metal_color: yellow, white, rose, mixed, null\n` +
-    `- category_name يطابق واحدة من: ${catList} أو null\n\n` +
-    `قواعد:\n` +
-    `- السطح الأبيض اللامع بدون أحجار مقطّعة شفافة = ذهب أبيض (18K/21K)، ليس ألماس.\n` +
-    `- "ألماس" فقط عند رؤية أحجار شفافة لها facets واضحة.\n` +
-    `- القطع الصفراء الليبية الافتراضي 21K.`;
+  const systemPrompt = buildSystemPrompt(catList);
 
   console.log("OpenRouter vision models:", OPENROUTER_VISION_MODELS.join(", "));
 
@@ -285,14 +116,168 @@ export async function analyzeJewelryImageOpenRouter(params: {
   }
 }
 
+/**
+ * Groq Vision call — احتياطي مجاني (30 RPM, 14400/day).
+ */
+export async function analyzeJewelryImageGroq(params: {
+  imageBase64: string;
+  mimeType: string;
+  categoryNames: string[];
+}): Promise<JewelryAnalysis> {
+  const key = Deno.env.get("GROQ_API_KEY")?.trim();
+  if (!key) throw Object.assign(new Error("GROQ_API_KEY not set"), { status: 500 });
+
+  const { imageBase64, mimeType, categoryNames } = params;
+  const catList = categoryNames.length
+    ? categoryNames.join("، ")
+    : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
+  const systemPrompt = buildSystemPrompt(catList);
+
+  // موديلات Groq القادرة على الرؤية فقط — لا نستخدم أي موديل نصي
+  const KNOWN_VISION = [
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
+  ];
+  const VISION_RE = /llama-4|scout|maverick|-vl-|vision/i;
+  let GROQ_VISION_MODELS: string[] = KNOWN_VISION;
+  try {
+    const ml = await fetch("https://api.groq.com/openai/v1/models", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (ml.ok) {
+      const allIds: string[] = ((await ml.json())?.data ?? []).map((m: any) => String(m?.id ?? ""));
+      console.log("Groq available models (raw):", JSON.stringify(allIds));
+      const available = KNOWN_VISION.filter((m) => allIds.includes(m));
+      const extra = allIds.filter((id) => VISION_RE.test(id) && !available.includes(id));
+      const list = [...available, ...extra];
+      console.log("Groq vision candidates:", list.join(", ") || "none");
+      GROQ_VISION_MODELS = list;
+    } else {
+      console.log("Groq /models failed:", ml.status, (await ml.text()).slice(0, 300));
+    }
+  } catch (e) {
+    console.log("Groq /models error:", String(e));
+  }
+
+  if (!GROQ_VISION_MODELS.length) {
+    throw new Error("No vision-capable Groq model available on this API key");
+  }
+
+  const makeBody = (model: string) => ({
+    model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "حلّل هذه القطعة وأعد JSON فقط." },
+          {
+            type: "image_url",
+            image_url: { url: `data:${mimeType};base64,${imageBase64}` },
+          },
+        ],
+      },
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0.2,
+    max_tokens: 800,
+  });
+
+  let res: Response | null = null;
+  let lastText = "";
+  let lastStatus = 500;
+  for (const model of GROQ_VISION_MODELS) {
+    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify(makeBody(model)),
+    });
+    if (r.ok) {
+      res = r;
+      break;
+    }
+    lastText = await r.text();
+    lastStatus = r.status;
+    console.error("Groq error", r.status, model, lastText);
+    if (r.status !== 404 && r.status !== 400) break;
+  }
+
+  if (!res) {
+    throw Object.assign(new Error(lastText || `Groq ${lastStatus}`), { status: lastStatus });
+  }
+
+  const data = await res.json();
+  const raw = data?.choices?.[0]?.message?.content ?? "{}";
+  try {
+    return JSON.parse(raw) as JewelryAnalysis;
+  } catch {
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (m) return JSON.parse(m[0]);
+    throw new Error("Groq returned invalid JSON");
+  }
+}
 
 /**
- * مجاني بالكامل: Groq أولاً (سريع جداً وحد مجاني كبير) ثم Gemini.
+ * Direct Gemini vision call (uses GOOGLE_API_KEY or GEMINI_API_KEY).
+ * 1500 requests/day free tier, 15 RPM.
+ */
+export async function analyzeJewelryImageGemini(params: {
+  imageBase64: string;
+  mimeType: string;
+  categoryNames: string[];
+}): Promise<JewelryAnalysis> {
+  const raw = Deno.env.get("GOOGLE_API_KEY") ?? Deno.env.get("GEMINI_API_KEY") ?? "";
+  const key = raw.trim().replace(/^["']|["']$/g, "");
+  if (!key) throw Object.assign(new Error("GEMINI_API_KEY not set"), { status: 500 });
+
+  const { imageBase64, mimeType, categoryNames } = params;
+  const catList = categoryNames.length
+    ? categoryNames.join("، ")
+    : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
+  const systemPrompt = buildSystemPrompt(catList);
+
+  const res = await fetch(
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-goog-api-key": key },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: [{
+          role: "user",
+          parts: [
+            { text: "حلّل هذه القطعة وأعد JSON فقط." },
+            { inlineData: { mimeType, data: imageBase64 } },
+          ],
+        }],
+        generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
+      }),
+    },
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error("Gemini error", res.status, text);
+    throw Object.assign(new Error(text || `Gemini ${res.status}`), { status: res.status });
+  }
+
+  const data = await res.json();
+  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+  try {
+    return JSON.parse(rawText) as JewelryAnalysis;
+  } catch {
+    const m = rawText.match(/\{[\s\S]*\}/);
+    if (m) return JSON.parse(m[0]);
+    throw new Error("Gemini returned invalid JSON");
+  }
+}
+
+/**
+ * مجاني بالكامل: OpenRouter أولاً ثم Groq ثم Gemini.
  * لا يُستخدم Lovable Gateway هنا إطلاقاً حتى لا تُستهلك أي أرصدة.
  * المزوّد الذي يفشل فشلاً صريحاً يُستبعد 10 دقائق لتسريع البقية.
  */
 const cooldown = new Map<string, number>();
-/** مفتاح/موديل غير صالح = استبعاد طويل. ازدحام مؤقت = استبعاد قصير. */
 const COOLDOWN_HARD_MS = 10 * 60 * 1000;
 const COOLDOWN_SOFT_MS = 45 * 1000;
 const HARD_FAIL = new Set([400, 401, 402, 403, 404]);
@@ -302,7 +287,6 @@ export async function analyzeWithFallback(params: {
   mimeType: string;
   categoryNames: string[];
 }): Promise<{ analysis: JewelryAnalysis; provider: string }> {
-  // تنظيف: قبول data URL أو base64 خام
   const m = /^data:([^;]+);base64,(.*)$/s.exec(params.imageBase64.trim());
   if (m) params = { ...params, mimeType: m[1], imageBase64: m[2] };
   params = { ...params, imageBase64: params.imageBase64.replace(/\s/g, "") };
@@ -321,7 +305,6 @@ export async function analyzeWithFallback(params: {
   if (Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY")) {
     all.push({ name: "gemini", fn: () => analyzeJewelryImageGemini(params) });
   }
-  // لا يوجد أي احتياطي مدفوع (Lovable AI) — مجاني فقط.
   if (!all.length) {
     throw Object.assign(
       new Error("لا يوجد مفتاح ذكاء اصطناعي مجاني (OPENROUTER_API_KEY أو GROQ_API_KEY أو GOOGLE_API_KEY) — أضفه من إعدادات المشروع."),
@@ -330,7 +313,6 @@ export async function analyzeWithFallback(params: {
   }
 
   const now = Date.now();
-  // نبدأ بالمزوّدات النشِطة ثم نجرّب المستبعدة كمحاولة أخيرة (بدل تجاهلها).
   const fresh = all.filter((p) => (cooldown.get(p.name) ?? 0) < now);
   const cooled = all.filter((p) => (cooldown.get(p.name) ?? 0) >= now);
   const providers = [...fresh, ...cooled];
@@ -351,7 +333,6 @@ export async function analyzeWithFallback(params: {
       console.warn(`Provider ${p.name} failed [${status}], trying next`);
     }
   }
-  // كل المزودات المجانية فشلت — نُبلّغ الواجهة بوضوح بدل الرجوع لمزوّد مدفوع.
   const status = (lastErr as any)?.status ?? 429;
   throw Object.assign(
     new Error(
@@ -363,13 +344,8 @@ export async function analyzeWithFallback(params: {
   );
 }
 
-
-
-
 /**
- * Embedding مجاني عبر Google (gemini-embedding-001) بأبعاد 1536
- * لمطابقة product_images.ai_embedding.
- * لا يوجد أي احتياطي مدفوع: إن لم يوجد مفتاح Google نرفع خطأً واضحاً.
+ * Embedding مجاني عبر Google (gemini-embedding-001) بأبعاد 1536.
  */
 export async function embedText(text: string): Promise<number[]> {
   const gkey = (Deno.env.get("GOOGLE_API_KEY") ?? Deno.env.get("GEMINI_API_KEY") ?? "")
@@ -417,8 +393,6 @@ export async function embedText(text: string): Promise<number[]> {
 
   throw Object.assign(new Error(lastText || `Google embed ${lastStatus}`), { status: lastStatus });
 }
-
-
 
 /** Build a compact text representation of an analysis for embedding. */
 export function analysisToEmbeddingText(a: JewelryAnalysis): string {
