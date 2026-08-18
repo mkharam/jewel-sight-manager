@@ -310,6 +310,9 @@ export async function analyzeWithFallback(params: {
 
   const all: Array<{ name: string; fn: () => Promise<JewelryAnalysis> }> = [];
 
+  if (Deno.env.get("OPENROUTER_API_KEY")) {
+    all.push({ name: "openrouter", fn: () => analyzeJewelryImageOpenRouter(params) });
+  }
   if (Deno.env.get("GROQ_API_KEY")) {
     all.push({ name: "groq", fn: () => analyzeJewelryImageGroq(params) });
   }
@@ -319,7 +322,7 @@ export async function analyzeWithFallback(params: {
   // لا يوجد أي احتياطي مدفوع (Lovable AI) — مجاني فقط.
   if (!all.length) {
     throw Object.assign(
-      new Error("لا يوجد مفتاح ذكاء اصطناعي مجاني (GROQ_API_KEY أو GOOGLE_API_KEY) — أضفه من إعدادات المشروع."),
+      new Error("لا يوجد مفتاح ذكاء اصطناعي مجاني (OPENROUTER_API_KEY أو GROQ_API_KEY أو GOOGLE_API_KEY) — أضفه من إعدادات المشروع."),
       { status: 500 },
     );
   }
@@ -351,7 +354,7 @@ export async function analyzeWithFallback(params: {
   throw Object.assign(
     new Error(
       status === 429
-        ? "كل مزودات الذكاء الاصطناعي المجانية مشغولة الآن (Groq/Gemini) — أعد المحاولة بعد قليل."
+        ? "كل مزودات الذكاء الاصطناعي المجانية مشغولة الآن (OpenRouter/Groq/Gemini) — أعد المحاولة بعد قليل."
         : `فشل تحليل الصورة: ${(lastErr as Error)?.message ?? "خطأ غير معروف"}`,
     ),
     { status },
@@ -432,10 +435,10 @@ export function analysisToEmbeddingText(a: JewelryAnalysis): string {
 export function friendlyError(e: unknown): { status: number; message: string } {
   const status = (e as any)?.status ?? 500;
   if (status === 401 || status === 403) {
-    return { status, message: "مفتاح الذكاء الاصطناعي المجاني غير صالح — راجع GROQ_API_KEY / GOOGLE_API_KEY." };
+    return { status, message: "مفتاح الذكاء الاصطناعي المجاني غير صالح — راجع OPENROUTER_API_KEY / GROQ_API_KEY / GOOGLE_API_KEY." };
   }
   if (status === 402 || status === 429) {
-    return { status: 429, message: "حد الاستخدام المجاني ممتلئ الآن (Groq/Gemini)، حاول بعد قليل." };
+    return { status: 429, message: "حد الاستخدام المجاني ممتلئ الآن (OpenRouter/Groq/Gemini)، حاول بعد قليل." };
   }
 
   const msg = e instanceof Error ? e.message : "خطأ غير متوقع";
