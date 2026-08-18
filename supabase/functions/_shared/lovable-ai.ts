@@ -195,7 +195,94 @@ export async function analyzeJewelryImageGemini(params: {
     if (m) return JSON.parse(m[0]);
     throw new Error("Gemini returned invalid JSON");
   }
+
+/** موديلات OpenRouter المجانية القادرة على الرؤية (تم التحقق منها من /models). */
+const OPENROUTER_VISION_MODELS = [
+  "google/gemma-4-31b-it:free",
+  "google/gemma-4-26b-a4b-it:free",
+  "nvidia/nemotron-nano-12b-v2-vl:free",
+];
+
+/**
+ * OpenRouter Vision — المزوّد الأساسي المجاني.
+ * يستخدم مصفوفة models لإعادة التوجيه التلقائي بين 3 موديلات مجانية.
+ */
+export async function analyzeJewelryImageOpenRouter(params: {
+  imageBase64: string;
+  mimeType: string;
+  categoryNames: string[];
+}): Promise<JewelryAnalysis> {
+  const key = Deno.env.get("OPENROUTER_API_KEY")?.trim();
+  if (!key) throw Object.assign(new Error("OPENROUTER_API_KEY not set"), { status: 500 });
+
+  const { imageBase64, mimeType, categoryNames } = params;
+  const catList = categoryNames.length
+    ? categoryNames.join("، ")
+    : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
+
+  const systemPrompt =
+    `أنت خبير مجوهرات عربي. أعد JSON فقط بهذا الشكل بالضبط بدون أي نص إضافي:\n` +
+    `{"name_ar":"...","category_name":"...","karat":"21K","metal_color":"yellow","style":[],"gemstones":[],"description_ar":"..."}\n\n` +
+    `القيم المسموحة:\n` +
+    `- karat: 18K, 21K, 22K, 24K, ألماس, فضة, أخرى, null\n` +
+    `- metal_color: yellow, white, rose, mixed, null\n` +
+    `- category_name يطابق واحدة من: ${catList} أو null\n\n` +
+    `قواعد:\n` +
+    `- السطح الأبيض اللامع بدون أحجار مقطّعة شفافة = ذهب أبيض (18K/21K)، ليس ألماس.\n` +
+    `- "ألماس" فقط عند رؤية أحجار شفافة لها facets واضحة.\n` +
+    `- القطع الصفراء الليبية الافتراضي 21K.`;
+
+  console.log("OpenRouter vision models:", OPENROUTER_VISION_MODELS.join(", "));
+
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+      "HTTP-Referer": "https://jewel-sight-manager.lovable.app",
+      "X-Title": "Mkharram Jewelry",
+    },
+    body: JSON.stringify({
+      model: OPENROUTER_VISION_MODELS[0],
+      models: OPENROUTER_VISION_MODELS,
+      messages: [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "حلّل هذه القطعة وأعد JSON فقط." },
+            { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+          ],
+        },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.2,
+      max_tokens: 800,
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error("OpenRouter error", res.status, text.slice(0, 500));
+    throw Object.assign(new Error(text || `OpenRouter ${res.status}`), { status: res.status });
+  }
+
+  const data = await res.json();
+  if (data?.error) {
+    const status = Number(data.error?.code) || 500;
+    throw Object.assign(new Error(String(data.error?.message ?? "OpenRouter error")), { status });
+  }
+  console.log("OpenRouter used model:", data?.model);
+  const raw = data?.choices?.[0]?.message?.content ?? "{}";
+  try {
+    return JSON.parse(raw) as JewelryAnalysis;
+  } catch {
+    const mm = String(raw).match(/\{[\s\S]*\}/);
+    if (mm) return JSON.parse(mm[0]);
+    throw Object.assign(new Error("OpenRouter returned invalid JSON"), { status: 502 });
+  }
 }
+
 
 /**
  * مجاني بالكامل: Groq أولاً (سريع جداً وحد مجاني كبير) ثم Gemini.
