@@ -1,29 +1,14 @@
-# متصفح البيانات للمدير (Data Browser)
+# Verify OpenRouter vision analysis
 
-## الخلفية
-لا يمكن ربط المشروع بحساب Supabase خارجي — الخدمة السحابية الحالية مُدارة تلقائياً ولا يمكن تحويلها. البديل الذي يعطيك نفس الفائدة: شاشة داخلية للمدير العام تعرض جداول النظام مباشرة مع بحث وتصدير.
+The OpenRouter key is now saved and the code path is already in place (OpenRouter → Groq → Gemini). Remaining work is verification only.
 
-## ما سيتم بناؤه
-صفحة جديدة `/data` (للمدير العام فقط):
+## Steps
 
-- قائمة جداول: المنتجات، الفروع، التحويلات، العروض/الأسعار، استفسارات العملاء، سجل النشاط، الموظفون (profiles + الأدوار).
-- جدول بيانات لكل واحد: كل الأعمدة، ترقيم صفحات (50 صف/صفحة)، بحث نصي، ترتيب تنازلي بالتاريخ.
-- تصدير CSV للجدول المعروض (بالفلتر الحالي).
-- عرض القيم المعقّدة (JSON مثل `ai_labels`) بشكل مقروء، وإخفاء أعمدة الـ embedding الضخمة.
-- ربط سريع: الضغط على صف منتج يفتح صفحة المنتج.
+1. Redeploy the three AI functions so they pick up the new secret: `analyze-product-image`, `image-search`, `reindex-product-images`.
+2. Run one live analysis call with a real product image and read the function logs to confirm:
+   - which OpenRouter free vision model actually answered,
+   - that the returned JSON has `name_ar`, `category_name`, `karat`, `metal_color`, `style`, `gemstones`, `description_ar`.
+3. If the chosen free model IDs are no longer served, re-query OpenRouter's models list and swap in currently-free vision models, then re-test.
+4. Report the confirmed working model and whether bulk import / visual search now run without the "all providers busy" message.
 
-## الأمان
-- الوصول مقصور على من لديه دور `admin` عبر `has_role`؛ غير ذلك يظهر رفض وصول.
-- قراءة فقط — لا تعديل ولا حذف من هذه الشاشة.
-- لن تُعرض أي أعمدة حساسة (كلمات مرور غير موجودة أصلاً، والمفاتيح السرية لا تُقرأ من الواجهة).
-
-## تفاصيل تقنية
-- ملف جديد `src/pages/DataBrowser.tsx` + مسار في `src/App.tsx` داخل الحماية الحالية.
-- قراءة عبر عميل الباك-إند الحالي (`@/integrations/supabase/client`) بـ `select('*', { count: 'exact' })` و `range()` للصفحات.
-- الفلترة عبر `or(...ilike)` على الأعمدة النصية لكل جدول.
-- التصدير CSV يتم في المتصفح (Blob) بدون دوال جديدة.
-- إضافة رابط "البيانات" في قائمة المدير بجانب "التقارير".
-- لا تغييرات على قاعدة البيانات ولا على سياسات RLS؛ الشاشة تعتمد على السياسات القائمة.
-
-## ملاحظة عن التصدير الكامل
-لتصدير قاعدة البيانات كاملة، استخدم Cloud → Advanced settings → Export data داخل Lovable.
+No schema or UI changes.
