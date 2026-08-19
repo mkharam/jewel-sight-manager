@@ -350,21 +350,27 @@ export async function analyzeWithFallback(params: {
   const providers = [...fresh, ...cooled];
 
   let lastErr: unknown = null;
-  for (const p of providers) {
-    try {
-      const analysis = await p.fn();
-      cooldown.delete(p.name);
-      return { analysis, provider: p.name };
-    } catch (e) {
-      lastErr = e;
-      const status = (e as any)?.status ?? 500;
-      cooldown.set(
-        p.name,
-        Date.now() + (HARD_FAIL.has(status) ? COOLDOWN_HARD_MS : COOLDOWN_SOFT_MS),
-      );
-      console.warn(`Provider ${p.name} failed [${status}], trying next`);
+  // محاولتان كاملتان على كل المزودات مع تراجع بينهما — الحد المجاني المشترك
+  // يرفض الطلبات لحظياً ثم يعود، فلا نُظهر خطأ للمستخدم من أول رفض.
+  for (let pass = 0; pass < 2; pass++) {
+    if (pass > 0) await new Promise((r) => setTimeout(r, 2500));
+    for (const p of providers) {
+      try {
+        const analysis = await p.fn();
+        cooldown.delete(p.name);
+        return { analysis, provider: p.name };
+      } catch (e) {
+        lastErr = e;
+        const status = (e as any)?.status ?? 500;
+        cooldown.set(
+          p.name,
+          Date.now() + (HARD_FAIL.has(status) ? COOLDOWN_HARD_MS : COOLDOWN_SOFT_MS),
+        );
+        console.warn(`Provider ${p.name} failed [${status}] (pass ${pass + 1}), trying next`);
+      }
     }
   }
+
   const status = (lastErr as any)?.status ?? 429;
   throw Object.assign(
     new Error(
