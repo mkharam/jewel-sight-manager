@@ -49,24 +49,18 @@ const OPENROUTER_VISION_MODELS = [
   "google/gemma-4-31b-it:free",
   "google/gemma-4-26b-a4b-it:free",
   "nvidia/nemotron-nano-12b-v2-vl:free",
+  "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+  "dots-studio/dots-3-note-preview:free",
 ];
 
-export async function analyzeJewelryImageOpenRouter(params: {
+async function openRouterOnce(params: {
+  key: string;
+  model: string;
+  systemPrompt: string;
   imageBase64: string;
   mimeType: string;
-  categoryNames: string[];
 }): Promise<JewelryAnalysis> {
-  const key = Deno.env.get("OPENROUTER_API_KEY")?.trim();
-  if (!key) throw Object.assign(new Error("OPENROUTER_API_KEY not set"), { status: 500 });
-
-  const { imageBase64, mimeType, categoryNames } = params;
-  const catList = categoryNames.length
-    ? categoryNames.join("، ")
-    : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
-  const systemPrompt = buildSystemPrompt(catList);
-
-  console.log("OpenRouter vision models:", OPENROUTER_VISION_MODELS.join(", "));
-
+  const { key, model, systemPrompt, imageBase64, mimeType } = params;
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -76,8 +70,7 @@ export async function analyzeJewelryImageOpenRouter(params: {
       "X-Title": "Mkharram Jewelry",
     },
     body: JSON.stringify({
-      model: OPENROUTER_VISION_MODELS[0],
-      models: OPENROUTER_VISION_MODELS,
+      model,
       messages: [
         { role: "system", content: systemPrompt },
         {
@@ -96,25 +89,66 @@ export async function analyzeJewelryImageOpenRouter(params: {
 
   if (!res.ok) {
     const text = await res.text();
-    console.error("OpenRouter error", res.status, text.slice(0, 500));
-    throw Object.assign(new Error(text || `OpenRouter ${res.status}`), { status: res.status });
+    console.error("OpenRouter error", model, res.status, text.slice(0, 300));
+    const daily = /free-models-per-day|per-day|per day/i.test(text);
+    throw Object.assign(new Error(text || `OpenRouter ${res.status}`), { status: res.status, daily });
   }
 
   const data = await res.json();
   if (data?.error) {
     const status = Number(data.error?.code) || 500;
+    console.error("OpenRouter body error", model, status, String(data.error?.message).slice(0, 200));
     throw Object.assign(new Error(String(data.error?.message ?? "OpenRouter error")), { status });
   }
-  console.log("OpenRouter used model:", data?.model);
   const raw = data?.choices?.[0]?.message?.content ?? "{}";
   try {
     return JSON.parse(raw) as JewelryAnalysis;
   } catch {
     const mm = String(raw).match(/\{[\s\S]*\}/);
-    if (mm) return JSON.parse(mm[0]);
+    if (mm) return JSON.parse(mm[0]) as JewelryAnalysis;
     throw Object.assign(new Error("OpenRouter returned invalid JSON"), { status: 502 });
   }
 }
+
+export async function analyzeJewelryImageOpenRouter(params: {
+  imageBase64: string;
+  mimeType: string;
+  categoryNames: string[];
+}): Promise<JewelryAnalysis> {
+  const key = Deno.env.get("OPENROUTER_API_KEY")?.trim();
+  if (!key) throw Object.assign(new Error("OPENROUTER_API_KEY not set"), { status: 500 });
+
+  const { imageBase64, mimeType, categoryNames } = params;
+  const catList = categoryNames.length
+    ? categoryNames.join("، ")
+    : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
+  const systemPrompt = buildSystemPrompt(catList);
+
+  // نجرّب كل موديل مجاني على حدة، ومع تراجع تدريجي عند 429/5xx
+  // (الحد المجاني على OpenRouter مشترك ويرفض الطلبات لحظياً، لكنه يعود بسرعة).
+  let lastErr: unknown = null;
+  for (let round = 0; round < 2; round++) {
+    for (const model of OPENROUTER_VISION_MODELS) {
+      try {
+        const out = await openRouterOnce({ key, model, systemPrompt, imageBase64, mimeType });
+        console.log("OpenRouter used model:", model);
+        return out;
+      } catch (e) {
+        lastErr = e;
+        const status = (e as any)?.status ?? 500;
+        // مفتاح غير صالح / رصيد منتهٍ: لا فائدة من بقية الموديلات
+        // الحصة اليومية أو المفتاح غير صالح: لا فائدة من بقية الموديلات
+        if (status === 401 || status === 403 || status === 402 || (e as any)?.daily) throw e;
+        if (status === 429 || status >= 500) {
+          await new Promise((r) => setTimeout(r, 700 + round * 1500));
+          continue;
+        }
+      }
+    }
+  }
+  throw lastErr ?? Object.assign(new Error("OpenRouter unavailable"), { status: 429 });
+}
+
 
 /**
  * Groq Vision call — احتياطي مجاني (30 RPM, 14400/day).
@@ -318,25 +352,33 @@ export async function analyzeWithFallback(params: {
   const providers = [...fresh, ...cooled];
 
   let lastErr: unknown = null;
-  for (const p of providers) {
-    try {
-      const analysis = await p.fn();
-      cooldown.delete(p.name);
-      return { analysis, provider: p.name };
-    } catch (e) {
-      lastErr = e;
-      const status = (e as any)?.status ?? 500;
-      cooldown.set(
-        p.name,
-        Date.now() + (HARD_FAIL.has(status) ? COOLDOWN_HARD_MS : COOLDOWN_SOFT_MS),
-      );
-      console.warn(`Provider ${p.name} failed [${status}], trying next`);
+  // محاولتان كاملتان على كل المزودات مع تراجع بينهما — الحد المجاني المشترك
+  // يرفض الطلبات لحظياً ثم يعود، فلا نُظهر خطأ للمستخدم من أول رفض.
+  for (let pass = 0; pass < 2; pass++) {
+    if (pass > 0) await new Promise((r) => setTimeout(r, 2500));
+    for (const p of providers) {
+      try {
+        const analysis = await p.fn();
+        cooldown.delete(p.name);
+        return { analysis, provider: p.name };
+      } catch (e) {
+        lastErr = e;
+        const status = (e as any)?.status ?? 500;
+        cooldown.set(
+          p.name,
+          Date.now() + (HARD_FAIL.has(status) ? COOLDOWN_HARD_MS : COOLDOWN_SOFT_MS),
+        );
+        console.warn(`Provider ${p.name} failed [${status}] (pass ${pass + 1}), trying next`);
+      }
     }
   }
+
   const status = (lastErr as any)?.status ?? 429;
   throw Object.assign(
     new Error(
-      status === 429
+      (lastErr as any)?.daily
+        ? "انتهت الحصة المجانية اليومية للتحليل (50 صورة/يوم على OpenRouter). تُعاد تلقائياً بعد منتصف الليل بتوقيت غرينتش، أو أضف رصيداً صغيراً في OpenRouter لرفعها إلى 1000 صورة/يوم."
+        : status === 429
         ? "كل مزودات الذكاء الاصطناعي المجانية مشغولة الآن (OpenRouter/Groq/Gemini) — أعد المحاولة بعد قليل."
         : `فشل تحليل الصورة: ${(lastErr as Error)?.message ?? "خطأ غير معروف"}`,
     ),
@@ -414,6 +456,14 @@ export function friendlyError(e: unknown): { status: number; message: string } {
     return { status, message: "مفتاح الذكاء الاصطناعي المجاني غير صالح — راجع OPENROUTER_API_KEY / GROQ_API_KEY / GOOGLE_API_KEY." };
   }
   if (status === 402 || status === 429) {
+    const raw = e instanceof Error ? e.message : "";
+    if ((e as any)?.daily || /free-models-per-day|الحصة المجانية اليومية/.test(raw)) {
+      return {
+        status: 429,
+        message:
+          "انتهت الحصة المجانية اليومية للتحليل (50 صورة/يوم). تُعاد تلقائياً بعد منتصف الليل بتوقيت غرينتش — أو أضف رصيداً صغيراً في OpenRouter لرفعها إلى 1000 صورة/يوم.",
+      };
+    }
     return { status: 429, message: "حد الاستخدام المجاني ممتلئ الآن (OpenRouter/Groq/Gemini)، حاول بعد قليل." };
   }
 

@@ -316,6 +316,7 @@ export type Database = {
           promo_price: number | null
           ring_size: string | null
           sale_price: number | null
+          search_blob: string | null
           search_tags: string[]
           sku: string | null
           status: Database["public"]["Enums"]["product_status"]
@@ -338,6 +339,7 @@ export type Database = {
           promo_price?: number | null
           ring_size?: string | null
           sale_price?: number | null
+          search_blob?: string | null
           search_tags?: string[]
           sku?: string | null
           status?: Database["public"]["Enums"]["product_status"]
@@ -360,6 +362,7 @@ export type Database = {
           promo_price?: number | null
           ring_size?: string | null
           sale_price?: number | null
+          search_blob?: string | null
           search_tags?: string[]
           sku?: string | null
           status?: Database["public"]["Enums"]["product_status"]
@@ -591,6 +594,37 @@ export type Database = {
           similarity: number
         }[]
       }
+      normalize_arabic: { Args: { input: string }; Returns: string }
+      search_products_fuzzy: {
+        Args: {
+          _branch_id?: string
+          _category_id?: string
+          _karat?: string
+          _limit?: number
+          _max_weight?: number
+          _min_weight?: number
+          _query: string
+          _status?: string
+          _tag?: string
+        }
+        Returns: {
+          branch_id: string
+          category_id: string
+          id: string
+          karat: string
+          name: string
+          promo_price: number
+          rank: number
+          ring_size: string
+          sale_price: number
+          search_tags: string[]
+          sku: string
+          status: Database["public"]["Enums"]["product_status"]
+          weight_grams: number
+        }[]
+      }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
       tags_from_ai_labels: { Args: { labels: Json }; Returns: string[] }
     }
     Enums: {
