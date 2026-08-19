@@ -13,6 +13,7 @@ import { PRODUCT_STATUS, KARAT_OPTIONS, ProductStatus } from "@/lib/constants";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { expandQuery, matchScore } from "@/lib/arabic-search";
 
 interface Filters {
   q: string;
@@ -289,7 +290,7 @@ export default function ProductSearch() {
 
 
   // هل يمكن تحميل المزيد؟ (يقتصر على البحث العادي، ليس على بحث الصورة)
-  const hasMore = !similarIds && (products?.length ?? 0) >= pages * PAGE_SIZE;
+  const hasMore = !similarIds && !sanitizeTerm(debounced.q) && (products?.length ?? 0) >= pages * PAGE_SIZE;
 
   // Infinite scroll — عند اقتراب حافة الصفحة، حمّل الصفحة التالية
   useEffect(() => {
