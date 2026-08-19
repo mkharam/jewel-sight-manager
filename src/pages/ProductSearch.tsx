@@ -220,21 +220,10 @@ export default function ProductSearch() {
   const { data: products, isLoading, isFetching } = useQuery({
     queryKey: ["products", debounced, similarIds, similarIds ? 0 : pages],
     queryFn: async () => {
-      let q = supabase
-        .from("products")
-        .select("id,name,sku,karat,weight_grams,ring_size,sale_price,promo_price,status,branch_id,search_tags,branch:branches(name),category:categories(name),images:product_images(storage_path,is_primary)");
+      const SELECT =
+        "id,name,sku,karat,weight_grams,ring_size,sale_price,promo_price,status,branch_id,search_tags,description,category_id,branch:branches(name),category:categories(name),images:product_images(storage_path,is_primary)";
 
-      if (similarIds && similarIds.length > 0) {
-        q = q.in("id", similarIds).limit(120);
-      } else {
-        q = q.order("created_at", { ascending: false }).range(0, pages * PAGE_SIZE - 1);
-        const term = sanitizeTerm(debounced.q);
-        if (term) {
-          // يشمل وسوم الذكاء الاصطناعي (ذهب أبيض، لؤلؤ، زركون…) إلى جانب الاسم/SKU/الوصف
-          q = q.or(
-            `name.ilike.%${term}%,sku.ilike.%${term}%,description.ilike.%${term}%,search_tags.cs.{"${term}"}`,
-          );
-        }
+      const applyFilters = (q: any) => {
         if (debounced.tag) q = q.contains("search_tags", [debounced.tag]);
         if (debounced.karat !== "all") q = q.eq("karat", debounced.karat);
         if (debounced.branchId !== "all") q = q.eq("branch_id", debounced.branchId);
@@ -242,20 +231,62 @@ export default function ProductSearch() {
         if (debounced.status !== "all") q = q.eq("status", debounced.status as ProductStatus);
         if (debounced.minWeight) q = q.gte("weight_grams", parseFloat(debounced.minWeight));
         if (debounced.maxWeight) q = q.lte("weight_grams", parseFloat(debounced.maxWeight));
-      }
+        return q;
+      };
 
-      const { data, error } = await q;
-      if (error) throw error;
-
-      // Preserve similarity order returned by the AI search.
-      if (similarIds && data) {
+      if (similarIds && similarIds.length > 0) {
+        const { data, error } = await supabase.from("products").select(SELECT).in("id", similarIds).limit(120);
+        if (error) throw error;
         const idx = new Map(similarIds.map((id, i) => [id, i]));
-        return [...data].sort((a: any, b: any) => (idx.get(a.id) ?? 999) - (idx.get(b.id) ?? 999));
+        return [...(data ?? [])].sort((a: any, b: any) => (idx.get(a.id) ?? 999) - (idx.get(b.id) ?? 999));
       }
+
+      const raw = sanitizeTerm(debounced.q);
+
+      // بحث نصي ذكي: مرادفات + تسامح مع الأخطاء الإملائية واللهجة
+      if (raw) {
+        const { terms } = expandQuery(raw);
+        const orParts: string[] = [];
+        for (const t of terms) {
+          if (t.length < 2) continue;
+          orParts.push(`name.ilike.%${t}%`, `description.ilike.%${t}%`, `sku.ilike.%${t}%`);
+        }
+        const tagArray = `{${terms.filter((t) => t.length >= 2).map((t) => `"${t}"`).join(",")}}`;
+        if (terms.length) orParts.push(`search_tags.ov.${tagArray}`);
+
+        const [hitRes, poolRes] = await Promise.all([
+          applyFilters(supabase.from("products").select(SELECT))
+            .or(orParts.join(","))
+            .order("created_at", { ascending: false })
+            .limit(200),
+          // مجموعة احتياطية للمطابقة التقريبية (حروف ناقصة/كتابة ليبية)
+          applyFilters(supabase.from("products").select(SELECT))
+            .order("created_at", { ascending: false })
+            .limit(800),
+        ]);
+        if (hitRes.error) throw hitRes.error;
+
+        const byId = new Map<string, any>();
+        for (const p of (hitRes.data ?? []) as any[]) byId.set(p.id, p);
+        for (const p of ((poolRes.data ?? []) as any[])) if (!byId.has(p.id)) byId.set(p.id, p);
+
+        const scored = Array.from(byId.values())
+          .map((p) => ({ p, s: matchScore(p, raw) }))
+          .filter((x) => x.s > 0)
+          .sort((a, b) => b.s - a.s);
+
+        return scored.map((x) => x.p);
+      }
+
+      const { data, error } = await applyFilters(supabase.from("products").select(SELECT))
+        .order("created_at", { ascending: false })
+        .range(0, pages * PAGE_SIZE - 1);
+      if (error) throw error;
       return data ?? [];
     },
     placeholderData: (prev) => prev,
   });
+
 
   // هل يمكن تحميل المزيد؟ (يقتصر على البحث العادي، ليس على بحث الصورة)
   const hasMore = !similarIds && (products?.length ?? 0) >= pages * PAGE_SIZE;
