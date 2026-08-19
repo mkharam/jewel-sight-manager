@@ -49,24 +49,18 @@ const OPENROUTER_VISION_MODELS = [
   "google/gemma-4-31b-it:free",
   "google/gemma-4-26b-a4b-it:free",
   "nvidia/nemotron-nano-12b-v2-vl:free",
+  "qwen/qwen2.5-vl-32b-instruct:free",
+  "meta-llama/llama-3.2-11b-vision-instruct:free",
 ];
 
-export async function analyzeJewelryImageOpenRouter(params: {
+async function openRouterOnce(params: {
+  key: string;
+  model: string;
+  systemPrompt: string;
   imageBase64: string;
   mimeType: string;
-  categoryNames: string[];
 }): Promise<JewelryAnalysis> {
-  const key = Deno.env.get("OPENROUTER_API_KEY")?.trim();
-  if (!key) throw Object.assign(new Error("OPENROUTER_API_KEY not set"), { status: 500 });
-
-  const { imageBase64, mimeType, categoryNames } = params;
-  const catList = categoryNames.length
-    ? categoryNames.join("، ")
-    : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
-  const systemPrompt = buildSystemPrompt(catList);
-
-  console.log("OpenRouter vision models:", OPENROUTER_VISION_MODELS.join(", "));
-
+  const { key, model, systemPrompt, imageBase64, mimeType } = params;
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -76,8 +70,7 @@ export async function analyzeJewelryImageOpenRouter(params: {
       "X-Title": "Mkharram Jewelry",
     },
     body: JSON.stringify({
-      model: OPENROUTER_VISION_MODELS[0],
-      models: OPENROUTER_VISION_MODELS,
+      model,
       messages: [
         { role: "system", content: systemPrompt },
         {
@@ -96,25 +89,64 @@ export async function analyzeJewelryImageOpenRouter(params: {
 
   if (!res.ok) {
     const text = await res.text();
-    console.error("OpenRouter error", res.status, text.slice(0, 500));
+    console.error("OpenRouter error", model, res.status, text.slice(0, 300));
     throw Object.assign(new Error(text || `OpenRouter ${res.status}`), { status: res.status });
   }
 
   const data = await res.json();
   if (data?.error) {
     const status = Number(data.error?.code) || 500;
+    console.error("OpenRouter body error", model, status, String(data.error?.message).slice(0, 200));
     throw Object.assign(new Error(String(data.error?.message ?? "OpenRouter error")), { status });
   }
-  console.log("OpenRouter used model:", data?.model);
   const raw = data?.choices?.[0]?.message?.content ?? "{}";
   try {
     return JSON.parse(raw) as JewelryAnalysis;
   } catch {
     const mm = String(raw).match(/\{[\s\S]*\}/);
-    if (mm) return JSON.parse(mm[0]);
+    if (mm) return JSON.parse(mm[0]) as JewelryAnalysis;
     throw Object.assign(new Error("OpenRouter returned invalid JSON"), { status: 502 });
   }
 }
+
+export async function analyzeJewelryImageOpenRouter(params: {
+  imageBase64: string;
+  mimeType: string;
+  categoryNames: string[];
+}): Promise<JewelryAnalysis> {
+  const key = Deno.env.get("OPENROUTER_API_KEY")?.trim();
+  if (!key) throw Object.assign(new Error("OPENROUTER_API_KEY not set"), { status: 500 });
+
+  const { imageBase64, mimeType, categoryNames } = params;
+  const catList = categoryNames.length
+    ? categoryNames.join("، ")
+    : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
+  const systemPrompt = buildSystemPrompt(catList);
+
+  // نجرّب كل موديل مجاني على حدة، ومع تراجع تدريجي عند 429/5xx
+  // (الحد المجاني على OpenRouter مشترك ويرفض الطلبات لحظياً، لكنه يعود بسرعة).
+  let lastErr: unknown = null;
+  for (let round = 0; round < 2; round++) {
+    for (const model of OPENROUTER_VISION_MODELS) {
+      try {
+        const out = await openRouterOnce({ key, model, systemPrompt, imageBase64, mimeType });
+        console.log("OpenRouter used model:", model);
+        return out;
+      } catch (e) {
+        lastErr = e;
+        const status = (e as any)?.status ?? 500;
+        // مفتاح غير صالح / رصيد منتهٍ: لا فائدة من بقية الموديلات
+        if (status === 401 || status === 403 || status === 402) throw e;
+        if (status === 429 || status >= 500) {
+          await new Promise((r) => setTimeout(r, 700 + round * 1500));
+          continue;
+        }
+      }
+    }
+  }
+  throw lastErr ?? Object.assign(new Error("OpenRouter unavailable"), { status: 429 });
+}
+
 
 /**
  * Groq Vision call — احتياطي مجاني (30 RPM, 14400/day).
