@@ -90,7 +90,8 @@ async function openRouterOnce(params: {
   if (!res.ok) {
     const text = await res.text();
     console.error("OpenRouter error", model, res.status, text.slice(0, 300));
-    throw Object.assign(new Error(text || `OpenRouter ${res.status}`), { status: res.status });
+    const daily = /free-models-per-day|per-day|per day/i.test(text);
+    throw Object.assign(new Error(text || `OpenRouter ${res.status}`), { status: res.status, daily });
   }
 
   const data = await res.json();
@@ -136,7 +137,8 @@ export async function analyzeJewelryImageOpenRouter(params: {
         lastErr = e;
         const status = (e as any)?.status ?? 500;
         // مفتاح غير صالح / رصيد منتهٍ: لا فائدة من بقية الموديلات
-        if (status === 401 || status === 403 || status === 402) throw e;
+        // الحصة اليومية أو المفتاح غير صالح: لا فائدة من بقية الموديلات
+        if (status === 401 || status === 403 || status === 402 || (e as any)?.daily) throw e;
         if (status === 429 || status >= 500) {
           await new Promise((r) => setTimeout(r, 700 + round * 1500));
           continue;
@@ -374,7 +376,9 @@ export async function analyzeWithFallback(params: {
   const status = (lastErr as any)?.status ?? 429;
   throw Object.assign(
     new Error(
-      status === 429
+      (lastErr as any)?.daily
+        ? "انتهت الحصة المجانية اليومية للتحليل (50 صورة/يوم على OpenRouter). تُعاد تلقائياً بعد منتصف الليل بتوقيت غرينتش، أو أضف رصيداً صغيراً في OpenRouter لرفعها إلى 1000 صورة/يوم."
+        : status === 429
         ? "كل مزودات الذكاء الاصطناعي المجانية مشغولة الآن (OpenRouter/Groq/Gemini) — أعد المحاولة بعد قليل."
         : `فشل تحليل الصورة: ${(lastErr as Error)?.message ?? "خطأ غير معروف"}`,
     ),
@@ -452,6 +456,14 @@ export function friendlyError(e: unknown): { status: number; message: string } {
     return { status, message: "مفتاح الذكاء الاصطناعي المجاني غير صالح — راجع OPENROUTER_API_KEY / GROQ_API_KEY / GOOGLE_API_KEY." };
   }
   if (status === 402 || status === 429) {
+    const raw = e instanceof Error ? e.message : "";
+    if ((e as any)?.daily || /free-models-per-day|الحصة المجانية اليومية/.test(raw)) {
+      return {
+        status: 429,
+        message:
+          "انتهت الحصة المجانية اليومية للتحليل (50 صورة/يوم). تُعاد تلقائياً بعد منتصف الليل بتوقيت غرينتش — أو أضف رصيداً صغيراً في OpenRouter لرفعها إلى 1000 صورة/يوم.",
+      };
+    }
     return { status: 429, message: "حد الاستخدام المجاني ممتلئ الآن (OpenRouter/Groq/Gemini)، حاول بعد قليل." };
   }
 
