@@ -22,6 +22,8 @@ export default function ProductDetail() {
   const qc = useQueryClient();
   const { user, roles } = useAuth();
   const canEdit = !!user;
+  const [activeImage, setActiveImage] = useState(0);
+
 
   const { data: product, isLoading } = useQuery({
     queryKey: ["product", id],
