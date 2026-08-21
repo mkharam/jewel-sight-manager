@@ -167,12 +167,14 @@ export async function analyzeJewelryImageGroq(params: {
     : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
   const systemPrompt = buildSystemPrompt(catList);
 
-  // موديلات Groq القادرة على الرؤية فقط — لا نستخدم أي موديل نصي
+  // موديلات Groq القادرة على الرؤية فقط — لا نستخدم أي موديل نصي.
+  // qwen3.6 متعدد الوسائط ومتاح على المفاتيح المجانية (مؤكَّد باختبار حقيقي).
   const KNOWN_VISION = [
+    "qwen/qwen3.6-27b",
     "meta-llama/llama-4-scout-17b-16e-instruct",
     "meta-llama/llama-4-maverick-17b-128e-instruct",
   ];
-  const VISION_RE = /llama-4|scout|maverick|-vl-|vision/i;
+  const VISION_RE = /llama-4|scout|maverick|-vl-|vision|qwen3\.\d|qwen3-vl/i;
   let GROQ_VISION_MODELS: string[] = KNOWN_VISION;
   try {
     const ml = await fetch("https://api.groq.com/openai/v1/models", {
@@ -215,7 +217,10 @@ export async function analyzeJewelryImageGroq(params: {
     response_format: { type: "json_object" },
     temperature: 0.2,
     max_tokens: 800,
+    // موديلات qwen التفكيرية تُخرج <think> وتستهلك الرموز — نطفئها لنحصل على JSON مباشرة
+    ...(/qwen/i.test(model) ? { reasoning_effort: "none" } : {}),
   });
+
 
   let res: Response | null = null;
   let lastText = "";
