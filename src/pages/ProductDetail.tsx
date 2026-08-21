@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowRight, Edit, ImageIcon, MapPin, MessageCircle, Tag, Trash2, User, ArrowLeftRight, Sparkles } from "lucide-react";
+import { ArrowRight, Edit, ImageIcon, MapPin, MessageCircle, Tag, Trash2, User, ArrowLeftRight, Sparkles, Copy, Share2 } from "lucide-react";
 import { PRODUCT_STATUS, formatCurrency, formatDate, formatWeight, getImageUrl } from "@/lib/constants";
 import { toast } from "sonner";
 import QuickQuoteSheet from "@/components/QuickQuoteSheet";
@@ -22,6 +22,8 @@ export default function ProductDetail() {
   const qc = useQueryClient();
   const { user, roles } = useAuth();
   const canEdit = !!user;
+  const [activeImage, setActiveImage] = useState(0);
+
 
   const { data: product, isLoading } = useQuery({
     queryKey: ["product", id],
