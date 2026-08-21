@@ -330,14 +330,15 @@ export async function analyzeWithFallback(params: {
 
   const all: Array<{ name: string; fn: () => Promise<JewelryAnalysis> }> = [];
 
+  // Gemini أولاً (المفتاح الجديد يعمل بثبات)، ثم OpenRouter، ثم Groq
+  if (Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY")) {
+    all.push({ name: "gemini", fn: () => analyzeJewelryImageGemini(params) });
+  }
   if (Deno.env.get("OPENROUTER_API_KEY")) {
     all.push({ name: "openrouter", fn: () => analyzeJewelryImageOpenRouter(params) });
   }
   if (Deno.env.get("GROQ_API_KEY")) {
     all.push({ name: "groq", fn: () => analyzeJewelryImageGroq(params) });
-  }
-  if (Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY")) {
-    all.push({ name: "gemini", fn: () => analyzeJewelryImageGemini(params) });
   }
   if (!all.length) {
     throw Object.assign(
