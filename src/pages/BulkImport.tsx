@@ -16,6 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, Save, Sparkles, X, FolderUp, RotateCw } from "lucide-react";
 import { toast } from "sonner";
 import { KARAT_OPTIONS } from "@/lib/constants";
+import { compressMany } from "@/lib/image-compress";
 
 type Item = {
   id: string; // معرّف ثابت — المطابقة بالمرجع تفشل بعد أي تحديث للحالة
@@ -60,8 +61,18 @@ export default function BulkImport() {
   const handleFiles = async (files: FileList | null) => {
     if (!files || !files.length) return;
     if (!user) return toast.error("سجّل الدخول أولاً");
-    const arr = Array.from(files).filter((f) => f.type.startsWith("image/") && f.size <= 8 * 1024 * 1024);
-    if (!arr.length) return toast.error("اختر صوراً (JPG/PNG/WEBP) حجم كل صورة ≤ 8MB");
+    const picked = Array.from(files).filter((f) => f.type.startsWith("image/") && f.size <= 25 * 1024 * 1024);
+    if (!picked.length) return toast.error("اختر صوراً (JPG/PNG/WEBP) حجم كل صورة ≤ 25MB");
+
+    // ضغط داخل الهاتف قبل الرفع — صور الآيفون تنزل من ~4MB إلى ~300KB فيصير الرفع أسرع بكثير
+    const compressToast = toast.loading(`جارٍ تحسين ${picked.length} صورة قبل الرفع…`);
+    const arr = await compressMany(picked, { maxDimension: 1600, quality: 0.82 }, 3, (done, total) => {
+      toast.loading(`تحسين الصور ${done}/${total}…`, { id: compressToast });
+    });
+    const before = picked.reduce((s, f) => s + f.size, 0);
+    const after = arr.reduce((s, f) => s + f.size, 0);
+    const saved = before > 0 ? Math.max(0, Math.round((1 - after / before) * 100)) : 0;
+    toast.success(saved > 5 ? `تم تصغير الصور ${saved}٪ — الرفع أسرع` : "الصور جاهزة للرفع", { id: compressToast });
 
     const newItems: Item[] = arr.map((f, idx) => ({
       id: `${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 8)}`,
