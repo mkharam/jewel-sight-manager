@@ -60,9 +60,9 @@ export default function InstallPrompt() {
             <p className="font-bold text-sm">ثبّت مخرّم على شاشتك الرئيسية</p>
             {isIOS && !deferred ? (
               <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                اضغط <Share className="inline size-3.5 align--2 text-primary" /> مشاركة في سفاري، ثم
+                اضغط <Share className="inline size-3.5 align-[-2px] text-primary" /> مشاركة في سفاري، ثم
                 <span className="font-semibold"> إضافة إلى الشاشة الرئيسية </span>
-                <Plus className="inline size-3.5 align--2 text-primary" /> ليفتح كتطبيق بدون شريط المتصفح.
+                <Plus className="inline size-3.5 align-[-2px] text-primary" /> ليفتح كتطبيق بدون شريط المتصفح.
               </p>
             ) : (
               <p className="text-xs text-muted-foreground mt-1">فتح أسرع، شاشة كاملة، وتجربة تطبيق حقيقي.</p>
