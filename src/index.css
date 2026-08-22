@@ -121,7 +121,20 @@
   }
 }
 
+@layer base {
+  /* تجربة تطبيق على الآيفون: لا تحديد نص عشوائي، لا وميض عند اللمس، احترام حواف الشاشة */
+  html, body {
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+  button, a, [role="button"] { touch-action: manipulation; }
+  /* منع تكبير سفاري التلقائي عند التركيز على الحقول */
+  input, select, textarea { font-size: 16px; }
+}
+
 @layer utilities {
+  .safe-area-pb { padding-bottom: env(safe-area-inset-bottom); }
+  .safe-area-pt { padding-top: env(safe-area-inset-top); }
   .text-gold-gradient {
     background: var(--gradient-gold);
     -webkit-background-clip: text;
