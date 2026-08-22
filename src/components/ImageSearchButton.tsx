@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Camera, Loader2, Sparkles, Upload, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { compressImage } from "@/lib/image-compress";
 
 interface Analysis {
   name_ar?: string;
@@ -44,15 +45,17 @@ export default function ImageSearchButton({ categories, onResults }: Props) {
     if (cameraRef.current) cameraRef.current.value = "";
   };
 
-  const handleFile = async (file: File) => {
-    if (!file.type.startsWith("image/")) {
+  const handleFile = async (original: File) => {
+    if (!original.type.startsWith("image/")) {
       toast({ title: "ملف غير صالح", description: "اختر صورة", variant: "destructive" });
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      toast({ title: "الصورة كبيرة", description: "الحد الأقصى 5 ميغابايت", variant: "destructive" });
+    if (original.size > 25 * 1024 * 1024) {
+      toast({ title: "الصورة كبيرة", description: "الحد الأقصى 25 ميغابايت", variant: "destructive" });
       return;
     }
+    // ضغط قبل الإرسال — بحث أسرع بكثير على شبكة المحل
+    const file = await compressImage(original, { maxDimension: 1280, quality: 0.8 });
     setPreviewUrl(URL.createObjectURL(file));
     setLoading(true);
     setAnalysis(null);

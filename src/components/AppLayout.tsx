@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import NotificationsBell from "@/components/NotificationsBell";
+import InstallPrompt from "@/components/InstallPrompt";
 
 type NavItem = { to: string; label: string; icon: any; end?: boolean; badgeKey?: "transfers" };
 
@@ -130,13 +131,13 @@ export default function AppLayout() {
         </div>
       </header>
 
-      <main className="flex-1 container mx-auto px-3 sm:px-4 py-3 sm:py-4 pb-24 md:pb-8">
+      <main className="flex-1 container mx-auto px-3 sm:px-4 py-3 sm:py-4 pb-28 md:pb-8">
         <Outlet />
       </main>
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-card/95 backdrop-blur safe-area-pb">
         <div className={cn(
-          "grid h-16",
+          "grid",
           mobileNav.length >= 6 ? "grid-cols-6" : mobileNav.length === 5 ? "grid-cols-5" : "grid-cols-4"
         )}>
           {mobileNav.map((item) => {
@@ -144,23 +145,32 @@ export default function AppLayout() {
             return (
               <NavLink key={item.to} to={item.to} end={item.end}
                 className={({ isActive }) => cn(
-                  "flex flex-col items-center justify-center gap-0.5 text-[10px] transition-colors relative",
+                  "min-h-[64px] py-2 flex flex-col items-center justify-center gap-1 text-[11px] font-semibold transition-colors relative select-none",
                   isActive ? "text-primary" : "text-muted-foreground active:bg-muted/40"
                 )}>
-                <div className="relative">
-                  <item.icon className="size-5" />
-                  {count > 0 && (
-                    <span className="absolute -top-1.5 -right-2 min-w-4 h-4 px-1 rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center">
-                      {count > 9 ? "9+" : count}
-                    </span>
-                  )}
-                </div>
-                {item.label}
+                {({ isActive }) => (
+                  <>
+                    <div className={cn(
+                      "relative flex items-center justify-center rounded-xl transition-colors h-8 w-12",
+                      isActive && "bg-primary/12"
+                    )}>
+                      <item.icon className="size-[22px]" />
+                      {count > 0 && (
+                        <span className="absolute -top-1 left-1 min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center">
+                          {count > 9 ? "9+" : count}
+                        </span>
+                      )}
+                    </div>
+                    <span>{item.label}</span>
+                  </>
+                )}
               </NavLink>
             );
           })}
         </div>
       </nav>
+
+      <InstallPrompt />
     </div>
   );
 }
