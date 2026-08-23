@@ -183,6 +183,133 @@ export type Database = {
           },
         ]
       }
+      customers: {
+        Row: {
+          branch_id: string | null
+          created_at: string
+          created_by: string | null
+          full_name: string
+          id: string
+          notes: string | null
+          phone: string | null
+          updated_at: string
+        }
+        Insert: {
+          branch_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          full_name: string
+          id?: string
+          notes?: string | null
+          phone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          branch_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          full_name?: string
+          id?: string
+          notes?: string | null
+          phone?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customers_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customers_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gold_prices: {
+        Row: {
+          created_at: string
+          effective_date: string
+          id: string
+          karat: string
+          making_charge: number
+          price_per_gram: number
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          effective_date?: string
+          id?: string
+          karat: string
+          making_charge?: number
+          price_per_gram: number
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          effective_date?: string
+          id?: string
+          karat?: string
+          making_charge?: number
+          price_per_gram?: number
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gold_prices_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      product_certificates: {
+        Row: {
+          cert_number: string | null
+          created_at: string
+          file_path: string | null
+          id: string
+          issued_at: string | null
+          issuer: string | null
+          notes: string | null
+          product_id: string
+        }
+        Insert: {
+          cert_number?: string | null
+          created_at?: string
+          file_path?: string | null
+          id?: string
+          issued_at?: string | null
+          issuer?: string | null
+          notes?: string | null
+          product_id: string
+        }
+        Update: {
+          cert_number?: string | null
+          created_at?: string
+          file_path?: string | null
+          id?: string
+          issued_at?: string | null
+          issuer?: string | null
+          notes?: string | null
+          product_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_certificates_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       product_images: {
         Row: {
           ai_embedding: string | null
@@ -300,6 +427,50 @@ export type Database = {
           },
         ]
       }
+      product_stones: {
+        Row: {
+          carat: number | null
+          clarity: string | null
+          color: string | null
+          created_at: string
+          id: string
+          notes: string | null
+          product_id: string
+          quantity: number | null
+          stone_type: string
+        }
+        Insert: {
+          carat?: number | null
+          clarity?: string | null
+          color?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          product_id: string
+          quantity?: number | null
+          stone_type: string
+        }
+        Update: {
+          carat?: number | null
+          clarity?: string | null
+          color?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          product_id?: string
+          quantity?: number | null
+          stone_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_stones_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       products: {
         Row: {
           branch_id: string | null
@@ -308,18 +479,23 @@ export type Database = {
           created_at: string
           created_by: string | null
           description: string | null
+          gold_color: string | null
+          hallmark: string | null
           id: string
           internal_notes: string | null
           item_type: string | null
           karat: string | null
+          making_charge: number | null
           name: string
           promo_price: number | null
+          received_at: string | null
           ring_size: string | null
           sale_price: number | null
           search_blob: string | null
           search_tags: string[]
           sku: string | null
           status: Database["public"]["Enums"]["product_status"]
+          supplier_id: string | null
           updated_at: string
           updated_by: string | null
           weight_grams: number | null
@@ -331,18 +507,23 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           description?: string | null
+          gold_color?: string | null
+          hallmark?: string | null
           id?: string
           internal_notes?: string | null
           item_type?: string | null
           karat?: string | null
+          making_charge?: number | null
           name: string
           promo_price?: number | null
+          received_at?: string | null
           ring_size?: string | null
           sale_price?: number | null
           search_blob?: string | null
           search_tags?: string[]
           sku?: string | null
           status?: Database["public"]["Enums"]["product_status"]
+          supplier_id?: string | null
           updated_at?: string
           updated_by?: string | null
           weight_grams?: number | null
@@ -354,18 +535,23 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           description?: string | null
+          gold_color?: string | null
+          hallmark?: string | null
           id?: string
           internal_notes?: string | null
           item_type?: string | null
           karat?: string | null
+          making_charge?: number | null
           name?: string
           promo_price?: number | null
+          received_at?: string | null
           ring_size?: string | null
           sale_price?: number | null
           search_blob?: string | null
           search_tags?: string[]
           sku?: string | null
           status?: Database["public"]["Enums"]["product_status"]
+          supplier_id?: string | null
           updated_at?: string
           updated_by?: string | null
           weight_grams?: number | null
@@ -390,6 +576,13 @@ export type Database = {
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "products_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
             referencedColumns: ["id"]
           },
           {
@@ -438,6 +631,318 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      reservations: {
+        Row: {
+          agreed_price: number | null
+          branch_id: string | null
+          created_at: string
+          created_by: string | null
+          customer_id: string | null
+          customer_name: string | null
+          customer_phone: string | null
+          deposit: number
+          expires_at: string
+          id: string
+          notes: string | null
+          product_id: string
+          status: Database["public"]["Enums"]["reservation_status"]
+          updated_at: string
+        }
+        Insert: {
+          agreed_price?: number | null
+          branch_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          customer_id?: string | null
+          customer_name?: string | null
+          customer_phone?: string | null
+          deposit?: number
+          expires_at: string
+          id?: string
+          notes?: string | null
+          product_id: string
+          status?: Database["public"]["Enums"]["reservation_status"]
+          updated_at?: string
+        }
+        Update: {
+          agreed_price?: number | null
+          branch_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          customer_id?: string | null
+          customer_name?: string | null
+          customer_phone?: string | null
+          deposit?: number
+          expires_at?: string
+          id?: string
+          notes?: string | null
+          product_id?: string
+          status?: Database["public"]["Enums"]["reservation_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reservations_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reservations_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reservations_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reservations_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sales: {
+        Row: {
+          branch_id: string | null
+          created_at: string
+          customer_id: string | null
+          customer_name: string | null
+          customer_phone: string | null
+          discount: number
+          final_price: number
+          id: string
+          karat: string | null
+          notes: string | null
+          payment_method: string | null
+          product_id: string | null
+          product_name_snapshot: string | null
+          sku_snapshot: string | null
+          sold_at: string
+          sold_by: string | null
+          weight_grams: number | null
+        }
+        Insert: {
+          branch_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          customer_name?: string | null
+          customer_phone?: string | null
+          discount?: number
+          final_price: number
+          id?: string
+          karat?: string | null
+          notes?: string | null
+          payment_method?: string | null
+          product_id?: string | null
+          product_name_snapshot?: string | null
+          sku_snapshot?: string | null
+          sold_at?: string
+          sold_by?: string | null
+          weight_grams?: number | null
+        }
+        Update: {
+          branch_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          customer_name?: string | null
+          customer_phone?: string | null
+          discount?: number
+          final_price?: number
+          id?: string
+          karat?: string | null
+          notes?: string | null
+          payment_method?: string | null
+          product_id?: string | null
+          product_name_snapshot?: string | null
+          sku_snapshot?: string | null
+          sold_at?: string
+          sold_by?: string | null
+          weight_grams?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_sold_by_fkey"
+            columns: ["sold_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stock_take_items: {
+        Row: {
+          checked_at: string
+          checked_by: string | null
+          id: string
+          notes: string | null
+          product_id: string | null
+          result: Database["public"]["Enums"]["stock_take_result"]
+          session_id: string
+        }
+        Insert: {
+          checked_at?: string
+          checked_by?: string | null
+          id?: string
+          notes?: string | null
+          product_id?: string | null
+          result?: Database["public"]["Enums"]["stock_take_result"]
+          session_id: string
+        }
+        Update: {
+          checked_at?: string
+          checked_by?: string | null
+          id?: string
+          notes?: string | null
+          product_id?: string | null
+          result?: Database["public"]["Enums"]["stock_take_result"]
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_take_items_checked_by_fkey"
+            columns: ["checked_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_take_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_take_items_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "stock_take_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stock_take_sessions: {
+        Row: {
+          branch_id: string
+          closed_at: string | null
+          closed_by: string | null
+          created_at: string
+          id: string
+          notes: string | null
+          started_at: string
+          started_by: string | null
+          status: Database["public"]["Enums"]["stock_take_status"]
+          updated_at: string
+        }
+        Insert: {
+          branch_id: string
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          started_at?: string
+          started_by?: string | null
+          status?: Database["public"]["Enums"]["stock_take_status"]
+          updated_at?: string
+        }
+        Update: {
+          branch_id?: string
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          started_at?: string
+          started_by?: string | null
+          status?: Database["public"]["Enums"]["stock_take_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_take_sessions_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_take_sessions_closed_by_fkey"
+            columns: ["closed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_take_sessions_started_by_fkey"
+            columns: ["started_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      suppliers: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          notes: string | null
+          phone: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          notes?: string | null
+          phone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          notes?: string | null
+          phone?: string | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       transfers: {
         Row: {
@@ -560,11 +1065,67 @@ export type Database = {
         }
         Relationships: []
       }
+      wishlist_items: {
+        Row: {
+          budget: number | null
+          created_at: string
+          created_by: string | null
+          customer_id: string
+          id: string
+          is_fulfilled: boolean
+          product_id: string | null
+          wanted_text: string | null
+        }
+        Insert: {
+          budget?: number | null
+          created_at?: string
+          created_by?: string | null
+          customer_id: string
+          id?: string
+          is_fulfilled?: boolean
+          product_id?: string | null
+          wanted_text?: string | null
+        }
+        Update: {
+          budget?: number | null
+          created_at?: string
+          created_by?: string | null
+          customer_id?: string
+          id?: string
+          is_fulfilled?: boolean
+          product_id?: string | null
+          wanted_text?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wishlist_items_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wishlist_items_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wishlist_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      expire_due_reservations: { Args: never; Returns: number }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -637,6 +1198,9 @@ export type Database = {
         | "in_transfer"
         | "damaged"
         | "lost"
+      reservation_status: "active" | "expired" | "cancelled" | "converted"
+      stock_take_result: "found" | "missing" | "extra"
+      stock_take_status: "open" | "closed"
       transfer_status:
         | "pending"
         | "approved"
@@ -781,6 +1345,9 @@ export const Constants = {
         "damaged",
         "lost",
       ],
+      reservation_status: ["active", "expired", "cancelled", "converted"],
+      stock_take_result: ["found", "missing", "extra"],
+      stock_take_status: ["open", "closed"],
       transfer_status: [
         "pending",
         "approved",
