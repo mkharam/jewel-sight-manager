@@ -269,6 +269,30 @@ export type Database = {
           },
         ]
       }
+      mstrmnd_events: {
+        Row: {
+          event_type: string | null
+          id: string
+          payload: Json
+          processed: boolean
+          received_at: string
+        }
+        Insert: {
+          event_type?: string | null
+          id?: string
+          payload: Json
+          processed?: boolean
+          received_at?: string
+        }
+        Update: {
+          event_type?: string | null
+          id?: string
+          payload?: Json
+          processed?: boolean
+          received_at?: string
+        }
+        Relationships: []
+      }
       product_certificates: {
         Row: {
           cert_number: string | null
