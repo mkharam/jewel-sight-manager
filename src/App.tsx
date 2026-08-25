@@ -14,6 +14,8 @@ import BulkImport from "@/pages/BulkImport";
 import Staff from "@/pages/Staff";
 import Reports from "@/pages/Reports";
 import Transfers from "@/pages/Transfers";
+import GoldPrice from "@/pages/GoldPrice";
+import StockTake from "@/pages/StockTake";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -37,6 +39,8 @@ const App = () => (
             <Route path="/staff" element={<Staff />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/transfers" element={<Transfers />} />
+            <Route path="/gold-price" element={<GoldPrice />} />
+            <Route path="/stock-take" element={<StockTake />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

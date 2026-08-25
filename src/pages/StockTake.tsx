@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ClipboardCheck, Check, X, Play, Lock, Search } from "lucide-react";
 import { formatDate } from "@/lib/constants";
-import { normalizeArabic } from "@/lib/arabic-search";
+import { normalizeAr } from "@/lib/arabic-search";
 import { toast } from "sonner";
 
 export default function StockTake() {
@@ -77,10 +77,10 @@ export default function StockTake() {
   }, [items]);
 
   const filtered = useMemo(() => {
-    const nq = normalizeArabic(q.trim());
+    const nq = normalizeAr(q.trim());
     if (!nq) return products as any[];
     return (products as any[]).filter((p) =>
-      normalizeArabic(`${p.name} ${p.sku ?? ""}`).includes(nq));
+      normalizeAr(`${p.name} ${p.sku ?? ""}`).includes(nq));
   }, [products, q]);
 
   const startSession = async () => {
