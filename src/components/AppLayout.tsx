@@ -71,9 +71,21 @@ export default function AppLayout() {
 
   const badges: Record<string, number> = { transfers: pendingTransfers };
 
-  const mobileNav: NavItem[] = isAdmin
-    ? [...baseNav, { to: "/reports", label: "الجرد", icon: BarChart3 }, { to: "/staff", label: "موظفون", icon: Users }]
-    : baseNav;
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  // الشريط السفلي: 4 أساسية + زر «المزيد» يفتح بقية الصفحات (منها الاستيراد)
+  const mobileNav: NavItem[] = baseNav;
+  const moreItems: NavItem[] = [
+    ...desktopExtras,
+    { to: "/gold-price", label: "سعر الذهب", icon: Coins },
+    { to: "/stock-take", label: "جرد ميداني", icon: ClipboardCheck },
+    ...(isAdmin
+      ? [
+          { to: "/reports", label: "التقارير", icon: BarChart3 },
+          { to: "/staff", label: "موظفون", icon: Users },
+        ]
+      : []),
+  ];
 
   const desktopNav: NavItem[] = isAdmin
     ? [...baseNav, ...desktopExtras, ...adminExtras, { to: "/staff", label: "موظفون", icon: Users }]
