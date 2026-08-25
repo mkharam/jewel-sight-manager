@@ -179,6 +179,42 @@ export default function AppLayout() {
               </NavLink>
             );
           })}
+
+          <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
+            <SheetTrigger asChild>
+              <button
+                type="button"
+                aria-label="المزيد"
+                className="min-h-[64px] py-2 flex flex-col items-center justify-center gap-1 text-[11px] font-semibold text-muted-foreground active:bg-muted/40 select-none"
+              >
+                <div className="flex items-center justify-center rounded-xl h-8 w-12">
+                  <MoreHorizontal className="size-[22px]" />
+                </div>
+                <span>المزيد</span>
+              </button>
+            </SheetTrigger>
+            <SheetContent side="bottom" className="rounded-t-2xl pb-8">
+              <SheetHeader className="text-right">
+                <SheetTitle>المزيد</SheetTitle>
+              </SheetHeader>
+              <div className="grid grid-cols-3 gap-3 mt-4">
+                {moreItems.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    onClick={() => setMoreOpen(false)}
+                    className={({ isActive }) => cn(
+                      "flex flex-col items-center justify-center gap-2 rounded-xl border border-border p-3 min-h-[86px] text-xs font-semibold",
+                      isActive ? "bg-secondary text-primary" : "text-foreground active:bg-muted/50"
+                    )}
+                  >
+                    <item.icon className="size-6" />
+                    <span className="text-center leading-tight">{item.label}</span>
+                  </NavLink>
+                ))}
+              </div>
+            </SheetContent>
+          </Sheet>
         </div>
       </nav>
 
