@@ -1179,6 +1179,10 @@ export type Database = {
           similarity: number
         }[]
       }
+      next_sku: {
+        Args: { _branch_id: string; _item_type?: string }
+        Returns: string
+      }
       normalize_arabic: { Args: { input: string }; Returns: string }
       search_products_fuzzy: {
         Args: {
@@ -1210,6 +1214,7 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      sku_type_letter: { Args: { _item_type: string }; Returns: string }
       tags_from_ai_labels: { Args: { labels: Json }; Returns: string[] }
     }
     Enums: {
