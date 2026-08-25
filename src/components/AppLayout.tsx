@@ -24,7 +24,9 @@ const desktopExtras: NavItem[] = [
 ];
 
 const adminExtras: NavItem[] = [
-  { to: "/reports", label: "الجرد", icon: BarChart3 },
+  { to: "/reports", label: "التقارير", icon: BarChart3 },
+  { to: "/gold-price", label: "سعر الذهب", icon: Coins },
+  { to: "/stock-take", label: "جرد ميداني", icon: ClipboardCheck },
 ];
 
 export default function AppLayout() {
