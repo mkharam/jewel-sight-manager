@@ -151,10 +151,7 @@ export default function AppLayout() {
       </main>
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-card/95 backdrop-blur safe-area-pb">
-        <div className={cn(
-          "grid",
-          mobileNav.length >= 6 ? "grid-cols-6" : mobileNav.length === 5 ? "grid-cols-5" : "grid-cols-4"
-        )}>
+        <div className="grid grid-cols-5">
           {mobileNav.map((item) => {
             const count = item.badgeKey ? badges[item.badgeKey] : 0;
             return (
