@@ -114,7 +114,8 @@ export async function analyzeJewelryImageOpenRouter(params: {
   imageBase64: string;
   mimeType: string;
   categoryNames: string[];
-}): Promise<JewelryAnalysis> {
+  promptOverride?: string;
+}): Promise<any> {
   const key = Deno.env.get("OPENROUTER_API_KEY")?.trim();
   if (!key) throw Object.assign(new Error("OPENROUTER_API_KEY not set"), { status: 500 });
 
@@ -122,7 +123,7 @@ export async function analyzeJewelryImageOpenRouter(params: {
   const catList = categoryNames.length
     ? categoryNames.join("، ")
     : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
-  const systemPrompt = buildSystemPrompt(catList);
+  const systemPrompt = params.promptOverride ?? buildSystemPrompt(catList);
 
   // نجرّب كل موديل مجاني على حدة، ومع تراجع تدريجي عند 429/5xx
   // (الحد المجاني على OpenRouter مشترك ويرفض الطلبات لحظياً، لكنه يعود بسرعة).
@@ -157,7 +158,8 @@ export async function analyzeJewelryImageGroq(params: {
   imageBase64: string;
   mimeType: string;
   categoryNames: string[];
-}): Promise<JewelryAnalysis> {
+  promptOverride?: string;
+}): Promise<any> {
   const key = Deno.env.get("GROQ_API_KEY")?.trim();
   if (!key) throw Object.assign(new Error("GROQ_API_KEY not set"), { status: 500 });
 
@@ -165,7 +167,7 @@ export async function analyzeJewelryImageGroq(params: {
   const catList = categoryNames.length
     ? categoryNames.join("، ")
     : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
-  const systemPrompt = buildSystemPrompt(catList);
+  const systemPrompt = params.promptOverride ?? buildSystemPrompt(catList);
 
   // موديلات Groq القادرة على الرؤية فقط — لا نستخدم أي موديل نصي.
   // qwen3.6 متعدد الوسائط ومتاح على المفاتيح المجانية (مؤكَّد باختبار حقيقي).
@@ -264,7 +266,8 @@ export async function analyzeJewelryImageGemini(params: {
   imageBase64: string;
   mimeType: string;
   categoryNames: string[];
-}): Promise<JewelryAnalysis> {
+  promptOverride?: string;
+}): Promise<any> {
   const raw = Deno.env.get("GOOGLE_API_KEY") ?? Deno.env.get("GEMINI_API_KEY") ?? "";
   const key = raw.trim().replace(/^["']|["']$/g, "");
   if (!key) throw Object.assign(new Error("GEMINI_API_KEY not set"), { status: 500 });
@@ -273,7 +276,7 @@ export async function analyzeJewelryImageGemini(params: {
   const catList = categoryNames.length
     ? categoryNames.join("، ")
     : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
-  const systemPrompt = buildSystemPrompt(catList);
+  const systemPrompt = params.promptOverride ?? buildSystemPrompt(catList);
 
   const res = await fetch(
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
@@ -475,4 +478,72 @@ export function friendlyError(e: unknown): { status: number; message: string } {
 
   const msg = e instanceof Error ? e.message : "خطأ غير متوقع";
   return { status: 500, message: msg };
+}
+
+
+// ============================================================
+// تحليل «صينية»: صورة واحدة تحتوي عدة قطع → مصفوفة قطع
+// يوفّر وقت التصوير: تصوّر 5–10 قطع مرة واحدة والنظام يفصلها.
+// ============================================================
+function buildTraySystemPrompt(catList: string): string {
+  return (
+    `أنت خبير مجوهرات عربي دقيق الملاحظة. الصورة تحتوي عدة قطع مجوهرات معروضة معاً (صينية/علبة عرض).\n` +
+    `افصل كل قطعة مستقلة وأعد JSON فقط بهذا الشكل بالضبط بدون أي نص إضافي:\n` +
+    `{"pieces":[{"position":"أعلى يمين","name_ar":"...","category_name":"...","karat":null,"metal_color":"yellow","style":[],"gemstones":[],"description_ar":"..."}]}\n\n` +
+    `- position: وصف مكان القطعة في الصورة بالعربية (أعلى يمين، وسط، أسفل يسار…) حتى يتعرّف عليها الموظف.\n` +
+    `- لا تدمج قطعتين في سجل واحد، ولا تُكرّر نفس القطعة. الطقم المتكامل (عقد+حلق+خاتم معروضة كطقم واحد) سجل واحد فئته "طقم".\n` +
+    `- karat: 18K, 21K, 22K, 24K, ألماس, فضة, أخرى, null — إن لم تتأكد أعد null ولا تفترض عياراً.\n` +
+    `- metal_color: yellow, white, rose, mixed, null بحسب اللون الفعلي الظاهر.\n` +
+    `- category_name يطابق واحدة من: ${catList} أو null.\n` +
+    `- لا تفترض "ألماس" لأي حجر أبيض لامع — اذكره "أحجار بيضاء لامعة" إلا إذا كان حجراً كبيراً بقطع سوليتير واضح.\n` +
+    `- description_ar يذكر ألوان الأحجار الفعلية وتفاصيل التصميم الظاهرة في هذه القطعة تحديداً، لا وصفاً عاماً.`
+  );
+}
+
+export async function analyzeTrayWithFallback(params: {
+  imageBase64: string;
+  mimeType: string;
+  categoryNames: string[];
+}): Promise<{ pieces: JewelryAnalysis[]; provider: string }> {
+  const m = /^data:([^;]+);base64,(.*)$/s.exec(params.imageBase64.trim());
+  if (m) params = { ...params, mimeType: m[1], imageBase64: m[2] };
+  params = { ...params, imageBase64: params.imageBase64.replace(/\s/g, "") };
+  if (!params.imageBase64) throw Object.assign(new Error("الصورة فارغة أو غير صالحة"), { status: 400 });
+
+  const catList = params.categoryNames.length
+    ? params.categoryNames.join("، ")
+    : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
+  const promptOverride = buildTraySystemPrompt(catList);
+  const args = { ...params, promptOverride };
+
+  const providers: Array<{ name: string; fn: () => Promise<any> }> = [];
+  if (Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY")) {
+    providers.push({ name: "gemini", fn: () => analyzeJewelryImageGemini(args) });
+  }
+  if (Deno.env.get("OPENROUTER_API_KEY")) {
+    providers.push({ name: "openrouter", fn: () => analyzeJewelryImageOpenRouter(args) });
+  }
+  if (Deno.env.get("GROQ_API_KEY")) {
+    providers.push({ name: "groq", fn: () => analyzeJewelryImageGroq(args) });
+  }
+  if (!providers.length) {
+    throw Object.assign(new Error("لا يوجد مفتاح ذكاء اصطناعي مجاني مُعد في المشروع."), { status: 500 });
+  }
+
+  let lastErr: unknown = null;
+  for (let pass = 0; pass < 2; pass++) {
+    if (pass > 0) await new Promise((r) => setTimeout(r, 2500));
+    for (const p of providers) {
+      try {
+        const out = await p.fn();
+        const arr = Array.isArray(out?.pieces) ? out.pieces : Array.isArray(out) ? out : null;
+        if (!arr || !arr.length) throw Object.assign(new Error("لم يتعرّف النظام على أي قطعة في الصورة"), { status: 422 });
+        return { pieces: arr as JewelryAnalysis[], provider: p.name };
+      } catch (e) {
+        lastErr = e;
+        console.warn(`Tray provider ${p.name} failed [${(e as any)?.status ?? 500}]`);
+      }
+    }
+  }
+  throw lastErr ?? Object.assign(new Error("كل المزوّدات مشغولة الآن — أعد المحاولة."), { status: 429 });
 }
