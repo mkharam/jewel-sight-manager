@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Search, Package, MessageCircle, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck } from "lucide-react";
+import { Search, Package, MessageCircle, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, Layers } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -21,6 +21,7 @@ const baseNav: NavItem[] = [
 
 const desktopExtras: NavItem[] = [
   { to: "/import", label: "استيراد", icon: Upload },
+  { to: "/tray", label: "صينية", icon: Layers },
 ];
 
 const adminExtras: NavItem[] = [
