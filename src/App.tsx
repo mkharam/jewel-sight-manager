@@ -16,6 +16,7 @@ import Reports from "@/pages/Reports";
 import Transfers from "@/pages/Transfers";
 import GoldPrice from "@/pages/GoldPrice";
 import StockTake from "@/pages/StockTake";
+import TrayImport from "@/pages/TrayImport";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -36,6 +37,7 @@ const App = () => (
             <Route path="/products/:id/edit" element={<ProductForm />} />
             <Route path="/inquiries" element={<Inquiries />} />
             <Route path="/import" element={<BulkImport />} />
+            <Route path="/tray" element={<TrayImport />} />
             <Route path="/staff" element={<Staff />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/transfers" element={<Transfers />} />
