@@ -497,6 +497,7 @@ export type Database = {
       }
       products: {
         Row: {
+          barcode_value: string | null
           branch_id: string | null
           category_id: string | null
           cost_price: number | null
@@ -509,6 +510,8 @@ export type Database = {
           internal_notes: string | null
           item_type: string | null
           karat: string | null
+          last_verified_at: string | null
+          last_verified_by: string | null
           making_charge: number | null
           name: string
           promo_price: number | null
@@ -517,7 +520,9 @@ export type Database = {
           sale_price: number | null
           search_blob: string | null
           search_tags: string[]
-          sku: string | null
+          serial_number: string | null
+          showcase_location: string | null
+          sku: string
           status: Database["public"]["Enums"]["product_status"]
           supplier_id: string | null
           updated_at: string
@@ -525,6 +530,7 @@ export type Database = {
           weight_grams: number | null
         }
         Insert: {
+          barcode_value?: string | null
           branch_id?: string | null
           category_id?: string | null
           cost_price?: number | null
@@ -537,6 +543,8 @@ export type Database = {
           internal_notes?: string | null
           item_type?: string | null
           karat?: string | null
+          last_verified_at?: string | null
+          last_verified_by?: string | null
           making_charge?: number | null
           name: string
           promo_price?: number | null
@@ -545,7 +553,9 @@ export type Database = {
           sale_price?: number | null
           search_blob?: string | null
           search_tags?: string[]
-          sku?: string | null
+          serial_number?: string | null
+          showcase_location?: string | null
+          sku: string
           status?: Database["public"]["Enums"]["product_status"]
           supplier_id?: string | null
           updated_at?: string
@@ -553,6 +563,7 @@ export type Database = {
           weight_grams?: number | null
         }
         Update: {
+          barcode_value?: string | null
           branch_id?: string | null
           category_id?: string | null
           cost_price?: number | null
@@ -565,6 +576,8 @@ export type Database = {
           internal_notes?: string | null
           item_type?: string | null
           karat?: string | null
+          last_verified_at?: string | null
+          last_verified_by?: string | null
           making_charge?: number | null
           name?: string
           promo_price?: number | null
@@ -573,7 +586,9 @@ export type Database = {
           sale_price?: number | null
           search_blob?: string | null
           search_tags?: string[]
-          sku?: string | null
+          serial_number?: string | null
+          showcase_location?: string | null
+          sku?: string
           status?: Database["public"]["Enums"]["product_status"]
           supplier_id?: string | null
           updated_at?: string
@@ -598,6 +613,13 @@ export type Database = {
           {
             foreignKeyName: "products_created_by_fkey"
             columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "products_last_verified_by_fkey"
+            columns: ["last_verified_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -738,6 +760,7 @@ export type Database = {
       }
       sales: {
         Row: {
+          amar_invoice_number: string | null
           branch_id: string | null
           created_at: string
           customer_id: string | null
@@ -751,12 +774,16 @@ export type Database = {
           payment_method: string | null
           product_id: string | null
           product_name_snapshot: string | null
+          return_reason: string | null
+          returned_at: string | null
+          returned_by: string | null
           sku_snapshot: string | null
           sold_at: string
           sold_by: string | null
           weight_grams: number | null
         }
         Insert: {
+          amar_invoice_number?: string | null
           branch_id?: string | null
           created_at?: string
           customer_id?: string | null
@@ -770,12 +797,16 @@ export type Database = {
           payment_method?: string | null
           product_id?: string | null
           product_name_snapshot?: string | null
+          return_reason?: string | null
+          returned_at?: string | null
+          returned_by?: string | null
           sku_snapshot?: string | null
           sold_at?: string
           sold_by?: string | null
           weight_grams?: number | null
         }
         Update: {
+          amar_invoice_number?: string | null
           branch_id?: string | null
           created_at?: string
           customer_id?: string | null
@@ -789,6 +820,9 @@ export type Database = {
           payment_method?: string | null
           product_id?: string | null
           product_name_snapshot?: string | null
+          return_reason?: string | null
+          returned_at?: string | null
+          returned_by?: string | null
           sku_snapshot?: string | null
           sold_at?: string
           sold_by?: string | null
@@ -814,6 +848,13 @@ export type Database = {
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_returned_by_fkey"
+            columns: ["returned_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
@@ -1184,6 +1225,10 @@ export type Database = {
         Returns: string
       }
       normalize_arabic: { Args: { input: string }; Returns: string }
+      return_sale: {
+        Args: { _reason: string; _sale_id: string }
+        Returns: undefined
+      }
       search_products_fuzzy: {
         Args: {
           _branch_id?: string
