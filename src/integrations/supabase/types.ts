@@ -1227,6 +1227,9 @@ export type Database = {
         | "in_transfer"
         | "damaged"
         | "lost"
+        | "in_repair"
+        | "stock_discrepancy"
+        | "archived"
       reservation_status: "active" | "expired" | "cancelled" | "converted"
       stock_take_result: "found" | "missing" | "extra"
       stock_take_status: "open" | "closed"
@@ -1373,6 +1376,9 @@ export const Constants = {
         "in_transfer",
         "damaged",
         "lost",
+        "in_repair",
+        "stock_discrepancy",
+        "archived",
       ],
       reservation_status: ["active", "expired", "cancelled", "converted"],
       stock_take_result: ["found", "missing", "extra"],
