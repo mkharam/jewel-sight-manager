@@ -61,7 +61,7 @@ export async function pdfToImageFiles(
       onProgress?.(n, pdf.numPages);
     }
   } finally {
-    await pdf.destroy();
+    await (pdf as any).destroy?.();
   }
 
   return out;
