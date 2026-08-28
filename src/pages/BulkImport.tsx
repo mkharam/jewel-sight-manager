@@ -17,6 +17,7 @@ import { Loader2, Save, Sparkles, X, FolderUp, RotateCw } from "lucide-react";
 import { toast } from "sonner";
 import { KARAT_OPTIONS } from "@/lib/constants";
 import { compressMany } from "@/lib/image-compress";
+import { isPdf, pdfToImageFiles } from "@/lib/pdf-to-images";
 
 type Item = {
   id: string; // معرّف ثابت — المطابقة بالمرجع تفشل بعد أي تحديث للحالة
