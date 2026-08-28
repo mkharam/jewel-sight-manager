@@ -362,7 +362,7 @@ export default function BulkImport() {
         <label className="flex flex-col sm:flex-row sm:items-center gap-3 cursor-pointer">
           <input
             type="file"
-            accept="image/*"
+            accept="image/*,application/pdf,.pdf"
             multiple
             className="hidden"
             onChange={(e) => handleFiles(e.target.files)}
