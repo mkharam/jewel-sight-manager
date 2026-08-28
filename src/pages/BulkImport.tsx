@@ -61,8 +61,32 @@ export default function BulkImport() {
   const handleFiles = async (files: FileList | null) => {
     if (!files || !files.length) return;
     if (!user) return toast.error("سجّل الدخول أولاً");
-    const picked = Array.from(files).filter((f) => f.type.startsWith("image/") && f.size <= 25 * 1024 * 1024);
-    if (!picked.length) return toast.error("اختر صوراً (JPG/PNG/WEBP) حجم كل صورة ≤ 25MB");
+    const all = Array.from(files);
+    const pdfs = all.filter(isPdf);
+    const images = all.filter((f) => f.type.startsWith("image/") && f.size <= 25 * 1024 * 1024);
+
+    // تحويل صفحات كل PDF إلى صور JPEG داخل المتصفح (بدون أي تكلفة ذكاء اصطناعي)
+    let pdfPages: File[] = [];
+    if (pdfs.length) {
+      const t = toast.loading("جارٍ تحويل صفحات PDF…");
+      try {
+        for (let i = 0; i < pdfs.length; i++) {
+          const pages = await pdfToImageFiles(pdfs[i], { maxDimension: 1600, quality: 0.82 }, (done, total) =>
+            toast.loading(
+              `جارٍ تحويل صفحات PDF… ${pdfs.length > 1 ? `(${i + 1}/${pdfs.length}) ` : ""}صفحة ${done}/${total}`,
+              { id: t },
+            ),
+          );
+          pdfPages = pdfPages.concat(pages);
+        }
+        toast.success(`تم تحويل ${pdfPages.length} صفحة PDF إلى صور`, { id: t });
+      } catch (e: any) {
+        toast.error(e?.message ?? "تعذّر تحويل ملف PDF", { id: t });
+      }
+    }
+
+    const picked = [...images, ...pdfPages];
+    if (!picked.length) return toast.error("اختر صوراً (JPG/PNG/WEBP) أو ملف PDF — حجم كل صورة ≤ 25MB");
 
     // ضغط داخل الهاتف قبل الرفع — صور الآيفون تنزل من ~4MB إلى ~300KB فيصير الرفع أسرع بكثير
     const compressToast = toast.loading(`جارٍ تحسين ${picked.length} صورة قبل الرفع…`);
