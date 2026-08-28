@@ -197,7 +197,8 @@ export default function ProductForm() {
       } else {
         const { data, error } = await supabase
           .from("products")
-          .insert({ ...payload, name: payload.name, created_by: user?.id ?? null })
+          // الـ SKU يُولّده مشغّل قاعدة البيانات تلقائياً عند تركه فارغاً
+          .insert({ ...payload, name: payload.name, created_by: user?.id ?? null } as any)
           .select("id")
           .single();
         if (error) throw error;
