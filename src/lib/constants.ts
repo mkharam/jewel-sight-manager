@@ -5,6 +5,9 @@ export const PRODUCT_STATUS = {
   in_transfer: { label: "تحويل", color: "bg-status-transfer text-white" },
   damaged: { label: "تالف", color: "bg-status-damaged text-white" },
   lost: { label: "مفقود", color: "bg-status-lost text-white" },
+  in_repair: { label: "في الصيانة", color: "bg-status-transfer text-white" },
+  stock_discrepancy: { label: "فرق جرد", color: "bg-status-damaged text-white" },
+  archived: { label: "مؤرشف", color: "bg-muted text-foreground" },
 } as const;
 
 export type ProductStatus = keyof typeof PRODUCT_STATUS;
