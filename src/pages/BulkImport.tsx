@@ -372,7 +372,7 @@ export default function BulkImport() {
             اختيار صور أو ملف PDF من الجهاز
           </span>
           <span className="text-xs text-muted-foreground">
-            يمكنك اختيار عشرات الصور دفعة واحدة. الجودة ≤ 8MB لكل صورة.
+            يمكنك اختيار عشرات الصور دفعة واحدة، أو كتالوج PDF — كل صفحة تصبح قطعة. الجودة ≤ 8MB لكل صورة.
           </span>
         </label>
       </Card>
