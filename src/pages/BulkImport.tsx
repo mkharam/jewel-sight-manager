@@ -230,6 +230,7 @@ export default function BulkImport() {
       try {
         const { data: prod, error: e1 } = await supabase
           .from("products")
+          // الـ SKU يُولّده مشغّل قاعدة البيانات تلقائياً
           .insert({
             name: it.name.trim() || "قطعة جديدة",
             category_id: findCategoryId(it.category),
@@ -238,7 +239,7 @@ export default function BulkImport() {
             branch_id: defaultBranch,
             status: "available",
             created_by: user.id,
-          })
+          } as any)
           .select("id")
           .single();
         if (e1 || !prod) { failed++; continue; }
