@@ -1191,6 +1191,7 @@ export type Database = {
     }
     Functions: {
       expire_due_reservations: { Args: never; Returns: number }
+      has_branch: { Args: { _user_id: string }; Returns: boolean }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
