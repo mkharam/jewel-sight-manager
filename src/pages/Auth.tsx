@@ -25,8 +25,16 @@ const loginSchema = z.object({
 });
 
 const signupSchema = loginSchema.extend({
+  password: z.string().min(6, "كلمة المرور 6 خانات على الأقل").max(72),
   fullName: z.string().trim().min(2, "اكتب اسمك الكامل").max(100),
+  phone: z
+    .string()
+    .trim()
+    .min(9, "رقم الهاتف غير صحيح")
+    .max(20, "رقم الهاتف طويل")
+    .regex(/^[0-9+\s-]+$/, "أرقام فقط"),
 });
+
 
 // "admin" -> "admin@lamaa.local"; legacy "admin@lamaa.com" -> stays
 function usernameToEmail(input: string): string {
@@ -41,7 +49,9 @@ export default function Auth() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
+
 
   const submitLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,7 +84,7 @@ export default function Auth() {
 
   const submitSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    const parsed = signupSchema.safeParse({ username, password, fullName });
+    const parsed = signupSchema.safeParse({ username, password, fullName, phone });
     if (!parsed.success) {
       toast.error(parsed.error.issues[0].message);
       return;
@@ -86,7 +96,7 @@ export default function Auth() {
         email,
         password,
         options: {
-          data: { full_name: parsed.data.fullName },
+          data: { full_name: parsed.data.fullName, phone: parsed.data.phone },
           emailRedirectTo: window.location.origin,
         },
       });
@@ -96,8 +106,9 @@ export default function Auth() {
         }
         throw error;
       }
-      toast.success("تم إنشاء حسابك بنجاح — مرحباً بك");
+      toast.success("تم إنشاء حسابك — بانتظار تعيينك في فرع من المدير");
       navigate("/");
+
     } catch (err: any) {
       toast.error(err.message ?? "حدث خطأ أثناء إنشاء الحساب");
     } finally {
@@ -185,13 +196,28 @@ export default function Auth() {
                   <p className="text-[11px] text-muted-foreground">أحرف إنجليزية وأرقام فقط — تستخدمه لتسجيل الدخول</p>
                 </div>
                 <div className="space-y-1.5">
+                  <Label htmlFor="phone">رقم الهاتف</Label>
+                  <Input
+                    id="phone"
+                    type="tel"
+                    inputMode="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="09xxxxxxxx"
+                    required
+                    dir="ltr"
+                    autoComplete="tel"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
                   <Label htmlFor="new-password">كلمة المرور</Label>
                   <Input
                     id="new-password"
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="4 خانات على الأقل"
+                    placeholder="6 خانات على الأقل"
                     required
                     dir="ltr"
                     autoComplete="new-password"
