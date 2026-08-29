@@ -194,6 +194,21 @@ export default function Auth() {
                   <p className="text-[11px] text-muted-foreground">أحرف إنجليزية وأرقام فقط — تستخدمه لتسجيل الدخول</p>
                 </div>
                 <div className="space-y-1.5">
+                  <Label htmlFor="phone">رقم الهاتف</Label>
+                  <Input
+                    id="phone"
+                    type="tel"
+                    inputMode="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="09xxxxxxxx"
+                    required
+                    dir="ltr"
+                    autoComplete="tel"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
                   <Label htmlFor="new-password">كلمة المرور</Label>
                   <Input
                     id="new-password"
