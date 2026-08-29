@@ -26,6 +26,12 @@ const loginSchema = z.object({
 
 const signupSchema = loginSchema.extend({
   fullName: z.string().trim().min(2, "اكتب اسمك الكامل").max(100),
+  phone: z
+    .string()
+    .trim()
+    .min(9, "رقم الهاتف غير صحيح")
+    .max(20, "رقم الهاتف طويل")
+    .regex(/^[0-9+\s-]+$/, "أرقام فقط"),
 });
 
 // "admin" -> "admin@lamaa.local"; legacy "admin@lamaa.com" -> stays
@@ -41,7 +47,9 @@ export default function Auth() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
+
 
   const submitLogin = async (e: React.FormEvent) => {
     e.preventDefault();
