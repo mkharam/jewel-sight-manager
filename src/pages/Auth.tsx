@@ -82,7 +82,7 @@ export default function Auth() {
 
   const submitSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    const parsed = signupSchema.safeParse({ username, password, fullName });
+    const parsed = signupSchema.safeParse({ username, password, fullName, phone });
     if (!parsed.success) {
       toast.error(parsed.error.issues[0].message);
       return;
@@ -94,7 +94,7 @@ export default function Auth() {
         email,
         password,
         options: {
-          data: { full_name: parsed.data.fullName },
+          data: { full_name: parsed.data.fullName, phone: parsed.data.phone },
           emailRedirectTo: window.location.origin,
         },
       });
@@ -104,8 +104,9 @@ export default function Auth() {
         }
         throw error;
       }
-      toast.success("تم إنشاء حسابك بنجاح — مرحباً بك");
+      toast.success("تم إنشاء حسابك — بانتظار تعيينك في فرع من المدير");
       navigate("/");
+
     } catch (err: any) {
       toast.error(err.message ?? "حدث خطأ أثناء إنشاء الحساب");
     } finally {
