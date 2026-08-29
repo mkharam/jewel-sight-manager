@@ -25,6 +25,7 @@ const loginSchema = z.object({
 });
 
 const signupSchema = loginSchema.extend({
+  password: z.string().min(6, "كلمة المرور 6 خانات على الأقل").max(72),
   fullName: z.string().trim().min(2, "اكتب اسمك الكامل").max(100),
   phone: z
     .string()
@@ -33,6 +34,7 @@ const signupSchema = loginSchema.extend({
     .max(20, "رقم الهاتف طويل")
     .regex(/^[0-9+\s-]+$/, "أرقام فقط"),
 });
+
 
 // "admin" -> "admin@lamaa.local"; legacy "admin@lamaa.com" -> stays
 function usernameToEmail(input: string): string {
