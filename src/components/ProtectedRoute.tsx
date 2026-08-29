@@ -1,9 +1,12 @@
 import { Navigate } from "react-router-dom";
-import { useAuth } from "@/hooks/useAuth";
-import { Sparkles } from "lucide-react";
+import { useAuth, isManagerOrAdmin } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Sparkles, Clock } from "lucide-react";
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { session, loading } = useAuth();
+  const { session, loading, rolesLoading, roles, profile } = useAuth();
+
 
   if (loading) {
     return (
