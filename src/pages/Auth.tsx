@@ -217,7 +217,7 @@ export default function Auth() {
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="4 خانات على الأقل"
+                    placeholder="6 خانات على الأقل"
                     required
                     dir="ltr"
                     autoComplete="new-password"
