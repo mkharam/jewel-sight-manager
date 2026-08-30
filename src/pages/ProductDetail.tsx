@@ -110,6 +110,20 @@ export default function ProductDetail() {
     navigate("/");
   };
 
+  const verifyProduct = async () => {
+    const { error } = await supabase.from("products").update({
+      last_verified_at: new Date().toISOString(),
+      last_verified_by: user?.id,
+    }).eq("id", id!);
+    if (error) return toast.error(error.message);
+    await supabase.from("activity_log").insert({
+      actor_id: user?.id, action: "verify", entity_type: "product", entity_id: id,
+      details: { branch_id: product.branch_id, showcase_location: product.showcase_location },
+    });
+    toast.success("تم التحقق من القطعة");
+    qc.invalidateQueries({ queryKey: ["product", id] });
+  };
+
   return (
     <div className="space-y-4 max-w-5xl mx-auto">
       <div className="flex items-center justify-between gap-2">
