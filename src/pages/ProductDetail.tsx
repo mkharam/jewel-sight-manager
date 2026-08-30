@@ -225,6 +225,29 @@ export default function ProductDetail() {
           </Card>
 
           <QuickQuoteSheet productId={id!} productName={product.name} branchId={product.branch_id} fullWidthButton />
+
+          {product.status === "available" && (
+            <div className="grid grid-cols-2 gap-2">
+              <SellDialog product={{
+                id: product.id, name: product.name, sku: product.sku, karat: product.karat,
+                weight_grams: product.weight_grams, branch_id: product.branch_id,
+                sale_price: product.sale_price, promo_price: product.promo_price,
+              }} />
+              <ReserveDialog productId={product.id} productName={product.name} branchId={product.branch_id} defaultPrice={product.promo_price ?? product.sale_price} />
+            </div>
+          )}
+          {product.status === "reserved" && (
+            <SellDialog product={{
+              id: product.id, name: product.name, sku: product.sku, karat: product.karat,
+              weight_grams: product.weight_grams, branch_id: product.branch_id,
+              sale_price: product.sale_price, promo_price: product.promo_price,
+            }} />
+          )}
+
+          <Button variant="outline" size="lg" className="w-full" onClick={verifyProduct}>
+            <CheckCircle2 className="size-4 ml-1" /> تحقق من وجود القطعة
+          </Button>
+
           <Link to={`/transfers?product=${id}&name=${encodeURIComponent(product.name)}`} className="block">
             <Button variant="outline" size="lg" className="w-full">
               <ArrowLeftRight className="size-4 ml-1" /> طلب تحويل لفرعي
