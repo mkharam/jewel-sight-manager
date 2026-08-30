@@ -250,7 +250,7 @@ export default function ProductSearch() {
         const orParts: string[] = [];
         for (const t of terms) {
           if (t.length < 2) continue;
-          orParts.push(`name.ilike.%${t}%`, `description.ilike.%${t}%`, `sku.ilike.%${t}%`);
+          orParts.push(`name.ilike.%${t}%`, `description.ilike.%${t}%`, `sku.ilike.%${t}%`, `serial_number.ilike.%${t}%`, `barcode_value.ilike.%${t}%`);
         }
         const tagArray = `{${terms.filter((t) => t.length >= 2).map((t) => `"${t}"`).join(",")}}`;
         if (terms.length) orParts.push(`search_tags.ov.${tagArray}`);
