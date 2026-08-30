@@ -56,6 +56,7 @@ export default function ProductForm() {
     status: "available" as keyof typeof PRODUCT_STATUS,
     cost_price: "", sale_price: "", promo_price: "",
     description: "", internal_notes: "",
+    serial_number: "", barcode_value: "", showcase_location: "",
   });
   const [existingImages, setExistingImages] = useState<{ id: string; storage_path: string; is_primary: boolean }[]>([]);
   const [newFiles, setNewFiles] = useState<File[]>([]);
