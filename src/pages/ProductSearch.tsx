@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store, CheckSquare, Trash2, Loader2 } from "lucide-react";
+import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store, CheckSquare, Trash2, Loader2, ScanLine } from "lucide-react";
 import ProductCard from "@/components/ProductCard";
 import ImageSearchButton from "@/components/ImageSearchButton";
 import { PRODUCT_STATUS, KARAT_OPTIONS, ProductStatus } from "@/lib/constants";
