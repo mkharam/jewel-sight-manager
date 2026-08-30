@@ -55,6 +55,7 @@ export default function ProductSearch() {
   const [filters, setFilters] = useState<Filters>(loadSavedFilters);
   const [debounced, setDebounced] = useState(filters);
   const [pages, setPages] = useState(1); // كم صفحة تم تحميلها
+  const [barcodeMode, setBarcodeMode] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
