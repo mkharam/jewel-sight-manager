@@ -187,6 +187,12 @@ export default function ProductDetail() {
               {product.item_type && <Spec label="النوع" value={product.item_type} />}
               <Spec label="الفرع" value={product.branch?.name} icon={<MapPin className="size-3.5" />} />
               <Spec label="SKU" value={product.sku ?? "—"} />
+              {product.serial_number && <Spec label="الرقم التسلسلي" value={product.serial_number} />}
+              {product.barcode_value && <Spec label="الباركود" value={product.barcode_value} />}
+              {product.showcase_location && <Spec label="موقع العرض" value={product.showcase_location} />}
+              {product.last_verified_at && (
+                <Spec label="آخر تحقق" value={formatDate(product.last_verified_at)} icon={<ShieldCheck className="size-3.5 text-primary" />} />
+              )}
             </div>
 
             <div className="pt-3 border-t border-border">
