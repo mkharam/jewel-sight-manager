@@ -30,6 +30,7 @@ export default function SellDialog({ product }: { product: Product }) {
   const [phone, setPhone] = useState("");
   const [method, setMethod] = useState(PAYMENT_METHODS[0]);
   const [notes, setNotes] = useState("");
+  const [amarInvoice, setAmarInvoice] = useState("");
 
   const submit = async () => {
     if (!price || Number(price) <= 0) return toast.error("اكتب السعر النهائي");
@@ -48,6 +49,7 @@ export default function SellDialog({ product }: { product: Product }) {
       payment_method: method,
       sold_by: user?.id ?? null,
       notes: notes.trim() || null,
+      amar_invoice_number: amarInvoice.trim() || null,
     });
     setSaving(false);
     if (error) return toast.error(error.message);
@@ -84,6 +86,10 @@ export default function SellDialog({ product }: { product: Product }) {
                 {PAYMENT_METHODS.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
               </SelectContent>
             </Select>
+          </div>
+          <div>
+            <Label>رقم فاتورة عمار (Amar)</Label>
+            <Input value={amarInvoice} onChange={(e) => setAmarInvoice(e.target.value)} dir="ltr" placeholder="اختياري — للربط بنظام الفواتير" />
           </div>
           <div><Label>ملاحظات</Label><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} /></div>
         </div>

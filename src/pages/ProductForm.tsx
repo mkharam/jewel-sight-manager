@@ -33,12 +33,15 @@ const schema = z.object({
   item_type: z.string().max(50).nullable(),
   weight_grams: z.number().nonnegative().nullable(),
   ring_size: z.string().max(20).nullable(),
-  status: z.enum(["available","reserved","sold","in_transfer","damaged","lost"]),
+  status: z.enum(["available","reserved","sold","in_transfer","damaged","lost","in_repair","stock_discrepancy","archived"]),
   cost_price: z.number().nonnegative().nullable(),
   sale_price: z.number().nonnegative().nullable(),
   promo_price: z.number().nonnegative().nullable(),
   description: z.string().max(2000).nullable(),
   internal_notes: z.string().max(2000).nullable(),
+  serial_number: z.string().max(80).nullable(),
+  barcode_value: z.string().max(80).nullable(),
+  showcase_location: z.string().max(80).nullable(),
 });
 
 export default function ProductForm() {
@@ -53,6 +56,7 @@ export default function ProductForm() {
     status: "available" as keyof typeof PRODUCT_STATUS,
     cost_price: "", sale_price: "", promo_price: "",
     description: "", internal_notes: "",
+    serial_number: "", barcode_value: "", showcase_location: "",
   });
   const [existingImages, setExistingImages] = useState<{ id: string; storage_path: string; is_primary: boolean }[]>([]);
   const [newFiles, setNewFiles] = useState<File[]>([]);
@@ -91,6 +95,7 @@ export default function ProductForm() {
         sale_price: data.sale_price?.toString() ?? "",
         promo_price: data.promo_price?.toString() ?? "",
         description: data.description ?? "", internal_notes: data.internal_notes ?? "",
+        serial_number: data.serial_number ?? "", barcode_value: data.barcode_value ?? "", showcase_location: data.showcase_location ?? "",
       });
       setExistingImages(data.images ?? []);
     })();
@@ -168,6 +173,7 @@ export default function ProductForm() {
       sale_price: form.sale_price ? parseFloat(form.sale_price) : null,
       promo_price: form.promo_price ? parseFloat(form.promo_price) : null,
       description: form.description || null, internal_notes: form.internal_notes || null,
+      serial_number: form.serial_number || null, barcode_value: form.barcode_value || null, showcase_location: form.showcase_location || null,
     });
     if (!parsed.success) return toast.error(parsed.error.issues[0].message);
 
@@ -362,6 +368,11 @@ export default function ProductForm() {
           <Field label="SKU (يُولَّد تلقائياً من رمز الفرع إن تُرك فارغاً)">
             <Input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} maxLength={80} dir="ltr" placeholder="مثال: JRB-RNG-2607-0001" />
           </Field>
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="الرقم التسلسلي"><Input value={form.serial_number} onChange={(e) => setForm({ ...form, serial_number: e.target.value })} maxLength={80} dir="ltr" /></Field>
+            <Field label="باركود/QR"><Input value={form.barcode_value} onChange={(e) => setForm({ ...form, barcode_value: e.target.value })} maxLength={80} dir="ltr" /></Field>
+            <Field label="موقع العرض"><Input value={form.showcase_location} onChange={(e) => setForm({ ...form, showcase_location: e.target.value })} maxLength={80} placeholder="مثال: دولاب 3 - رف B" /></Field>
+          </div>
         </Card>
 
         <Card className="p-5 space-y-4">

@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store, CheckSquare, Trash2, Loader2 } from "lucide-react";
+import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store, CheckSquare, Trash2, Loader2, ScanLine } from "lucide-react";
 import ProductCard from "@/components/ProductCard";
 import ImageSearchButton from "@/components/ImageSearchButton";
 import { PRODUCT_STATUS, KARAT_OPTIONS, ProductStatus } from "@/lib/constants";
@@ -14,6 +14,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { expandQuery, matchScore } from "@/lib/arabic-search";
+import { cn } from "@/lib/utils";
 
 interface Filters {
   q: string;
@@ -55,6 +56,7 @@ export default function ProductSearch() {
   const [filters, setFilters] = useState<Filters>(loadSavedFilters);
   const [debounced, setDebounced] = useState(filters);
   const [pages, setPages] = useState(1); // كم صفحة تم تحميلها
+  const [barcodeMode, setBarcodeMode] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -250,7 +252,7 @@ export default function ProductSearch() {
         const orParts: string[] = [];
         for (const t of terms) {
           if (t.length < 2) continue;
-          orParts.push(`name.ilike.%${t}%`, `description.ilike.%${t}%`, `sku.ilike.%${t}%`);
+          orParts.push(`name.ilike.%${t}%`, `description.ilike.%${t}%`, `sku.ilike.%${t}%`, `serial_number.ilike.%${t}%`, `barcode_value.ilike.%${t}%`);
         }
         const tagArray = `{${terms.filter((t) => t.length >= 2).map((t) => `"${t}"`).join(",")}}`;
         if (terms.length) orParts.push(`search_tags.ov.${tagArray}`);
@@ -357,14 +359,19 @@ export default function ProductSearch() {
           </div>
 
           <div className="flex gap-2 mt-4">
-            <div className="relative flex-1">
+            <div className={cn("relative flex-1", barcodeMode && "ring-2 ring-primary rounded-xl")}>
               <SearchIcon className="absolute right-3 top-1/2 -translate-y-1/2 size-5 text-muted-foreground" />
               <Input
                 ref={searchInputRef}
-                placeholder="ابحث: خاتم، سلسلة، 21K... (اضغط / للتركيز)"
+                placeholder={barcodeMode ? "امسح الباركود أو اكتب الرقم التسلسلي..." : "ابحث: خاتم، سلسلة، 21K... (اضغط / للتركيز)"}
                 value={filters.q}
                 onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
-                className="pr-10 pl-10 h-12 text-base bg-card border-0 shadow-card"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && barcodeMode && products?.length === 1) {
+                    navigate(`/products/${products[0].id}`);
+                  }
+                }}
+                className="pr-10 pl-16 h-12 text-base bg-card border-0 shadow-card"
                 enterKeyHint="search"
               />
               {filters.q && (
@@ -377,7 +384,22 @@ export default function ProductSearch() {
                   <X className="size-4" />
                 </button>
               )}
-          </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setBarcodeMode((m) => !m);
+                  setTimeout(() => searchInputRef.current?.focus(), 50);
+                }}
+                className={cn(
+                  "absolute left-9 top-1/2 -translate-y-1/2 p-1.5 rounded-lg transition-colors",
+                  barcodeMode ? "bg-primary text-primary-foreground" : "hover:bg-muted text-muted-foreground"
+                )}
+                aria-label={barcodeMode ? "إلغاء وضع الباركود" : "وضع الباركود"}
+                title={barcodeMode ? "إلغاء وضع الباركود" : "وضع الباركود"}
+              >
+                <ScanLine className="size-4" />
+              </button>
+            </div>
           <ImageSearchButton
             categories={categories ?? undefined}
             onResults={({ matches }) => {

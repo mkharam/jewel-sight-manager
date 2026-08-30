@@ -11,17 +11,21 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowRight, Edit, ImageIcon, MapPin, MessageCircle, Tag, Trash2, User, ArrowLeftRight, Sparkles, Copy, Share2 } from "lucide-react";
+import { ArrowRight, Edit, ImageIcon, MapPin, MessageCircle, Tag, Trash2, User, ArrowLeftRight, Sparkles, Copy, Share2, CheckCircle2, ShieldCheck } from "lucide-react";
 import { PRODUCT_STATUS, formatCurrency, formatDate, formatWeight, getImageUrl } from "@/lib/constants";
 import { toast } from "sonner";
 import QuickQuoteSheet from "@/components/QuickQuoteSheet";
+import SellDialog from "@/components/SellDialog";
+import ReserveDialog from "@/components/ReserveDialog";
 
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { user, roles } = useAuth();
+  const { user, roles, profile } = useAuth();
   const canEdit = !!user;
+  const isAdmin = roles.includes("admin");
+  const isManager = roles.includes("manager");
   const [activeImage, setActiveImage] = useState(0);
 
 
@@ -106,6 +110,20 @@ export default function ProductDetail() {
     navigate("/");
   };
 
+  const verifyProduct = async () => {
+    const { error } = await supabase.from("products").update({
+      last_verified_at: new Date().toISOString(),
+      last_verified_by: user?.id,
+    }).eq("id", id!);
+    if (error) return toast.error(error.message);
+    await supabase.from("activity_log").insert({
+      actor_id: user?.id, action: "verify", entity_type: "product", entity_id: id,
+      details: { branch_id: product.branch_id, showcase_location: product.showcase_location },
+    });
+    toast.success("تم التحقق من القطعة");
+    qc.invalidateQueries({ queryKey: ["product", id] });
+  };
+
   return (
     <div className="space-y-4 max-w-5xl mx-auto">
       <div className="flex items-center justify-between gap-2">
@@ -169,6 +187,12 @@ export default function ProductDetail() {
               {product.item_type && <Spec label="النوع" value={product.item_type} />}
               <Spec label="الفرع" value={product.branch?.name} icon={<MapPin className="size-3.5" />} />
               <Spec label="SKU" value={product.sku ?? "—"} />
+              {product.serial_number && <Spec label="الرقم التسلسلي" value={product.serial_number} />}
+              {product.barcode_value && <Spec label="الباركود" value={product.barcode_value} />}
+              {product.showcase_location && <Spec label="موقع العرض" value={product.showcase_location} />}
+              {product.last_verified_at && (
+                <Spec label="آخر تحقق" value={formatDate(product.last_verified_at)} icon={<ShieldCheck className="size-3.5 text-primary" />} />
+              )}
             </div>
 
             <div className="pt-3 border-t border-border">
@@ -201,6 +225,29 @@ export default function ProductDetail() {
           </Card>
 
           <QuickQuoteSheet productId={id!} productName={product.name} branchId={product.branch_id} fullWidthButton />
+
+          {product.status === "available" && (
+            <div className="grid grid-cols-2 gap-2">
+              <SellDialog product={{
+                id: product.id, name: product.name, sku: product.sku, karat: product.karat,
+                weight_grams: product.weight_grams, branch_id: product.branch_id,
+                sale_price: product.sale_price, promo_price: product.promo_price,
+              }} />
+              <ReserveDialog productId={product.id} productName={product.name} branchId={product.branch_id} defaultPrice={product.promo_price ?? product.sale_price} />
+            </div>
+          )}
+          {product.status === "reserved" && (
+            <SellDialog product={{
+              id: product.id, name: product.name, sku: product.sku, karat: product.karat,
+              weight_grams: product.weight_grams, branch_id: product.branch_id,
+              sale_price: product.sale_price, promo_price: product.promo_price,
+            }} />
+          )}
+
+          <Button variant="outline" size="lg" className="w-full" onClick={verifyProduct}>
+            <CheckCircle2 className="size-4 ml-1" /> تحقق من وجود القطعة
+          </Button>
+
           <Link to={`/transfers?product=${id}&name=${encodeURIComponent(product.name)}`} className="block">
             <Button variant="outline" size="lg" className="w-full">
               <ArrowLeftRight className="size-4 ml-1" /> طلب تحويل لفرعي
