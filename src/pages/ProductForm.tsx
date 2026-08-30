@@ -368,6 +368,11 @@ export default function ProductForm() {
           <Field label="SKU (يُولَّد تلقائياً من رمز الفرع إن تُرك فارغاً)">
             <Input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} maxLength={80} dir="ltr" placeholder="مثال: JRB-RNG-2607-0001" />
           </Field>
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="الرقم التسلسلي"><Input value={form.serial_number} onChange={(e) => setForm({ ...form, serial_number: e.target.value })} maxLength={80} dir="ltr" /></Field>
+            <Field label="باركود/QR"><Input value={form.barcode_value} onChange={(e) => setForm({ ...form, barcode_value: e.target.value })} maxLength={80} dir="ltr" /></Field>
+            <Field label="موقع العرض"><Input value={form.showcase_location} onChange={(e) => setForm({ ...form, showcase_location: e.target.value })} maxLength={80} placeholder="مثال: دولاب 3 - رف B" /></Field>
+          </div>
         </Card>
 
         <Card className="p-5 space-y-4">
