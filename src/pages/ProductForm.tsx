@@ -33,12 +33,15 @@ const schema = z.object({
   item_type: z.string().max(50).nullable(),
   weight_grams: z.number().nonnegative().nullable(),
   ring_size: z.string().max(20).nullable(),
-  status: z.enum(["available","reserved","sold","in_transfer","damaged","lost"]),
+  status: z.enum(["available","reserved","sold","in_transfer","damaged","lost","in_repair","stock_discrepancy","archived"]),
   cost_price: z.number().nonnegative().nullable(),
   sale_price: z.number().nonnegative().nullable(),
   promo_price: z.number().nonnegative().nullable(),
   description: z.string().max(2000).nullable(),
   internal_notes: z.string().max(2000).nullable(),
+  serial_number: z.string().max(80).nullable(),
+  barcode_value: z.string().max(80).nullable(),
+  showcase_location: z.string().max(80).nullable(),
 });
 
 export default function ProductForm() {
