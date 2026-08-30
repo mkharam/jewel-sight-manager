@@ -30,6 +30,7 @@ export default function SellDialog({ product }: { product: Product }) {
   const [phone, setPhone] = useState("");
   const [method, setMethod] = useState(PAYMENT_METHODS[0]);
   const [notes, setNotes] = useState("");
+  const [amarInvoice, setAmarInvoice] = useState("");
 
   const submit = async () => {
     if (!price || Number(price) <= 0) return toast.error("اكتب السعر النهائي");
