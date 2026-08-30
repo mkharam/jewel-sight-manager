@@ -29,6 +29,7 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/auth" element={<Auth />} />
+          <Route path="/index" element={<Navigate to="/" replace />} />
           <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             <Route path="/" element={<ProductSearch />} />
             <Route path="/products" element={<ProductSearch />} />
