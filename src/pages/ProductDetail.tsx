@@ -22,8 +22,10 @@ export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { user, roles } = useAuth();
+  const { user, roles, profile } = useAuth();
   const canEdit = !!user;
+  const isAdmin = roles.includes("admin");
+  const isManager = roles.includes("manager");
   const [activeImage, setActiveImage] = useState(0);
 
 
