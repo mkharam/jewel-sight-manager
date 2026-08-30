@@ -49,6 +49,7 @@ export default function SellDialog({ product }: { product: Product }) {
       payment_method: method,
       sold_by: user?.id ?? null,
       notes: notes.trim() || null,
+      amar_invoice_number: amarInvoice.trim() || null,
     });
     setSaving(false);
     if (error) return toast.error(error.message);
