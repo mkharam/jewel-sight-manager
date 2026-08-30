@@ -173,6 +173,7 @@ export default function ProductForm() {
       sale_price: form.sale_price ? parseFloat(form.sale_price) : null,
       promo_price: form.promo_price ? parseFloat(form.promo_price) : null,
       description: form.description || null, internal_notes: form.internal_notes || null,
+      serial_number: form.serial_number || null, barcode_value: form.barcode_value || null, showcase_location: form.showcase_location || null,
     });
     if (!parsed.success) return toast.error(parsed.error.issues[0].message);
 
