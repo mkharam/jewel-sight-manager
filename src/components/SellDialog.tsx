@@ -87,6 +87,10 @@ export default function SellDialog({ product }: { product: Product }) {
               </SelectContent>
             </Select>
           </div>
+          <div>
+            <Label>رقم فاتورة عمار (Amar)</Label>
+            <Input value={amarInvoice} onChange={(e) => setAmarInvoice(e.target.value)} dir="ltr" placeholder="اختياري — للربط بنظام الفواتير" />
+          </div>
           <div><Label>ملاحظات</Label><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} /></div>
         </div>
         <DialogFooter>
