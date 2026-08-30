@@ -95,6 +95,7 @@ export default function ProductForm() {
         sale_price: data.sale_price?.toString() ?? "",
         promo_price: data.promo_price?.toString() ?? "",
         description: data.description ?? "", internal_notes: data.internal_notes ?? "",
+        serial_number: data.serial_number ?? "", barcode_value: data.barcode_value ?? "", showcase_location: data.showcase_location ?? "",
       });
       setExistingImages(data.images ?? []);
     })();
