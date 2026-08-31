@@ -53,6 +53,7 @@ const PAGE_SIZE = 48;
 export default function ProductSearch() {
   const { profile, roles } = useAuth();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [filters, setFilters] = useState<Filters>(loadSavedFilters);
   const [debounced, setDebounced] = useState(filters);
   const [pages, setPages] = useState(1); // كم صفحة تم تحميلها

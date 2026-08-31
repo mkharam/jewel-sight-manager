@@ -1190,6 +1190,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      current_user_branch_id: { Args: never; Returns: string }
       expire_due_reservations: { Args: never; Returns: number }
       has_branch: { Args: { _user_id: string }; Returns: boolean }
       has_role: {
