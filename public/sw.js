@@ -1,6 +1,6 @@
 // Service worker خفيف: يجعل التطبيق يعمل كتطبيق مثبَّت على الآيفون
 // ويسرّع فتح الشاشة الأولى. لا نخزّن أي طلبات API/قاعدة بيانات.
-const CACHE = "mkharrm-shell-v1";
+const CACHE = "mkharrm-shell-v2";
 const SHELL = ["/", "/index.html", "/manifest.webmanifest", "/app-icon-192.png", "/apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {
@@ -27,8 +27,11 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // الأصول الثابتة: النسخة المخزّنة أولاً
-  if (/\.(png|jpg|jpeg|webp|svg|ico|css|js|woff2?)$/.test(url.pathname)) {
+  // الأصول الثابتة: الصور والخطوط من الكاش، أما ملفات JS/CSS فمن الشبكة دائماً
+  // (حتى لا يبقى المستخدم على نسخة قديمة معطّلة من التطبيق)
+  if (/\.(js|css)$/.test(url.pathname)) return;
+
+  if (/\.(png|jpg|jpeg|webp|svg|ico|woff2?)$/.test(url.pathname)) {
     event.respondWith(
       caches.match(req).then((hit) =>
         hit ||
