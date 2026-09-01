@@ -34,6 +34,7 @@ export default function AppLayout() {
   const { profile, roles, user } = useAuth();
   const navigate = useNavigate();
   const isAdmin = roles.includes("admin");
+  const isManager = roles.includes("manager");
   const qc = useQueryClient();
   const branchId = profile?.branch_id ?? null;
 

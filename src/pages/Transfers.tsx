@@ -56,7 +56,7 @@ export default function Transfers() {
 
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [tab, setTab] = useState<"all" | "incoming" | "outgoing" | "active">("active");
+  const [tab, setTab] = useState<"all" | "incoming" | "outgoing" | "active" | "pending">("pending");
   const [openNew, setOpenNew] = useState(!!presetProductId);
 
   const load = async () => {
