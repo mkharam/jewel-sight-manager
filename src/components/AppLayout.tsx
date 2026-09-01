@@ -34,6 +34,7 @@ export default function AppLayout() {
   const { profile, roles, user } = useAuth();
   const navigate = useNavigate();
   const isAdmin = roles.includes("admin");
+  const isManager = roles.includes("manager");
   const qc = useQueryClient();
   const branchId = profile?.branch_id ?? null;
 
@@ -80,17 +81,15 @@ export default function AppLayout() {
     ...desktopExtras,
     { to: "/gold-price", label: "سعر الذهب", icon: Coins },
     { to: "/stock-take", label: "جرد ميداني", icon: ClipboardCheck },
-    ...(isAdmin
-      ? [
-          { to: "/reports", label: "التقارير", icon: BarChart3 },
-          { to: "/staff", label: "موظفون", icon: Users },
-        ]
-      : []),
+    ...(isAdmin || isManager ? [{ to: "/reports", label: "التقارير", icon: BarChart3 }] : []),
+    ...(isAdmin ? [{ to: "/staff", label: "موظفون", icon: Users }] : []),
   ];
 
   const desktopNav: NavItem[] = isAdmin
     ? [...baseNav, ...desktopExtras, ...adminExtras, { to: "/staff", label: "موظفون", icon: Users }]
-    : [...baseNav, ...desktopExtras];
+    : isManager
+      ? [...baseNav, ...desktopExtras, { to: "/reports", label: "التقارير", icon: BarChart3 }]
+      : [...baseNav, ...desktopExtras];
 
   const signOut = async () => {
     await supabase.auth.signOut();

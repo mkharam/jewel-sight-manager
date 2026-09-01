@@ -56,7 +56,7 @@ export default function Transfers() {
 
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [tab, setTab] = useState<"all" | "incoming" | "outgoing" | "active">("active");
+  const [tab, setTab] = useState<"all" | "incoming" | "outgoing" | "active" | "pending">("pending");
   const [openNew, setOpenNew] = useState(!!presetProductId);
 
   const load = async () => {
@@ -94,6 +94,14 @@ export default function Transfers() {
   const filtered = useMemo(() => {
     if (tab === "all") return transfers;
     if (tab === "active") return transfers.filter((t) => ["pending", "approved", "in_transit"].includes(t.status));
+    // معلّقة: تحتاج إجراء من فرعي (قبول طلب صادر أو استلام وارد)
+    if (tab === "pending")
+      return transfers.filter(
+        (t) =>
+          (t.status === "pending" && t.from_branch_id === profile?.branch_id) ||
+          (t.status === "approved" && t.from_branch_id === profile?.branch_id) ||
+          (t.status === "in_transit" && t.to_branch_id === profile?.branch_id),
+      );
     if (tab === "incoming") return transfers.filter((t) => t.to_branch_id === profile?.branch_id);
     if (tab === "outgoing") return transfers.filter((t) => t.from_branch_id === profile?.branch_id);
     return transfers;
@@ -132,7 +140,8 @@ export default function Transfers() {
       </div>
 
       <Tabs value={tab} onValueChange={(v: any) => setTab(v)}>
-        <TabsList className="w-full grid grid-cols-4">
+        <TabsList className="w-full grid grid-cols-5 text-[11px] sm:text-sm">
+          <TabsTrigger value="pending">معلّقة</TabsTrigger>
           <TabsTrigger value="active">جارية</TabsTrigger>
           <TabsTrigger value="incoming">واردة</TabsTrigger>
           <TabsTrigger value="outgoing">صادرة</TabsTrigger>

@@ -33,16 +33,21 @@ function buildMonthOptions(count = 12) {
 }
 
 export default function Reports() {
-  const { roles, rolesLoading } = useAuth();
+  const { roles, rolesLoading, profile } = useAuth();
   const isAdmin = roles.includes("admin");
+  const isManager = roles.includes("manager");
+  const myBranchId = profile?.branch_id ?? null;
   const monthOptions = useMemo(() => buildMonthOptions(18), []);
   const [month, setMonth] = useState(monthOptions[0].value);
   const { startISO, endISO } = useMemo(() => monthRange(month), [month]);
 
   const { data: branches = [] } = useQuery({
-    queryKey: ["branches-all"],
+    queryKey: ["branches-all", isAdmin ? "all" : myBranchId],
     queryFn: async () => {
-      const { data } = await supabase.from("branches").select("id, name, code").order("name");
+      let q = supabase.from("branches").select("id, name, code").order("name");
+      // مدير الفرع يرى فرعه فقط
+      if (!isAdmin && myBranchId) q = q.eq("id", myBranchId);
+      const { data } = await q;
       return (data ?? []) as Branch[];
     },
   });
@@ -238,7 +243,7 @@ export default function Reports() {
   };
 
   if (rolesLoading) return null;
-  if (!isAdmin) return <Navigate to="/" replace />;
+  if (!isAdmin && !(isManager && myBranchId)) return <Navigate to="/" replace />;
 
   const fmt = (n: number) => new Intl.NumberFormat("ar-LY", { maximumFractionDigits: 2 }).format(n);
 
