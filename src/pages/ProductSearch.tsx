@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store, CheckSquare, Trash2, Loader2, ScanLine } from "lucide-react";
+import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store, CheckSquare, Trash2, Loader2, ScanLine, ArrowUpDown } from "lucide-react";
 import ProductCard from "@/components/ProductCard";
 import ImageSearchButton from "@/components/ImageSearchButton";
 import { PRODUCT_STATUS, KARAT_OPTIONS, ProductStatus } from "@/lib/constants";
@@ -26,10 +26,12 @@ interface Filters {
   maxWeight: string;
   /** وسم من تحليل الذكاء الاصطناعي (لون المعدن، حجر، ستايل…) */
   tag: string;
+  /** ترتيب حسب تاريخ الإضافة: الأحدث أولاً أو الأقدم أولاً */
+  sortDir: "desc" | "asc";
 }
 
 const initialFilters: Filters = {
-  q: "", karat: "all", branchId: "all", categoryId: "all", status: "all", minWeight: "", maxWeight: "", tag: "",
+  q: "", karat: "all", branchId: "all", categoryId: "all", status: "all", minWeight: "", maxWeight: "", tag: "", sortDir: "desc",
 };
 
 const SAVED_FILTERS_KEY = "lamaa.lastSearch.v1";
@@ -246,7 +248,8 @@ export default function ProductSearch() {
     queryKey: ["products", debounced, similarIds, similarIds ? 0 : pages],
     queryFn: async () => {
       const SELECT =
-        "id,name,sku,karat,weight_grams,ring_size,sale_price,promo_price,status,branch_id,search_tags,description,category_id,branch:branches(name),category:categories(name),images:product_images(storage_path,is_primary)";
+        "id,name,sku,karat,weight_grams,ring_size,sale_price,promo_price,status,branch_id,search_tags,description,category_id,created_at,branch:branches(name),category:categories(name),images:product_images(storage_path,is_primary)";
+      const sortAsc = debounced.sortDir === "asc";
 
       const applyFilters = (q: any) => {
         if (debounced.tag) q = q.contains("search_tags", [debounced.tag]);
@@ -283,11 +286,11 @@ export default function ProductSearch() {
         const [hitRes, poolRes] = await Promise.all([
           applyFilters(supabase.from("products").select(SELECT))
             .or(orParts.join(","))
-            .order("created_at", { ascending: false })
+            .order("created_at", { ascending: sortAsc })
             .limit(200),
           // مجموعة احتياطية للمطابقة التقريبية (حروف ناقصة/كتابة ليبية)
           applyFilters(supabase.from("products").select(SELECT))
-            .order("created_at", { ascending: false })
+            .order("created_at", { ascending: sortAsc })
             .limit(800),
         ]);
         if (hitRes.error) throw hitRes.error;
@@ -296,16 +299,22 @@ export default function ProductSearch() {
         for (const p of (hitRes.data ?? []) as any[]) byId.set(p.id, p);
         for (const p of ((poolRes.data ?? []) as any[])) if (!byId.has(p.id)) byId.set(p.id, p);
 
+        // الترتيب الأساسي حسب دقة المطابقة، وعند تساوي الدقة نرجّح حسب اتجاه التاريخ المختار.
         const scored = Array.from(byId.values())
           .map((p) => ({ p, s: matchScore(p, raw) }))
           .filter((x) => x.s > 0)
-          .sort((a, b) => b.s - a.s);
+          .sort((a, b) => {
+            if (b.s !== a.s) return b.s - a.s;
+            const ta = new Date(a.p.created_at ?? 0).getTime();
+            const tb = new Date(b.p.created_at ?? 0).getTime();
+            return sortAsc ? ta - tb : tb - ta;
+          });
 
         return scored.map((x) => x.p);
       }
 
       const { data, error } = await applyFilters(supabase.from("products").select(SELECT))
-        .order("created_at", { ascending: false })
+        .order("created_at", { ascending: sortAsc })
         .range(0, pages * PAGE_SIZE - 1);
       if (error) throw error;
       return data ?? [];
@@ -589,6 +598,15 @@ export default function ProductSearch() {
           )}
         </p>
         <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setFilters((f) => ({ ...f, sortDir: f.sortDir === "desc" ? "asc" : "desc" }))}
+            title={filters.sortDir === "desc" ? "الأحدث أولاً" : "الأقدم أولاً"}
+          >
+            <ArrowUpDown className="size-4 ml-1" />
+            {filters.sortDir === "desc" ? "الأحدث أولاً" : "الأقدم أولاً"}
+          </Button>
           <Button
             size="sm"
             variant={selectionMode ? "default" : "outline"}
