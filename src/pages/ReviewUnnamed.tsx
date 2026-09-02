@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowRight, Loader2, RotateCw, Save, Sparkles, ExternalLink, Trash2 } from "lucide-react";
+import { ArrowRight, Loader2, RotateCw, Save, Sparkles, ExternalLink, Trash2, ArrowUpDown } from "lucide-react";
 import { toast } from "sonner";
 import { KARAT_OPTIONS, getImageUrl } from "@/lib/constants";
 import { prepareForAIBase64 } from "@/lib/image-compress";
@@ -33,9 +33,10 @@ export default function ReviewUnnamed() {
   const qc = useQueryClient();
   const [drafts, setDrafts] = useState<Record<string, Partial<Row>>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
-  const [reanalyzingId, setReanalyzingId] = useState<string | null>(null);
+  const [reanalyzingIds, setReanalyzingIds] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc"); // desc = الأحدث أولاً
 
   const { data: categories } = useQuery({
     queryKey: ["categories"],
@@ -43,13 +44,13 @@ export default function ReviewUnnamed() {
   });
 
   const { data: rows, isLoading } = useQuery({
-    queryKey: ["unnamed-products"],
+    queryKey: ["unnamed-products", sortDir],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("products")
         .select("id,name,category_id,karat,item_type,description,images:product_images(id,storage_path,ai_labels)")
         .eq("name", PLACEHOLDER_NAME)
-        .order("created_at", { ascending: false })
+        .order("created_at", { ascending: sortDir === "asc" })
         .limit(200);
       if (error) throw error;
       return (data ?? []) as Row[];
@@ -81,7 +82,7 @@ export default function ReviewUnnamed() {
         .eq("id", row.id);
       if (error) throw error;
       toast.success("تم الحفظ");
-      qc.setQueryData<Row[]>(["unnamed-products"], (prev) => (prev ?? []).filter((r) => r.id !== row.id));
+      qc.setQueryData<Row[]>(["unnamed-products", sortDir], (prev) => (prev ?? []).filter((r) => r.id !== row.id));
     } catch (e: any) {
       toast.error(e.message ?? "تعذّر الحفظ");
     } finally {
@@ -92,7 +93,7 @@ export default function ReviewUnnamed() {
   const reanalyze = async (row: Row) => {
     const img = row.images?.[0];
     if (!img) return toast.error("لا توجد صورة لهذه القطعة");
-    setReanalyzingId(row.id);
+    setReanalyzingIds((s) => new Set(s).add(row.id));
     try {
       const url = getImageUrl(img.storage_path);
       if (!url) throw new Error("رابط الصورة غير صالح");
@@ -113,7 +114,7 @@ export default function ReviewUnnamed() {
         karat: KARAT_OPTIONS.includes(a.karat) ? a.karat : draftFor(row).karat,
         description: a.description_ar || draftFor(row).description,
       });
-      qc.setQueryData<Row[]>(["unnamed-products"], (prev) =>
+      qc.setQueryData<Row[]>(["unnamed-products", sortDir], (prev) =>
         (prev ?? []).map((r) =>
           r.id === row.id
             ? { ...r, images: r.images.map((im) => (im.id === img.id ? { ...im, ai_labels: { ...a } } : im)) }
@@ -124,7 +125,11 @@ export default function ReviewUnnamed() {
     } catch (e: any) {
       toast.error(e.message ?? "تعذّر التحليل");
     } finally {
-      setReanalyzingId(null);
+      setReanalyzingIds((s) => {
+        const next = new Set(s);
+        next.delete(row.id);
+        return next;
+      });
     }
   };
 
@@ -150,7 +155,7 @@ export default function ReviewUnnamed() {
       const { error } = await supabase.from("products").delete().in("id", ids);
       if (error) throw error;
       toast.success(`تم حذف ${ids.length} قطعة`);
-      qc.setQueryData<Row[]>(["unnamed-products"], (prev) => (prev ?? []).filter((r) => !selected.has(r.id)));
+      qc.setQueryData<Row[]>(["unnamed-products", sortDir], (prev) => (prev ?? []).filter((r) => !selected.has(r.id)));
       setSelected(new Set());
     } catch (e: any) {
       toast.error(e.message ?? "تعذّر الحذف");
@@ -163,9 +168,17 @@ export default function ReviewUnnamed() {
     if (!selected.size || !rows) return;
     setBulkBusy(true);
     const targets = rows.filter((r) => selected.has(r.id));
-    for (const row of targets) {
-      await reanalyze(row);
-    }
+    // بالتوازي بدل الواحدة تلو الأخرى — كل قطعة تحلّلها مزوّد رؤية منفصل عبر سباق متدرّج،
+    // فتشغيل عدة قطع معاً يقلّل زمن الانتظار الكلي بشكل كبير دون التصادم مع حدود المعدّل.
+    const CONCURRENCY = 6;
+    let i = 0;
+    const worker = async () => {
+      while (i < targets.length) {
+        const row = targets[i++];
+        await reanalyze(row);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker));
     setBulkBusy(false);
     toast.success("اكتملت إعادة التحليل — راجع الحقول واحفظ كل قطعة");
   };
@@ -205,7 +218,17 @@ export default function ReviewUnnamed() {
               {rows.length} قطعة بانتظار المراجعة
               {selected.size > 0 && <span className="text-primary">· {selected.size} محدّدة</span>}
             </label>
-            {selected.size > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))}
+                title={sortDir === "desc" ? "الأحدث أولاً" : "الأقدم أولاً"}
+              >
+                <ArrowUpDown className="size-3.5 ml-1" />
+                {sortDir === "desc" ? "الأحدث أولاً" : "الأقدم أولاً"}
+              </Button>
+              {selected.size > 0 && (
               <div className="flex items-center gap-2">
                 <Button size="sm" variant="outline" onClick={bulkReanalyze} disabled={bulkBusy}>
                   {bulkBusy ? <Loader2 className="size-3.5 animate-spin ml-1" /> : <RotateCw className="size-3.5 ml-1" />}
@@ -215,14 +238,15 @@ export default function ReviewUnnamed() {
                   <Trash2 className="size-3.5 ml-1" /> حذف المحدّد
                 </Button>
               </div>
-            )}
+              )}
+            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {rows.map((row) => {
               const draft = draftFor(row);
               const img = row.images?.[0];
               const analyzed = !!img?.ai_labels;
-              const busy = savingId === row.id || reanalyzingId === row.id;
+              const busy = savingId === row.id || reanalyzingIds.has(row.id);
               return (
                 <Card key={row.id} className="p-3 space-y-2">
                   <div className="flex gap-3">
@@ -286,7 +310,7 @@ export default function ReviewUnnamed() {
                       حفظ
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => reanalyze(row)} disabled={busy}>
-                      {reanalyzingId === row.id ? <Loader2 className="size-3.5 animate-spin ml-1" /> : <RotateCw className="size-3.5 ml-1" />}
+                      {reanalyzingIds.has(row.id) ? <Loader2 className="size-3.5 animate-spin ml-1" /> : <RotateCw className="size-3.5 ml-1" />}
                       إعادة التحليل
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => navigate(`/products/${row.id}/edit`)} title="فتح صفحة التعديل الكاملة">
