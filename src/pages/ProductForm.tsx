@@ -18,9 +18,12 @@ type AiSuggestion = {
   name_ar?: string;
   category_id?: string | null;
   category_name?: string | null;
+  item_type?: string | null;
   karat?: string | null;
   style?: string[];
   gemstones?: string[];
+  stone_count?: string | null;
+  condition?: string | null;
   description_ar?: string;
 };
 
@@ -144,11 +147,14 @@ export default function ProductForm() {
         const next = { ...f };
         if (!f.name && s.name_ar) { next.name = s.name_ar; applied.add("name"); }
         if (!f.category_id && s.category_id) { next.category_id = s.category_id; applied.add("category_id"); }
+        if (!f.item_type && s.item_type) { next.item_type = s.item_type; applied.add("item_type"); }
         if (!f.karat && s.karat && KARAT_OPTIONS.includes(s.karat)) {
           next.karat = s.karat; applied.add("karat");
         }
         if (!f.description && s.description_ar) {
-          next.description = s.description_ar; applied.add("description");
+          const extras = [s.stone_count, s.condition].filter(Boolean).join(" — ");
+          next.description = extras ? `${s.description_ar}\n(${extras})` : s.description_ar;
+          applied.add("description");
         }
         return next;
       });
@@ -325,7 +331,7 @@ export default function ProductForm() {
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="النوع (خاتم، سوار...)">
+            <Field label="النوع (خاتم، سوار...)" aiHint={aiApplied.has("item_type")}>
               <Input value={form.item_type} onChange={(e) => setForm({ ...form, item_type: e.target.value })} maxLength={50} />
             </Field>
           </div>
@@ -365,7 +371,7 @@ export default function ProductForm() {
               </Select>
             </Field>
           </div>
-          <Field label="SKU (يُولَّد تلقائياً من رمز الفرع إن تُرك فارغاً)">
+          <Field label="SKU (يُولّد تلقائياً من رمز الفرع إن تُرك فارغاً)">
             <Input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} maxLength={80} dir="ltr" placeholder="مثال: JRB-RNG-2607-0001" />
           </Field>
           <div className="grid grid-cols-3 gap-3">
