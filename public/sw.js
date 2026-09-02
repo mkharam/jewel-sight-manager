@@ -1,6 +1,6 @@
 // Service worker خفيف: يجعل التطبيق يعمل كتطبيق مثبَّت على الآيفون
 // ويسرّع فتح الشاشة الأولى. لا نخزّن أي طلبات API/قاعدة بيانات.
-const CACHE = "mkharrm-shell-v2";
+const CACHE = "mkharrm-shell-v3";
 const SHELL = ["/", "/index.html", "/manifest.webmanifest", "/app-icon-192.png", "/apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {
@@ -43,4 +43,34 @@ self.addEventListener("fetch", (event) => {
       ),
     );
   }
+});
+
+// ===== إشعارات الدفع =====
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = { body: event.data && event.data.text() }; }
+  const title = data.title || "مخرّم";
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: data.body || "",
+      icon: "/app-icon-192.png",
+      badge: "/app-icon-192.png",
+      dir: "rtl",
+      lang: "ar",
+      data: { url: data.url || "/" },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      for (const c of list) {
+        if ("focus" in c) { c.navigate(url); return c.focus(); }
+      }
+      return self.clients.openWindow(url);
+    }),
+  );
 });
