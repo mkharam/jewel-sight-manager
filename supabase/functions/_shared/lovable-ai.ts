@@ -598,6 +598,239 @@ function buildTraySystemPrompt(catList: string): string {
   );
 }
 
+// ============================================================
+// تحليل «دفعة»: عدة صور منفصلة (كل صورة قطعة مستقلة) في طلب واحد لكل مزوّد.
+// يُستخدم من طابور المعالجة الخلفي (pg_cron) بدل استدعاء منفصل لكل صورة —
+// يقلّل عدد الطلبات بمقدار حجم الدفعة (مثلاً 4 صور = طلب واحد بدل 4)، فيريح
+// حصة الدقيقة عند Gemini/Groq بشكل مباشر دون الحاجة لتعدد مزوّدين أكثر.
+// ============================================================
+function buildBatchSystemPrompt(catList: string, count: number): string {
+  return (
+    `أنت خبير مجوهرات عربي دقيق الملاحظة. ستستلم ${count} صورة، كل صورة تخص قطعة مجوهرات ` +
+    `منفصلة تماماً عن البقية (وليست عدة قطع في نفس الصورة). حلّل كل صورة بشكل مستقل تماماً ` +
+    `عن غيرها وأعد JSON فقط بهذا الشكل بالضبط بدون أي نص إضافي:\n` +
+    `{"results":[{"index":1,"name_ar":"...","category_name":"...","item_type":"...","karat":null,"metal_color":"yellow","style":[],"gemstones":[],"stone_count":null,"condition":null,"description_ar":"..."}]}\n\n` +
+    `- index يطابق رقم ترتيب الصورة كما وردت (1 هي الصورة الأولى، 2 الثانية، وهكذا) — ` +
+    `يجب أن تعيد بالضبط ${count} عنصراً بنفس هذا الترتيب، عنصر واحد لكل صورة.\n` +
+    `- القيم المسموحة: karat: 18K, 21K, 22K, 24K, ألماس, فضة, أخرى, null — metal_color: yellow, white, rose, mixed, null — ` +
+    `category_name يطابق واحدة من: ${catList} أو null.\n` +
+    `- لا تفترض "ألماس" لأي حجر أبيض لامع — اذكره "أحجار بيضاء لامعة" إلا إذا كان حجراً كبيراً بقطع سوليتير واضح.\n` +
+    `- لا تفترض عياراً افتراضياً — أعد null عند عدم التأكد من لون/بريق المعدن.\n` +
+    `- description_ar يذكر الألوان الفعلية وتفاصيل التصميم الظاهرة في هذه الدفعة تحديداً بدون خلطها بقطعة أخرى في الدفعة.`
+  );
+}
+
+type BatchImage = { id: string; base64: string; mimeType: string };
+type BatchResult = { id: string; analysis: JewelryAnalysis | null };
+
+function normalizeBatchImages(images: BatchImage[]): BatchImage[] {
+  return images.map((img) => {
+    const m = /^data:([^;]+);base64,(.*)$/s.exec(img.base64.trim());
+    const base64 = (m ? m[2] : img.base64).replace(/\s/g, "");
+    return { id: img.id, mimeType: m ? m[1] : img.mimeType, base64 };
+  });
+}
+
+async function analyzeBatchGemini(images: BatchImage[], systemPrompt: string): Promise<BatchResult[]> {
+  const raw = Deno.env.get("GOOGLE_API_KEY") ?? Deno.env.get("GEMINI_API_KEY") ?? "";
+  const key = raw.trim().replace(/^["']|["']$/g, "");
+  if (!key) throw Object.assign(new Error("GEMINI_API_KEY not set"), { status: 500 });
+
+  const parts: any[] = [{ text: "حلّل كل صورة من الصور التالية بشكل مستقل وأعد JSON فقط." }];
+  images.forEach((img, i) => {
+    parts.push({ text: `الصورة رقم ${i + 1}:` });
+    parts.push({ inlineData: { mimeType: img.mimeType, data: img.base64 } });
+  });
+
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-goog-api-key": key },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: "user", parts }],
+            generationConfig: { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 4000 },
+          }),
+        },
+      );
+      if (!res.ok) {
+        const text = await res.text();
+        const retryable = res.status === 429 || res.status >= 500;
+        if (retryable && attempt < 2) {
+          lastErr = Object.assign(new Error(text || `Gemini ${res.status}`), { status: res.status });
+          await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+          continue;
+        }
+        throw Object.assign(new Error(text || `Gemini ${res.status}`), { status: res.status });
+      }
+      const data = await res.json();
+      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+      return parseBatchResponse(rawText, images);
+    } catch (e) {
+      if (attempt === 2) throw e;
+      lastErr = e;
+    }
+  }
+  throw lastErr ?? new Error("Gemini unavailable");
+}
+
+async function analyzeBatchGroq(images: BatchImage[], systemPrompt: string): Promise<BatchResult[]> {
+  const key = Deno.env.get("GROQ_API_KEY")?.trim();
+  if (!key) throw Object.assign(new Error("GROQ_API_KEY not set"), { status: 500 });
+
+  const GROQ_VISION_MODELS = await getGroqVisionModels(key);
+  if (!GROQ_VISION_MODELS.length) throw new Error("No vision-capable Groq model available on this API key");
+
+  const content: any[] = [{ type: "text", text: "حلّل كل صورة من الصور التالية بشكل مستقل وأعد JSON فقط." }];
+  images.forEach((img, i) => {
+    content.push({ type: "text", text: `الصورة رقم ${i + 1}:` });
+    content.push({ type: "image_url", image_url: { url: `data:${img.mimeType};base64,${img.base64}` } });
+  });
+
+  let res: Response | null = null;
+  let lastText = "";
+  let lastStatus = 500;
+  for (const model of GROQ_VISION_MODELS) {
+    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "system", content: systemPrompt }, { role: "user", content }],
+        response_format: { type: "json_object" },
+        temperature: 0.2,
+        max_tokens: 4000,
+        ...(/qwen/i.test(model) ? { reasoning_effort: "none" } : {}),
+      }),
+    });
+    if (r.ok) { res = r; break; }
+    lastText = await r.text();
+    lastStatus = r.status;
+    if (r.status !== 404 && r.status !== 400) break;
+  }
+  if (!res) throw Object.assign(new Error(lastText || `Groq ${lastStatus}`), { status: lastStatus });
+  const data = await res.json();
+  const rawText = data?.choices?.[0]?.message?.content ?? "{}";
+  return parseBatchResponse(rawText, images);
+}
+
+async function analyzeBatchOpenRouter(images: BatchImage[], systemPrompt: string): Promise<BatchResult[]> {
+  const key = Deno.env.get("OPENROUTER_API_KEY")?.trim();
+  if (!key) throw Object.assign(new Error("OPENROUTER_API_KEY not set"), { status: 500 });
+
+  const content: any[] = [{ type: "text", text: "حلّل كل صورة من الصور التالية بشكل مستقل وأعد JSON فقط." }];
+  images.forEach((img, i) => {
+    content.push({ type: "text", text: `الصورة رقم ${i + 1}:` });
+    content.push({ type: "image_url", image_url: { url: `data:${img.mimeType};base64,${img.base64}` } });
+  });
+
+  let lastErr: unknown = null;
+  for (const model of OPENROUTER_VISION_MODELS) {
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${key}`,
+          "HTTP-Referer": "https://jewel-sight-manager.lovable.app",
+          "X-Title": "Mkharram Jewelry",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "system", content: systemPrompt }, { role: "user", content }],
+          response_format: { type: "json_object" },
+          temperature: 0.2,
+          max_tokens: 4000,
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        const daily = /free-models-per-day|per-day|per day/i.test(text);
+        const err = Object.assign(new Error(text || `OpenRouter ${res.status}`), { status: res.status, daily });
+        if (res.status === 401 || res.status === 403 || res.status === 402 || daily) throw err;
+        lastErr = err;
+        continue;
+      }
+      const data = await res.json();
+      if (data?.error) throw Object.assign(new Error(String(data.error?.message ?? "OpenRouter error")), { status: Number(data.error?.code) || 500 });
+      const rawText = data?.choices?.[0]?.message?.content ?? "{}";
+      return parseBatchResponse(rawText, images);
+    } catch (e) {
+      lastErr = e;
+      if ((e as any)?.daily) throw e;
+    }
+  }
+  throw lastErr ?? Object.assign(new Error("OpenRouter unavailable"), { status: 429 });
+}
+
+function parseBatchResponse(rawText: string, images: BatchImage[]): BatchResult[] {
+  let parsed: any;
+  try {
+    parsed = JSON.parse(rawText);
+  } catch {
+    const m = String(rawText).match(/\{[\s\S]*\}/);
+    if (!m) throw new Error("استجابة الدفعة ليست JSON صالحاً");
+    parsed = JSON.parse(m[0]);
+  }
+  const results: any[] = Array.isArray(parsed?.results) ? parsed.results : [];
+  return images.map((img, i) => {
+    const r = results.find((x) => Number(x?.index) === i + 1) ?? results[i];
+    if (!r) return { id: img.id, analysis: null };
+    const { index, ...analysis } = r;
+    return { id: img.id, analysis: analysis as JewelryAnalysis };
+  });
+}
+
+/**
+ * يحلّل عدة صور مستقلة في طلب واحد لكل مزوّد (بدل طلب منفصل لكل صورة) — يُستخدم من
+ * طابور المعالجة الخلفي. سباق متدرّج بين المزوّدات الثلاثة تماماً كما في analyzeWithFallback.
+ */
+export async function analyzeBatchWithFallback(params: {
+  images: BatchImage[];
+  categoryNames: string[];
+}): Promise<{ results: BatchResult[]; provider: string; usage: Record<string, { used: number; limit: number }> }> {
+  const images = normalizeBatchImages(params.images);
+  if (!images.length) return { results: [], provider: "none", usage: getUsageSnapshot() };
+
+  const catList = params.categoryNames.length
+    ? params.categoryNames.join("، ")
+    : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
+  const systemPrompt = buildBatchSystemPrompt(catList, images.length);
+
+  const providers: Array<{ name: string; fn: () => Promise<BatchResult[]> }> = [];
+  if (Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY")) {
+    providers.push({ name: "gemini", fn: () => analyzeBatchGemini(images, systemPrompt) });
+  }
+  if (Deno.env.get("GROQ_API_KEY")) {
+    providers.push({ name: "groq", fn: () => analyzeBatchGroq(images, systemPrompt) });
+  }
+  if (Deno.env.get("OPENROUTER_API_KEY")) {
+    providers.push({ name: "openrouter", fn: () => analyzeBatchOpenRouter(images, systemPrompt) });
+  }
+  if (!providers.length) {
+    throw Object.assign(new Error("لا يوجد مفتاح ذكاء اصطناعي مجاني مُعد في المشروع."), { status: 500 });
+  }
+
+  const markFail = (name: string, e: unknown) => console.warn(`Batch provider ${name} failed [${(e as any)?.status ?? 500}]`);
+
+  let lastErr: unknown = null;
+  for (let pass = 0; pass < 2; pass++) {
+    if (pass > 0) await new Promise((r) => setTimeout(r, 1200));
+    try {
+      const { result, provider } = await hedgedRace(providers, markFail);
+      recordUsage(provider);
+      return { results: result, provider, usage: getUsageSnapshot() };
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr ?? Object.assign(new Error("كل المزوّدات مشغولة الآن — أعد المحاولة."), { status: 429 });
+}
+
 export async function analyzeTrayWithFallback(params: {
   imageBase64: string;
   mimeType: string;
