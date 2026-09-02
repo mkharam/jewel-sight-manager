@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Search, Package, MessageCircle, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, Layers } from "lucide-react";
+import { Search, MessageCircle, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -9,20 +9,18 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import NotificationsBell from "@/components/NotificationsBell";
 import InstallPrompt from "@/components/InstallPrompt";
+import { useUploadQueuePendingCount } from "@/lib/uploadQueue";
 
-type NavItem = { to: string; label: string; icon: any; end?: boolean; badgeKey?: "transfers" };
+type NavItem = { to: string; label: string; icon: any; end?: boolean; badgeKey?: "transfers" | "uploads" };
 
 const baseNav: NavItem[] = [
   { to: "/", label: "البحث", icon: Search, end: true },
   { to: "/transfers", label: "تحويلات", icon: ArrowLeftRight, badgeKey: "transfers" },
   { to: "/inquiries", label: "استفسارات", icon: MessageCircle },
-  { to: "/products/new", label: "إضافة", icon: Package },
+  { to: "/upload", label: "رفع", icon: Upload, badgeKey: "uploads" },
 ];
 
-const desktopExtras: NavItem[] = [
-  { to: "/import", label: "استيراد", icon: Upload },
-  { to: "/tray", label: "صينية", icon: Layers },
-];
+const desktopExtras: NavItem[] = [];
 
 const adminExtras: NavItem[] = [
   { to: "/reports", label: "التقارير", icon: BarChart3 },
@@ -71,7 +69,8 @@ export default function AppLayout() {
     return () => { supabase.removeChannel(ch); };
   }, [user, qc]);
 
-  const badges: Record<string, number> = { transfers: pendingTransfers };
+  const pendingUploads = useUploadQueuePendingCount();
+  const badges: Record<string, number> = { transfers: pendingTransfers, uploads: pendingUploads };
 
   const [moreOpen, setMoreOpen] = useState(false);
 

@@ -1,9 +1,27 @@
 // تحويل صفحات PDF إلى صور JPEG داخل المتصفح بالكامل (بدون أي تكلفة ذكاء اصطناعي).
-// عامل pdf.js يُحمَّل عبر Vite بصيغة ?url فلا حاجة لأي ملف في public/.
-import * as pdfjs from "pdfjs-dist";
-import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-
-pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+//
+// ملاحظة: أصدارات pdfjs-dist 5.x/6.x تستخدم داخلياً ميزات JS حديثة جداً (Iterator helpers،
+Map.prototype.getOrInsertComputed) غير موجودة بعد في نسخ سفاري الأقدم من iOS 18.4، ما كان
+// يُسقط تحويل PDF بالكامل على هذه الأجهزة. لذلك المشروع مثبّت على pdfjs-dist@4.x تحديداً —
+// آخر خط إصدارات متوافق مع نطاق أوسع من المتصفحات دون هذه الميزات. لا تُحدّث هذه الحزمة
+// لإصدار 5+ بدون التأكد من التوافق مع سفاري القديم.
+//
+// نُحمّلها ديناميكياً (dynamic import) فقط عند الحاجة الفعلية لتحويل PDF حتى لا تُحمّل
+// (1.2MB+) على كل زيارة للتطبيق.
+let pdfjsPromise: Promise<typeof import("pdfjs-dist")> | null = null;
+async function loadPdfjs() {
+  if (!pdfjsPromise) {
+    pdfjsPromise = (async () => {
+      const [pdfjs, workerUrlModule] = await Promise.all([
+        import("pdfjs-dist"),
+        import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
+      ]);
+      pdfjs.GlobalWorkerOptions.workerSrc = workerUrlModule.default;
+      return pdfjs;
+    })();
+  }
+  return pdfjsPromise;
+}
 
 export const isPdf = (f: File) =>
   f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
@@ -20,6 +38,10 @@ export async function pdfToImageFiles(
   const maxDimension = opts.maxDimension ?? 1600;
   const quality = opts.quality ?? 0.82;
 
+  const pdfjs = await loadPdfjs();
+
+  // تحميل المستند كاملاً كـ ArrayBuffer — المسار الأكثر ثباتاً في pdf.js عبر كل المتصفحات
+  // (تحميل عبر Range requests فوق blob URL غير مدعوم بشكل متسق بين المتصفحات).
   const data = new Uint8Array(await file.arrayBuffer());
   const pdf = await pdfjs.getDocument({ data }).promise;
   const out: File[] = [];
