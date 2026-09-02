@@ -74,21 +74,25 @@ async function analyzeAndSaveProduct(
   // نُحضّر نسخة مصغّرة مرة واحدة فقط — تُستخدم لكل محاولات إعادة الإرسال دون إعادة الترميز.
   const { base64, mimeType } = await prepareForAIBase64(file);
 
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const { data, error } = await supabase.functions.invoke("analyze-product-image", {
         body: { imageBase64: base64, mimeType, categories },
       });
       if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
+      if ((data as any)?.error) throw Object.assign(new Error((data as any).error), { code: (data as any).code });
       analysis = data;
       provider = (data as any)?.provider;
       break;
     } catch (e: any) {
       const msg = String(e?.message ?? "");
-      const busy = /429|rate|مشغول|ممتلئ|AI_BUSY/i.test(msg);
-      if (!busy || attempt === 2) break; // نتابع بدون تحليل بدل تعليق الرفع بالكامل
-      await new Promise((r) => setTimeout(r, attempt === 0 ? 3000 : 7000));
+      // "AI_BUSY" يشمل ازدحام مؤقت (يزول خلال ثوانٍ) وأيضاً استنفاذ حصة OpenRouter اليومية
+      // الصغيرة (50/يوم) — كلاهما يجب أن يُعاد المحاولة لهما لأن Gemini/Groq غالباً لا يزالان
+      // متاحين، ورسالة "انتهت الحصة اليومية" لا تعني بالضرورة فشل كل المزوّدات، بل قد يكون
+      // مزوّد واحد فقط استنفد حصته بينما فشل آخر فشلاً عابراً وسيُستعاد سريعاً.
+      const busy = e?.code === "AI_BUSY" || /429|rate|مشغول|ممتلئ|انتهت|AI_BUSY/i.test(msg);
+      if (!busy || attempt === 3) break; // نتابع بدون تحليل بدل تعليق الرفع بالكامل
+      await new Promise((r) => setTimeout(r, [3000, 6000, 10000][attempt] ?? 10000));
     }
   }
 

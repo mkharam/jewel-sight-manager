@@ -112,11 +112,25 @@ export default function ReviewUnnamed() {
       const asFile = new File([blob], "photo.jpg", { type: blob.type || "image/jpeg" });
       const { base64, mimeType } = await prepareForAIBase64(asFile);
 
-      const { data, error } = await supabase.functions.invoke("analyze-product-image", {
-        body: { imageBase64: base64, mimeType, categories: categories ?? [], imageId: img.id },
-      });
-      if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
+      // نعيد المحاولة عند الازدحام المؤقت أو استنفاذ حصة مزوّد واحد فقط (OpenRouter اليومية
+      // صغيرة جداً) بدل الاستسلام من أول محاولة — Gemini/Groq غالباً لا يزالان متاحين.
+      let data: any;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          const res = await supabase.functions.invoke("analyze-product-image", {
+            body: { imageBase64: base64, mimeType, categories: categories ?? [], imageId: img.id },
+          });
+          if (res.error) throw res.error;
+          if (res.data?.error) throw Object.assign(new Error(res.data.error), { code: res.data.code });
+          data = res.data;
+          break;
+        } catch (e: any) {
+          const msg = String(e?.message ?? "");
+          const busy = e?.code === "AI_BUSY" || /429|rate|مشغول|ممتلئ|انتهت|AI_BUSY/i.test(msg);
+          if (!busy || attempt === 3) throw e;
+          await new Promise((r) => setTimeout(r, [3000, 6000, 10000][attempt] ?? 10000));
+        }
+      }
 
       const a = data as any;
       updateDraft(row.id, {
