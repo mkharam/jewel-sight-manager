@@ -49,6 +49,8 @@ export default function ReviewUnnamed() {
     queryFn: async () => (await supabase.from("categories").select("id,name").eq("is_active", true)).data ?? [],
   });
 
+  // نُحدّث كل 5 ثوانٍ — طابور المعالجة الخلفي (pg_cron كل 15 ثانية) يحلّل القطع تلقائياً
+  // بدون أي فعل من الموظف، فيحتاج الموظف رؤية النتائج فور جهوزيتها دون إعادة تحميل الصفحة.
   const { data: rows, isLoading } = useQuery({
     queryKey: ["unnamed-products", sortDir],
     queryFn: async () => {
@@ -61,6 +63,7 @@ export default function ReviewUnnamed() {
       if (error) throw error;
       return (data ?? []) as Row[];
     },
+    refetchInterval: 5000,
   });
 
   const draftFor = (row: Row): Row => ({ ...row, ...drafts[row.id] });
@@ -263,8 +266,8 @@ export default function ReviewUnnamed() {
           مراجعة الصور غير المسمّاة
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          القطع التي ما زالت بالاسم الافتراضي "{PLACEHOLDER_NAME}" — راجع اسم كل قطعة ونتيجة تحليلها ثم احفظ. إن لم
-          يظهر تحليل، اضغط "إعادة التحليل".
+          القطع التي ما زالت بالاسم الافتراضي "{PLACEHOLDER_NAME}" — تُحلّل تلقائياً في الخلفية خلال ثوانٍ من الرفع
+          دون أي فعل منك. راجع اسم كل قطعة ونتيجة تحليلها ثم احفظ، أو اضغط "إعادة التحليل" للحصول على نتيجة فورية.
         </p>
       </div>
 

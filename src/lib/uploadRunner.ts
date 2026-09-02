@@ -1,9 +1,12 @@
 // المنطق الفعلي لرفع/حفظ القطع — يعمل بشكل مستقل عن أي مكوّن React، فلا يتوقف عند
-// التنقّل بين صفحات التطبيق (فقط إغلاق التبويب نفسه يوقفه). كل صورة تُحلّل بالذكاء
-// الاصطناعي هنا مباشرة (مرئي في طابور الرفع: رفع → تحليل → حفظ) ثم تُحفظ فوراً بمجرد
-// اكتمال تحليلها — لا تنتظر بقية الصورة، فيمكنك البدء بالعمل على ما اكتمل أولاً بأول.
-// (مشغّل قاعدة البيانات على product_images يُكمّل التحليل تلقائياً فقط للحالات النادرة
-// التي يُغلق فيها التبويب قبل اكتمال التحليل — وهو احتياط إضافي وليس المسار الأساسي.)
+// التنقّل بين صفحات التطبيق (فقط إغلاق التبويب نفسه يوقفه).
+//
+// الوضع العادي (غير الصينية) يرفع الصورة ويحفظ القطعة فوراً باسم مؤقت "قطعة جديدة" بدون
+// انتظار الذكاء الاصطناعي إطلاقاً — التحليل يتم لاحقاً في الخلفية عبر طابور معالجة على
+// الخادم (job خلفي مجدول كل 15 ثانية يحلّل عدة صور معاً في طلب واحد لكل مزوّد). هذا أبسط
+// وأكثر أماناً من محاولة توازي/تهئة الطلبات من المتصفح: الرفع لا يعتمد على حصص الذكاء
+// الاصطناعي إطلاقاً فلا يتأثر برفض 429 مهما كان حجم الدفعة، والتحليل يمشي بمعدّل ثابت
+// وآمن بغضّ النظر عمّا يفعله المتصفح. راجع صفحة "مراجعة الصور غير المسمّاة" للنتيجة.
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { KARAT_OPTIONS } from "@/lib/constants";
@@ -57,56 +60,19 @@ function matchCategoryId(name: string | null | undefined, categories: { id: stri
 }
 
 /**
- * الوضع العادي: يحلّل الصورة بالذكاء الاصطناعي مباشرة (مرئي للمستخدم أثناء الانتظار)
- * ثم يحفظ القطعة كاملة فوراً بمجرد اكتمال تحليلها. إن فشل التحليل (مثلاً الحد المجاني
- * ممتلئ) نحفظ القطعة بحقول فارغة بدل فقدانها بالكامل — يمكن تعديلها يدوياً لاحقاً.
+ * الوضع العادي: يحفظ القطعة فوراً باسم مؤقت "قطعة جديدة" بدون أي انتظار للذكاء الاصطناعي —
+ * التحليل يتم لاحقاً في الخلفية عبر طابور معالجة على الخادم (راجع تعليق أعلى الملف). هذا
+ * يجعل الرفع سريعاً وموثوقاً تماماً بغضّ النظر عن ازدحام مزوّدات الذكاء الاصطناعي.
  */
-async function analyzeAndSaveProduct(
-  file: File,
+async function saveUnanalyzedProduct(
   storagePath: string,
   opts: UploadOptions,
-  categories: { id: string; name: string }[],
-  onStatus: (label: string) => void,
 ): Promise<string> {
-  let analysis: any = null;
-  let provider: string | undefined;
-
-  // نُحضّر نسخة مصغّرة مرة واحدة فقط — تُستخدم لكل محاولات إعادة الإرسال دون إعادة الترميز.
-  const { base64, mimeType } = await prepareForAIBase64(file);
-
-  for (let attempt = 0; attempt < 4; attempt++) {
-    try {
-      const { data, error } = await supabase.functions.invoke("analyze-product-image", {
-        body: { imageBase64: base64, mimeType, categories },
-      });
-      if (error) throw error;
-      if ((data as any)?.error) throw Object.assign(new Error((data as any).error), { code: (data as any).code });
-      analysis = data;
-      provider = (data as any)?.provider;
-      break;
-    } catch (e: any) {
-      const msg = String(e?.message ?? "");
-      // "AI_BUSY" يشمل ازدحام مؤقت (يزول خلال ثوانٍ) وأيضاً استنفاذ حصة OpenRouter اليومية
-      // الصغيرة (50/يوم) — كلاهما يجب أن يُعاد المحاولة لهما لأن Gemini/Groq غالباً لا يزالان
-      // متاحين، ورسالة "انتهت الحصة اليومية" لا تعني بالضرورة فشل كل المزوّدات، بل قد يكون
-      // مزوّد واحد فقط استنفد حصته بينما فشل آخر فشلاً عابراً وسيُستعاد سريعاً.
-      const busy = e?.code === "AI_BUSY" || /429|rate|مشغول|ممتلئ|انتهت|AI_BUSY/i.test(msg);
-      if (!busy || attempt === 3) break; // نتابع بدون تحليل بدل تعليق الرفع بالكامل
-      await new Promise((r) => setTimeout(r, [3000, 6000, 10000][attempt] ?? 10000));
-    }
-  }
-
-  const categoryId = matchCategoryId(analysis?.category_name, categories);
-  const name = analysis?.name_ar || "قطعة جديدة";
-
+  const name = "قطعة جديدة";
   const { data: prod, error: e1 } = await supabase
     .from("products")
     .insert({
       name,
-      category_id: categoryId,
-      karat: KARAT_OPTIONS.includes(analysis?.karat) ? analysis.karat : null,
-      item_type: analysis?.item_type || null,
-      description: describeWithExtras(analysis),
       branch_id: opts.branchId,
       status: "available",
       created_by: opts.userId,
@@ -115,27 +81,16 @@ async function analyzeAndSaveProduct(
     .single();
   if (e1 || !prod) throw e1 ?? new Error("فشل إنشاء المنتج");
 
-  const { data: img, error: e2 } = await supabase
+  const { error: e2 } = await supabase
     .from("product_images")
     .insert({
       product_id: prod.id,
       storage_path: storagePath,
       is_primary: true,
       uploaded_by: opts.userId,
-      ...(analysis ? { ai_labels: { ...analysis, category_id: categoryId, provider } } : {}),
-    } as any)
-    .select("id")
-    .single();
-  if (e2 || !img) throw e2 ?? new Error("فشل حفظ الصورة");
+    } as any);
+  if (e2) throw e2 ?? new Error("فشل حفظ الصورة");
 
-  // بصمة البحث بالصورة — لا تُفشل الحفظ إن تعذّرت (القطعة محفوظة بالفعل).
-  if (analysis) {
-    supabase.functions
-      .invoke("analyze-product-image", { body: { imageId: img.id, analysis, categories } })
-      .catch(() => {});
-  }
-
-  onStatus(analysis ? name : "تم الحفظ بدون تحليل — عدّلها يدوياً");
   return name;
 }
 
@@ -290,11 +245,12 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
   let ok = 0;
   let failed = 0;
 
-  // تحليل صوره واحدة تلو الأخرى مرئياً (نتيجة كل صورة تظهر فور اكتمالها) بدل الانتظار للجميع معاً.
-  // 3 بالتوازي مع تباعد 400ms بين كل عنصر جديد — Gemini يقبل 15 طلب/دقيقة فقط وOpenRouter
-  // حصته اليومية صغيرة (50)، فرفع التوازي أعلى من هذا كان يُستنفد الحصص الثلاث معاً بسرعة
-  // ويُفشل دفعات كبيرة برسالة "كل المزوّدات مشغولة" بدل تحليلها ببطء أكبر لكن بنجاح.
-  await pool(entries, 3, async (entry, k) => {
+  // وضع الصينية لا يزال يستدعي الذكاء الاصطناعي مباشرة (يحتاج معرفة عدد القطع فوراً)
+  // فيبقى محدوداً ومتباعداً لتفادي حدود المعدّل. الوضع العادي لا يستدعي الذكاء الاصطناعي
+  // إطلاقاً هنا (يُحفظ فوراً والتحليل يجري لاحقاً في الخلفية) فلا داعي لأي تحديد أو تباعد.
+  const concurrency = opts.trayMode ? 3 : 6;
+  const stagger = opts.trayMode ? 400 : 0;
+  await pool(entries, concurrency, async (entry, k) => {
     try {
       const path = await uploadFile(entry.file, opts.userId, k);
 
@@ -303,18 +259,15 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
         const n = await saveTrayPieces(entry.file, path, opts, categories);
         uploadQueue.update(entry.id, { status: "done", label: `تم حفظ ${n} قطعة` });
       } else {
-        uploadQueue.update(entry.id, { status: "analyzing", label: "جارٍ التحليل…" });
-        const name = await analyzeAndSaveProduct(entry.file, path, opts, categories, (label) => {
-          uploadQueue.update(entry.id, { status: "saving", label });
-        });
-        uploadQueue.update(entry.id, { status: "done", label: `تم الحفظ: ${name}` });
+        const name = await saveUnanalyzedProduct(path, opts);
+        uploadQueue.update(entry.id, { status: "done", label: `تم الحفظ: ${name} — سيُحلّل تلقائياً قريباً` });
       }
       ok++;
     } catch (e: any) {
       failed++;
       uploadQueue.update(entry.id, { status: "error", message: e?.message ?? "فشل الرفع" });
     }
-  }, 400);
+  }, stagger);
 
   toast.success(`اكتمل رفع ${ok} صورة` + (failed ? ` (${failed} فشل)` : ""), { duration: 6000 });
 }
