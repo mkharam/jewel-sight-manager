@@ -279,7 +279,9 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
   let failed = 0;
 
   // تحليل صوره واحدة تلو الأخرى مرئياً (نتيجة كل صورة تظهر فور اكتمالها) بدل الانتظار للجميع معاً.
-  await pool(entries, 4, async (entry, k) => {
+  // 8 بالتوازي: نعتمد على 3 مزوّدين (Gemini/Groq/OpenRouter) مع سباق متدرّج بينهم، فحصة كل
+  // مزوّد بالدقيقة تكفي هذا العدد دون اصطدام مستمر بحدود المعدّل (rate limit).
+  await pool(entries, 8, async (entry, k) => {
     try {
       const path = await uploadFile(entry.file, opts.userId, k);
 
