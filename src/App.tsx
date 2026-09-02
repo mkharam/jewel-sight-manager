@@ -10,13 +10,12 @@ import ProductSearch from "@/pages/ProductSearch";
 import ProductDetail from "@/pages/ProductDetail";
 import ProductForm from "@/pages/ProductForm";
 import Inquiries from "@/pages/Inquiries";
-import BulkImport from "@/pages/BulkImport";
+import Upload from "@/pages/Upload";
 import Staff from "@/pages/Staff";
 import Reports from "@/pages/Reports";
 import Transfers from "@/pages/Transfers";
 import GoldPrice from "@/pages/GoldPrice";
 import StockTake from "@/pages/StockTake";
-import TrayImport from "@/pages/TrayImport";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -37,8 +36,9 @@ const App = () => (
             <Route path="/products/:id" element={<ProductDetail />} />
             <Route path="/products/:id/edit" element={<ProductForm />} />
             <Route path="/inquiries" element={<Inquiries />} />
-            <Route path="/import" element={<BulkImport />} />
-            <Route path="/tray" element={<TrayImport />} />
+            <Route path="/upload" element={<Upload />} />
+            <Route path="/import" element={<Navigate to="/upload" replace />} />
+            <Route path="/tray" element={<Navigate to="/upload" replace />} />
             <Route path="/staff" element={<Staff />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/transfers" element={<Transfers />} />

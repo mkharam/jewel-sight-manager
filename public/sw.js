@@ -4,13 +4,56 @@ const CACHE = "mkharrm-shell-v3";
 const SHELL = ["/", "/index.html", "/manifest.webmanifest", "/app-icon-192.png", "/apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // إن فشل تخزين أحد الملفات (مثلاً أيقونة غير موجودة) لا نُفشل التثبيت كاملاً —
+  // فشل addAll يمنع تفعيل الـ SW نهائياً ويُبقي المستخدم على نسخة قديمة معطّلة أو شاشة بيضاء.
+  e.waitUntil(
+    caches.open(CACHE).then((c) =>
+      Promise.all(SHELL.map((url) => c.add(url).catch(() => {}))),
+    ).then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
+  );
+});
+
+// إشعار Web Push — يظهر على شاشة القفل حتى والتطبيق مغلق تماماً.
+self.addEventListener("push", (event) => {
+  let data = { title: "مخرّم", body: "لديك إشعار جديد", url: "/" };
+  try {
+    if (event.data) data = { ...data, ...event.data.json() };
+  } catch {
+    /* ignore */
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: "/app-icon-192.png",
+      badge: "/app-icon-192.png",
+      data: { url: data.url || "/" },
+      dir: "rtl",
+      lang: "ar",
+    }),
+  );
+});
+
+// الضغط على الإشعار: يفتح التطبيق على الرابط المرتبط، أو يُركّز نافذة مفتوحة بالفعل.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url || "/";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const c of clients) {
+        if ("focus" in c) {
+          c.navigate(url);
+          return c.focus();
+        }
+      }
+      return self.clients.openWindow(url);
+    }),
   );
 });
 
@@ -43,34 +86,4 @@ self.addEventListener("fetch", (event) => {
       ),
     );
   }
-});
-
-// ===== إشعارات الدفع =====
-self.addEventListener("push", (event) => {
-  let data = {};
-  try { data = event.data ? event.data.json() : {}; } catch { data = { body: event.data && event.data.text() }; }
-  const title = data.title || "مخرّم";
-  event.waitUntil(
-    self.registration.showNotification(title, {
-      body: data.body || "",
-      icon: "/app-icon-192.png",
-      badge: "/app-icon-192.png",
-      dir: "rtl",
-      lang: "ar",
-      data: { url: data.url || "/" },
-    }),
-  );
-});
-
-self.addEventListener("notificationclick", (event) => {
-  event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || "/";
-  event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
-      for (const c of list) {
-        if ("focus" in c) { c.navigate(url); return c.focus(); }
-      }
-      return self.clients.openWindow(url);
-    }),
-  );
 });
