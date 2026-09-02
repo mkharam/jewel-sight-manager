@@ -6,10 +6,13 @@
 export type JewelryAnalysis = {
   name_ar: string;
   category_name: string | null;
+  item_type: string | null;
   karat: "18K" | "21K" | "22K" | "24K" | "ألماس" | "فضة" | "أخرى" | null;
   metal_color: "yellow" | "white" | "rose" | "mixed" | null;
   style: string[];
   gemstones: string[];
+  stone_count: "بدون أحجار" | "حجر واحد" | "عدة أحجار" | null;
+  condition: "جديدة" | "مستعملة بحالة جيدة" | "بها خدوش/تلف ظاهر" | null;
   description_ar: string;
 };
 
@@ -22,18 +25,23 @@ export type JewelryAnalysis = {
 function buildSystemPrompt(catList: string): string {
   return (
     `أنت خبير مجوهرات عربي دقيق الملاحظة. أعد JSON فقط بهذا الشكل بالضبط بدون أي نص إضافي:\n` +
-    `{"name_ar":"...","category_name":"...","karat":null,"metal_color":"yellow","style":[],"gemstones":[],"description_ar":"..."}\n\n` +
+    `{"name_ar":"...","category_name":"...","item_type":"...","karat":null,"metal_color":"yellow","style":[],"gemstones":[],"stone_count":null,"condition":null,"description_ar":"..."}\n\n` +
     `القيم المسموحة:\n` +
     `- karat: 18K, 21K, 22K, 24K, ألماس, فضة, أخرى, null\n` +
     `- metal_color: yellow, white, rose, mixed, null\n` +
-    `- category_name يطابق واحدة من: ${catList} أو null\n\n` +
+    `- category_name يطابق واحدة من: ${catList} أو null\n` +
+    `- item_type: النوع الدقيق للقطعة بالعربية (خاتم، سلسلة، أسوارة، حلق، تعليقة، خلخال، دبلة، طقم، بروش) أو null إن لم يتضح\n` +
+    `- stone_count: بدون أحجار (معدن فقط)، حجر واحد (حجر مركزي واحد فقط)، عدة أحجار (أكثر من حجر)، أو null\n` +
+    `- condition: جديدة (لا خدوش أو تلف ظاهر)، مستعملة بحالة جيدة (خدوش بسيطة)، بها خدوش/تلف ظاهر (خدوش واضحة أو أجزاء مفقودة)، أو null إن لم تتضح من الصورة\n\n` +
     `قواعد صارمة يجب اتباعها بدقة — لا تخمّن، صف ما تراه فقط:\n` +
     `- لا تفترض "ألماس" أبداً كقيمة افتراضية لأي حجر أبيض لامع. أي حجر أبيض/شفاف هو على الأرجح زركون مكعب (CZ) أو حجر صناعي — ` +
-    `اذكره في description_ar وgemstones بأنه "أحجار بيضاء لامعة"، وليس "ألماس"، إلا إذا رأيت حجراً واحداً كبيراً بارزاً بوضوح بقطع سوليتير احترافي يوحي فعلاً بألماس حقيقي.\n` +
+    `اذكره في description_arوgemstones بأنه "أحجار بيضاء لامعة"، وليس "ألماس"، إلا إذا رأيت حجراً واحداً كبيراً بارزاً بوضوح بقطع سوليتير احترافي يوحي فعلاً بألماس حقيقي.\n` +
     `- لا تفترض "21K" أو أي عيار آخر كقيمة افتراضية. إن لم تستطع تمييز درجة نقاء المعدن من لون/بريق المعدن بثقة كافية، أعد karat كـ null. ` +
-    `لا يوجد عيار افتراضي لأي منشأ أو بلد — كل قطعة تُقيَّم بصرياً فقط ومن دون افتراضات مسبقة.\n` +
+    `لا يوجد عيار افتراضي لأي منشأ أو بلد — كل قطعة تُقيّم بصرياً فقط ومن دون افتراضات مسبقة.\n` +
     `- في gemstones، اذكر الألوان الفعلية الظاهرة في الصورة بدقة (مثال: زمردي أخضر، جمشت بنفسجي، ياقوت أحمر، سفير أزرق، سيترين أصفر، أبيض/شفاف) — فقط ما تراه فعلياً في هذه الصورة تحديداً، وليس تخميناً عاماً أو قائمة نمطية.\n` +
-    `- في style، صف شكل القطعة الفعلي بدقة: أقراط متدلية (شاندلير) أو أقراط ستود صغيرة، عقد قريب من الرقبة (شوكر) أو عقد بسلسلة طويلة نازلة، خاتم كلاستر بعدة أحجار أو خاتم سوليتير بحجر واحد مركزي، أسورة بخط أحجار متصل (تنس) أو أسورة عريضة مزخرفة — حسب ما يظهر فعلياً في هذه الصورة.\n` +
+    `- في style، صف شكل القطعة الفعلي بدقة: أقراط متدلية (شانديلير) أو أقراط ستود صغيرة، عقد قريب من الرقبة (شوكر) أو عقد بسلسلة طويلة نازلة، خاتم كلاستر بعدة أحجار أو خاتم سوليتير بحجر واحد مركزي، أسورة بخط أحجار متصل (تنس) أو أسورة عريضة مزخرفة — حسب ما يظهر فعلياً في هذه الصورة.\n` +
+    `- item_type يجب أن يكون النوع المحدد الفعلي (مثلاً "حلق" وليس "مجوهرات")، استنتجه من شكل القطعة نفسها لا من الفئة العامة فقط.\n` +
+    `- stone_count وcondition: قيّمهما فقط من الظاهر فعلياً في الصورة، وأعد null عند عدم التأكد بدل التخمين.\n` +
     `- metal_color بحسب اللون الحقيقي الظاهر فعلياً في الصورة: أبيض/روديوم لامع، أصفر ذهبي، أو وردي (روز غولد) — لا تخمّن بناءً على نوع القطعة.\n` +
     `- description_ar يجب أن يذكر الألوان الفعلية للأحجار وتفاصيل التصميم الحقيقية الظاهرة في هذه الصورة تحديداً ` +
     `(مثال جيد: "أقراط متدلية بحجر أخضر زمردي شكل كمثرى وأحجار بنفسجية، محاطة بأحجار بيضاء لامعة على تصميم أوراق فضية")، ` +
@@ -45,11 +53,12 @@ function buildSystemPrompt(catList: string): string {
  * OpenRouter Vision — المزوّد الأساسي المجاني.
  * يستخدم مصفوفة models لإعادة التوجيه التلقائي بين 3 موديلات مجانية.
  */
+// مرتّبة من الأقدر على التفاصيل والتسمية الدقيقة إلى الأبسط — نجرّب الأقوى أولاً.
 const OPENROUTER_VISION_MODELS = [
+  "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
   "google/gemma-4-31b-it:free",
   "google/gemma-4-26b-a4b-it:free",
   "nvidia/nemotron-nano-12b-v2-vl:free",
-  "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
   "dots-studio/dots-3-note-preview:free",
 ];
 
@@ -83,7 +92,7 @@ async function openRouterOnce(params: {
       ],
       response_format: { type: "json_object" },
       temperature: 0.2,
-      max_tokens: 800,
+      max_tokens: 1100,
     }),
   });
 
@@ -141,7 +150,7 @@ export async function analyzeJewelryImageOpenRouter(params: {
         // الحصة اليومية أو المفتاح غير صالح: لا فائدة من بقية الموديلات
         if (status === 401 || status === 403 || status === 402 || (e as any)?.daily) throw e;
         if (status === 429 || status >= 500) {
-          await new Promise((r) => setTimeout(r, 700 + round * 1500));
+          await new Promise((r) => setTimeout(r, 400 + round * 800));
           continue;
         }
       }
@@ -150,6 +159,39 @@ export async function analyzeJewelryImageOpenRouter(params: {
   throw lastErr ?? Object.assign(new Error("OpenRouter unavailable"), { status: 429 });
 }
 
+
+// قائمة موديلات Groq القادرة على الرؤية — تُخزّن مؤقتاً بدل جلبها من /v1/models
+// في كل استدعاء تحليل (كانت تضيف رحلة شبكة كاملة إضافية على كل صورة، تُبطئ التحليل).
+const KNOWN_GROQ_VISION = [
+  "qwen/qwen3.6-27b",
+  "meta-llama/llama-4-scout-17b-16e-instruct",
+  "meta-llama/llama-4-maverick-17b-128e-instruct",
+];
+const GROQ_VISION_RE = /llama-4|scout|maverick|-vl-|vision|qwen3\.\d|qwen3-vl/i;
+const GROQ_MODELS_CACHE_MS = 60 * 60 * 1000; // ساعة
+let groqModelsCache: { list: string[]; expires: number } | null = null;
+
+async function getGroqVisionModels(key: string): Promise<string[]> {
+  if (groqModelsCache && groqModelsCache.expires > Date.now()) return groqModelsCache.list;
+  try {
+    const ml = await fetch("https://api.groq.com/openai/v1/models", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (ml.ok) {
+      const allIds: string[] = ((await ml.json())?.data ?? []).map((m: any) => String(m?.id ?? ""));
+      const available = KNOWN_GROQ_VISION.filter((m) => allIds.includes(m));
+      const extra = allIds.filter((id) => GROQ_VISION_RE.test(id) && !available.includes(id));
+      const list = [...available, ...extra];
+      groqModelsCache = { list, expires: Date.now() + GROQ_MODELS_CACHE_MS };
+      return list;
+    }
+    console.log("Groq /models failed:", ml.status, (await ml.text()).slice(0, 300));
+  } catch (e) {
+    console.log("Groq /models error:", String(e));
+  }
+  // فشل الجلب — نستخدم القائمة المعروفة كاحتياط بدل تعطيل Groq بالكامل.
+  return KNOWN_GROQ_VISION;
+}
 
 /**
  * Groq Vision call — احتياطي مجاني (30 RPM, 14400/day).
@@ -169,34 +211,7 @@ export async function analyzeJewelryImageGroq(params: {
     : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
   const systemPrompt = params.promptOverride ?? buildSystemPrompt(catList);
 
-  // موديلات Groq القادرة على الرؤية فقط — لا نستخدم أي موديل نصي.
-  // qwen3.6 متعدد الوسائط ومتاح على المفاتيح المجانية (مؤكَّد باختبار حقيقي).
-  const KNOWN_VISION = [
-    "qwen/qwen3.6-27b",
-    "meta-llama/llama-4-scout-17b-16e-instruct",
-    "meta-llama/llama-4-maverick-17b-128e-instruct",
-  ];
-  const VISION_RE = /llama-4|scout|maverick|-vl-|vision|qwen3\.\d|qwen3-vl/i;
-  let GROQ_VISION_MODELS: string[] = KNOWN_VISION;
-  try {
-    const ml = await fetch("https://api.groq.com/openai/v1/models", {
-      headers: { Authorization: `Bearer ${key}` },
-    });
-    if (ml.ok) {
-      const allIds: string[] = ((await ml.json())?.data ?? []).map((m: any) => String(m?.id ?? ""));
-      console.log("Groq available models (raw):", JSON.stringify(allIds));
-      const available = KNOWN_VISION.filter((m) => allIds.includes(m));
-      const extra = allIds.filter((id) => VISION_RE.test(id) && !available.includes(id));
-      const list = [...available, ...extra];
-      console.log("Groq vision candidates:", list.join(", ") || "none");
-      GROQ_VISION_MODELS = list;
-    } else {
-      console.log("Groq /models failed:", ml.status, (await ml.text()).slice(0, 300));
-    }
-  } catch (e) {
-    console.log("Groq /models error:", String(e));
-  }
-
+  const GROQ_VISION_MODELS = await getGroqVisionModels(key);
   if (!GROQ_VISION_MODELS.length) {
     throw new Error("No vision-capable Groq model available on this API key");
   }
@@ -218,7 +233,7 @@ export async function analyzeJewelryImageGroq(params: {
     ],
     response_format: { type: "json_object" },
     temperature: 0.2,
-    max_tokens: 800,
+    max_tokens: 1100,
     // موديلات qwen التفكيرية تُخرج <think> وتستهلك الرموز — نطفئها لنحصل على JSON مباشرة
     ...(/qwen/i.test(model) ? { reasoning_effort: "none" } : {}),
   });
@@ -321,7 +336,7 @@ export async function analyzeJewelryImageGemini(params: {
  */
 const cooldown = new Map<string, number>();
 const COOLDOWN_HARD_MS = 10 * 60 * 1000;
-const COOLDOWN_SOFT_MS = 45 * 1000;
+const COOLDOWN_SOFT_MS = 20 * 1000;
 const HARD_FAIL = new Set([400, 401, 402, 403, 404]);
 
 export async function analyzeWithFallback(params: {
@@ -338,15 +353,16 @@ export async function analyzeWithFallback(params: {
 
   const all: Array<{ name: string; fn: () => Promise<JewelryAnalysis> }> = [];
 
-  // Gemini أولاً (المفتاح الجديد يعمل بثبات)، ثم OpenRouter، ثم Groq
+  // ترتيب الدقة: Gemini (الأدق والأكثر تفصيلاً) ثم Groq (نماذج llama-4 قوية)،
+  // وOpenRouter أخيراً كاحتياط عند نفاد حصص المزوّدين الأفضل.
   if (Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY")) {
     all.push({ name: "gemini", fn: () => analyzeJewelryImageGemini(params) });
   }
-  if (Deno.env.get("OPENROUTER_API_KEY")) {
-    all.push({ name: "openrouter", fn: () => analyzeJewelryImageOpenRouter(params) });
-  }
   if (Deno.env.get("GROQ_API_KEY")) {
     all.push({ name: "groq", fn: () => analyzeJewelryImageGroq(params) });
+  }
+  if (Deno.env.get("OPENROUTER_API_KEY")) {
+    all.push({ name: "openrouter", fn: () => analyzeJewelryImageOpenRouter(params) });
   }
   if (!all.length) {
     throw Object.assign(
@@ -362,9 +378,9 @@ export async function analyzeWithFallback(params: {
 
   let lastErr: unknown = null;
   // محاولتان كاملتان على كل المزودات مع تراجع بينهما — الحد المجاني المشترك
-  // يرفض الطلبات لحظياً ثم يعود، فلا نُظهر خطأ للمستخدم من أول رفض.
+  // يرفض الطلبات لحظياً ثم يعود، فلا نُظهر خطأً للمستخدم من أول رفض.
   for (let pass = 0; pass < 2; pass++) {
-    if (pass > 0) await new Promise((r) => setTimeout(r, 2500));
+    if (pass > 0) await new Promise((r) => setTimeout(r, 1200));
     for (const p of providers) {
       try {
         const analysis = await p.fn();
@@ -450,10 +466,12 @@ export function analysisToEmbeddingText(a: JewelryAnalysis): string {
   const parts: string[] = [];
   if (a.name_ar) parts.push(a.name_ar);
   if (a.category_name) parts.push(a.category_name);
+  if (a.item_type) parts.push(a.item_type);
   if (a.karat) parts.push(a.karat);
   if (a.metal_color) parts.push(`لون: ${a.metal_color}`);
   if (a.style?.length) parts.push(a.style.join(" "));
   if (a.gemstones?.length) parts.push("أحجار: " + a.gemstones.join(" "));
+  if (a.stone_count) parts.push(a.stone_count);
   if (a.description_ar) parts.push(a.description_ar);
   return parts.join(" · ");
 }
@@ -483,17 +501,20 @@ export function friendlyError(e: unknown): { status: number; message: string } {
 
 // ============================================================
 // تحليل «صينية»: صورة واحدة تحتوي عدة قطع → مصفوفة قطع
-// يوفّر وقت التصوير: تصوّر 5–10 قطع مرة واحدة والنظام يفصلها.
+// يوفر وقت التصوير: تصوّر 5–10 قطع مرة واحدة والنظام يفصلها.
 // ============================================================
 function buildTraySystemPrompt(catList: string): string {
   return (
     `أنت خبير مجوهرات عربي دقيق الملاحظة. الصورة تحتوي عدة قطع مجوهرات معروضة معاً (صينية/علبة عرض).\n` +
     `افصل كل قطعة مستقلة وأعد JSON فقط بهذا الشكل بالضبط بدون أي نص إضافي:\n` +
-    `{"pieces":[{"position":"أعلى يمين","name_ar":"...","category_name":"...","karat":null,"metal_color":"yellow","style":[],"gemstones":[],"description_ar":"..."}]}\n\n` +
+    `{"pieces":[{"position":"أعلى يمين","name_ar":"...","category_name":"...","item_type":"...","karat":null,"metal_color":"yellow","style":[],"gemstones":[],"stone_count":null,"condition":null,"description_ar":"..."}]}\n\n` +
     `- position: وصف مكان القطعة في الصورة بالعربية (أعلى يمين، وسط، أسفل يسار…) حتى يتعرّف عليها الموظف.\n` +
     `- لا تدمج قطعتين في سجل واحد، ولا تُكرّر نفس القطعة. الطقم المتكامل (عقد+حلق+خاتم معروضة كطقم واحد) سجل واحد فئته "طقم".\n` +
+    `- item_type: النوع الدقيق للقطعة بالعربية (خاتم، سلسلة، أسوارة، حلق، تعليقة، خلخال، دبلة، طقم، بروش) أو null إن لم يتضح.\n` +
     `- karat: 18K, 21K, 22K, 24K, ألماس, فضة, أخرى, null — إن لم تتأكد أعد null ولا تفترض عياراً.\n` +
     `- metal_color: yellow, white, rose, mixed, null بحسب اللون الفعلي الظاهر.\n` +
+    `- stone_count: بدون أحجار، حجر واحد، عدة أحجار، أو null إن لم يتضح.\n` +
+    `- condition: جديدة، مستعملة بحالة جيدة، بها خدوش/تلف ظاهر، أو null إن لم يتضح من الصورة.\n` +
     `- category_name يطابق واحدة من: ${catList} أو null.\n` +
     `- لا تفترض "ألماس" لأي حجر أبيض لامع — اذكره "أحجار بيضاء لامعة" إلا إذا كان حجراً كبيراً بقطع سوليتير واضح.\n` +
     `- description_ar يذكر ألوان الأحجار الفعلية وتفاصيل التصميم الظاهرة في هذه القطعة تحديداً، لا وصفاً عاماً.`
@@ -520,11 +541,11 @@ export async function analyzeTrayWithFallback(params: {
   if (Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY")) {
     providers.push({ name: "gemini", fn: () => analyzeJewelryImageGemini(args) });
   }
-  if (Deno.env.get("OPENROUTER_API_KEY")) {
-    providers.push({ name: "openrouter", fn: () => analyzeJewelryImageOpenRouter(args) });
-  }
   if (Deno.env.get("GROQ_API_KEY")) {
     providers.push({ name: "groq", fn: () => analyzeJewelryImageGroq(args) });
+  }
+  if (Deno.env.get("OPENROUTER_API_KEY")) {
+    providers.push({ name: "openrouter", fn: () => analyzeJewelryImageOpenRouter(args) });
   }
   if (!providers.length) {
     throw Object.assign(new Error("لا يوجد مفتاح ذكاء اصطناعي مجاني مُعد في المشروع."), { status: 500 });
@@ -532,7 +553,7 @@ export async function analyzeTrayWithFallback(params: {
 
   let lastErr: unknown = null;
   for (let pass = 0; pass < 2; pass++) {
-    if (pass > 0) await new Promise((r) => setTimeout(r, 2500));
+    if (pass > 0) await new Promise((r) => setTimeout(r, 1200));
     for (const p of providers) {
       try {
         const out = await p.fn();
