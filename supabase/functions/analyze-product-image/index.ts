@@ -38,6 +38,7 @@ Deno.serve(async (req) => {
 
     let analysis: JewelryAnalysis;
     let provider = "cached";
+    let usage: Record<string, { used: number; limit: number }> | undefined;
     if (providedAnalysis) {
       analysis = providedAnalysis;
     } else {
@@ -48,6 +49,7 @@ Deno.serve(async (req) => {
       });
       analysis = r.analysis;
       provider = r.provider;
+      usage = r.usage;
     }
 
     let categoryId: string | null = null;
@@ -81,7 +83,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    return json({ ...analysis, category_id: categoryId, provider });
+    return json({ ...analysis, category_id: categoryId, provider, usage });
   } catch (e) {
     const { status, message } = friendlyError(e);
     if (status === 429) {

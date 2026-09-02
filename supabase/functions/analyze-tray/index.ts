@@ -13,7 +13,7 @@ Deno.serve(async (req) => {
     const categories: { id: string; name: string }[] = body?.categories ?? [];
     if (!imageBase64) return json({ error: "imageBase64 required" }, 400);
 
-    const { pieces, provider } = await analyzeTrayWithFallback({
+    const { pieces, provider, usage } = await analyzeTrayWithFallback({
       imageBase64,
       mimeType,
       categoryNames: categories.map((c) => c.name),
@@ -31,7 +31,7 @@ Deno.serve(async (req) => {
       return { ...p, category_id: cat?.id ?? null };
     });
 
-    return json({ pieces: withCats, provider });
+    return json({ pieces: withCats, provider, usage });
   } catch (e) {
     const { status, message } = friendlyError(e);
     if (status === 429) return json({ error: message, code: "AI_BUSY", retryable: true }, 200);

@@ -147,7 +147,7 @@ export async function analyzeJewelryImageOpenRouter(params: {
         lastErr = e;
         const status = (e as any)?.status ?? 500;
         // مفتاح غير صالح / رصيد منتهٍ: لا فائدة من بقية الموديلات
-        // الحصة اليومية أو المفتاح غير صالح: لا فائدة من بقية الموديلات
+        // الحصة اليومية أو المفتاح غير الصالح: لا فائدة من بقية الموديلات
         if (status === 401 || status === 403 || status === 402 || (e as any)?.daily) throw e;
         if (status === 429 || status >= 500) {
           await new Promise((r) => setTimeout(r, 400 + round * 800));
@@ -390,11 +390,38 @@ async function hedgedRace<T>(
   });
 }
 
+// عدّاد استهلاك تقريبي لكل مزوّد لعرضه في الواجهة (المتبقي اليوم). يعيش في ذاكرة
+// نسخة الدالة فقط — يُصفّر عند إعادة تشغيل الدالة (بارد) وليس عدّاداً رسمياً دقيقاً
+// من المزوّد نفسه، لكنه كافٍ لإعطاء الموظف فكرة تقريبية عن الحصة المتبقية اليوم.
+const DAILY_LIMITS: Record<string, number> = { gemini: 1500, groq: 14400, openrouter: 50 };
+const usageDay = new Map<string, string>();
+const usageCount = new Map<string, number>();
+
+function recordUsage(provider: string) {
+  if (!(provider in DAILY_LIMITS)) return;
+  const today = new Date().toISOString().slice(0, 10);
+  if (usageDay.get(provider) !== today) {
+    usageDay.set(provider, today);
+    usageCount.set(provider, 0);
+  }
+  usageCount.set(provider, (usageCount.get(provider) ?? 0) + 1);
+}
+
+export function getUsageSnapshot(): Record<string, { used: number; limit: number }> {
+  const today = new Date().toISOString().slice(0, 10);
+  const out: Record<string, { used: number; limit: number }> = {};
+  for (const p of Object.keys(DAILY_LIMITS)) {
+    const used = usageDay.get(p) === today ? (usageCount.get(p) ?? 0) : 0;
+    out[p] = { used, limit: DAILY_LIMITS[p] };
+  }
+  return out;
+}
+
 export async function analyzeWithFallback(params: {
   imageBase64: string;
   mimeType: string;
   categoryNames: string[];
-}): Promise<{ analysis: JewelryAnalysis; provider: string }> {
+}): Promise<{ analysis: JewelryAnalysis; provider: string; usage: Record<string, { used: number; limit: number }> }> {
   const m = /^data:([^;]+);base64,(.*)$/s.exec(params.imageBase64.trim());
   if (m) params = { ...params, mimeType: m[1], imageBase64: m[2] };
   params = { ...params, imageBase64: params.imageBase64.replace(/\s/g, "") };
@@ -441,7 +468,8 @@ export async function analyzeWithFallback(params: {
     try {
       const { result, provider } = await hedgedRace(providers, markFail);
       cooldown.delete(provider);
-      return { analysis: result, provider };
+      recordUsage(provider);
+      return { analysis: result, provider, usage: getUsageSnapshot() };
     } catch (e) {
       lastErr = e;
     }
@@ -574,7 +602,7 @@ export async function analyzeTrayWithFallback(params: {
   imageBase64: string;
   mimeType: string;
   categoryNames: string[];
-}): Promise<{ pieces: JewelryAnalysis[]; provider: string }> {
+}): Promise<{ pieces: JewelryAnalysis[]; provider: string; usage: Record<string, { used: number; limit: number }> }> {
   const m = /^data:([^;]+);base64,(.*)$/s.exec(params.imageBase64.trim());
   if (m) params = { ...params, mimeType: m[1], imageBase64: m[2] };
   params = { ...params, imageBase64: params.imageBase64.replace(/\s/g, "") };
@@ -617,7 +645,8 @@ export async function analyzeTrayWithFallback(params: {
     if (pass > 0) await new Promise((r) => setTimeout(r, 1200));
     try {
       const { result, provider } = await hedgedRace(validated, markFail);
-      return { pieces: result, provider };
+      recordUsage(provider);
+      return { pieces: result, provider, usage: getUsageSnapshot() };
     } catch (e) {
       lastErr = e;
     }

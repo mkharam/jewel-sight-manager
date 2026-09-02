@@ -1,7 +1,7 @@
 // صفحة مراجعة القطع غير المسمّاة/غير المحلّلة — تعرض كل صورة مع نتيجة تحليلها الحالية
 // (إن وُجدت) وتسمح بحفظ الاسم والحقول مباشرة، أو إعادة التحليل يدوياً إن كانت الصورة
 // لم تُحلّل بعد (مثلاً بسبب انقطاع الاتصال أو فشل الذكاء الاصطناعي).
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowRight, Loader2, RotateCw, Save, Sparkles, ExternalLink, Trash2, ArrowUpDown } from "lucide-react";
+import { ArrowRight, Loader2, RotateCw, Save, Sparkles, ExternalLink, Trash2, ArrowUpDown, CheckCheck } from "lucide-react";
 import { toast } from "sonner";
 import { KARAT_OPTIONS, getImageUrl } from "@/lib/constants";
 import { prepareForAIBase64 } from "@/lib/image-compress";
@@ -32,11 +32,17 @@ export default function ReviewUnnamed() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [drafts, setDrafts] = useState<Record<string, Partial<Row>>>({});
-  const [savingId, setSavingId] = useState<string | null>(null);
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [reanalyzingIds, setReanalyzingIds] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc"); // desc = الأحدث أولاً
+  // معرّفات القطع التي أُعيد تحليلها في هذه الجلسة، بترتيب الاكتمال (الأحدث اكتمالاً أولاً) —
+  // نستخدمها لرفع القطعة المكتملة لأعلى القائمة فور جاهزيتها، لأن التحليل المتوازي الآن
+  // لا يكتمل بنفس ترتيب البدء فيبقى الموظف تائهاً بدونها.
+  const [justAnalyzedOrder, setJustAnalyzedOrder] = useState<string[]>([]);
+  const [usage, setUsage] = useState<Record<string, { used: number; limit: number }> | null>(null);
+  const [savingAll, setSavingAll] = useState(false);
 
   const { data: categories } = useQuery({
     queryKey: ["categories"],
@@ -68,7 +74,7 @@ export default function ReviewUnnamed() {
       toast.error("اكتب اسماً حقيقياً للقطعة قبل الحفظ");
       return;
     }
-    setSavingId(row.id);
+    setSavingIds((s) => new Set(s).add(row.id));
     try {
       const { error } = await supabase
         .from("products")
@@ -83,10 +89,15 @@ export default function ReviewUnnamed() {
       if (error) throw error;
       toast.success("تم الحفظ");
       qc.setQueryData<Row[]>(["unnamed-products", sortDir], (prev) => (prev ?? []).filter((r) => r.id !== row.id));
+      setJustAnalyzedOrder((prev) => prev.filter((id) => id !== row.id));
     } catch (e: any) {
       toast.error(e.message ?? "تعذّر الحفظ");
     } finally {
-      setSavingId(null);
+      setSavingIds((s) => {
+        const next = new Set(s);
+        next.delete(row.id);
+        return next;
+      });
     }
   };
 
@@ -121,6 +132,8 @@ export default function ReviewUnnamed() {
             : r,
         ),
       );
+      setJustAnalyzedOrder((prev) => [row.id, ...prev.filter((id) => id !== row.id)]);
+      if (a.usage) setUsage(a.usage);
       toast.success("تم التحليل — راجع الحقول واحفظ");
     } catch (e: any) {
       toast.error(e.message ?? "تعذّر التحليل");
@@ -183,6 +196,45 @@ export default function ReviewUnnamed() {
     toast.success("اكتملت إعادة التحليل — راجع الحقول واحفظ كل قطعة");
   };
 
+  // يحفظ كل قطعة حصلت على اسم حقيقي من التحليل (سواء أُعيد تحليلها أو حُلّلت عند الرفع)
+  // دفعة واحدة، بدل الضغط على "حفظ" لكل قطعة يدوياً واحدة تلو الأخرى.
+  const saveAllReanalyzed = async () => {
+    if (!rows) return;
+    const targets = rows.filter((r) => {
+      const draft = draftFor(r);
+      return draft.name?.trim() && draft.name !== PLACEHOLDER_NAME;
+    });
+    if (!targets.length) {
+      toast.info("لا توجد قطع جاهزة للحفظ — أعد التحليل أولاً");
+      return;
+    }
+    setSavingAll(true);
+    const CONCURRENCY = 6;
+    let i = 0;
+    let ok = 0;
+    const worker = async () => {
+      while (i < targets.length) {
+        const row = targets[i++];
+        await save(row);
+        ok++;
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker));
+    setSavingAll(false);
+    toast.success(`تم حفظ ${ok} قطعة`);
+  };
+
+  // القطع التي اكتمل تحليلها للتو تُرفع لأعلى القائمة بترتيب الاكتمال — لأن التحليل المتوازي
+  // (عدة قطع في نفس الوقت) لا يكتمل بترتيب البدء، فبدون هذا يصعب معرفة أي قطعة جاهزة الآن.
+  const sortedRows = useMemo(() => {
+    if (!rows || !justAnalyzedOrder.length) return rows ?? [];
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const top = justAnalyzedOrder.map((id) => byId.get(id)).filter((r): r is Row => !!r);
+    const topIds = new Set(top.map((r) => r.id));
+    const rest = rows.filter((r) => !topIds.has(r.id));
+    return [...top, ...rest];
+  }, [rows, justAnalyzedOrder]);
+
   return (
     <div className="max-w-4xl mx-auto space-y-4">
       <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
@@ -199,6 +251,17 @@ export default function ReviewUnnamed() {
           يظهر تحليل، اضغط "إعادة التحليل".
         </p>
       </div>
+
+      {usage && (
+        <div className="flex items-center gap-3 flex-wrap text-[11px] text-muted-foreground px-1">
+          <span className="font-semibold">المتبقي اليوم تقريباً:</span>
+          {Object.entries(usage).map(([provider, { used, limit }]) => (
+            <span key={provider} className="px-2 py-0.5 rounded-full bg-muted">
+              {provider === "gemini" ? "Gemini" : provider === "groq" ? "Groq" : "OpenRouter"}: {Math.max(0, limit - used)}/{limit}
+            </span>
+          ))}
+        </div>
+      )}
 
       {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -228,6 +291,10 @@ export default function ReviewUnnamed() {
                 <ArrowUpDown className="size-3.5 ml-1" />
                 {sortDir === "desc" ? "الأحدث أولاً" : "الأقدم أولاً"}
               </Button>
+              <Button size="sm" variant="outline" onClick={saveAllReanalyzed} disabled={savingAll}>
+                {savingAll ? <Loader2 className="size-3.5 animate-spin ml-1" /> : <CheckCheck className="size-3.5 ml-1" />}
+                حفظ الكل المُعاد تحليلها
+              </Button>
               {selected.size > 0 && (
               <div className="flex items-center gap-2">
                 <Button size="sm" variant="outline" onClick={bulkReanalyze} disabled={bulkBusy}>
@@ -242,13 +309,14 @@ export default function ReviewUnnamed() {
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {rows.map((row) => {
+            {sortedRows.map((row) => {
               const draft = draftFor(row);
               const img = row.images?.[0];
               const analyzed = !!img?.ai_labels;
-              const busy = savingId === row.id || reanalyzingIds.has(row.id);
+              const busy = savingIds.has(row.id) || reanalyzingIds.has(row.id);
+              const justAnalyzed = justAnalyzedOrder.includes(row.id);
               return (
-                <Card key={row.id} className="p-3 space-y-2">
+                <Card key={row.id} className={`p-3 space-y-2 ${justAnalyzed ? "ring-2 ring-primary/50" : ""}`}>
                   <div className="flex gap-3">
                     <div className="relative shrink-0">
                       {img ? (
@@ -269,6 +337,11 @@ export default function ReviewUnnamed() {
                       />
                     </div>
                     <div className="flex-1 min-w-0 space-y-1.5">
+                      {justAnalyzed && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold">
+                          <Sparkles className="size-2.5" /> حُلّلت للتو
+                        </span>
+                      )}
                       <Input
                         value={draft.name}
                         onChange={(e) => updateDraft(row.id, { name: e.target.value })}
@@ -306,7 +379,7 @@ export default function ReviewUnnamed() {
 
                   <div className="flex items-center gap-2">
                     <Button size="sm" className="flex-1" onClick={() => save(row)} disabled={busy}>
-                      {savingId === row.id ? <Loader2 className="size-3.5 animate-spin ml-1" /> : <Save className="size-3.5 ml-1" />}
+                      {savingIds.has(row.id) ? <Loader2 className="size-3.5 animate-spin ml-1" /> : <Save className="size-3.5 ml-1" />}
                       حفظ
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => reanalyze(row)} disabled={busy}>
