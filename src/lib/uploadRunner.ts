@@ -1,7 +1,7 @@
 // المنطق الفعلي لرفع/حفظ القطع — يعمل بشكل مستقل عن أي مكوّن React، فلا يتوقف عند
 // التنقّل بين صفحات التطبيق (فقط إغلاق التبويب نفسه يوقفه). كل صورة تُحلّل بالذكاء
 // الاصطناعي هنا مباشرة (مرئي في طابور الرفع: رفع → تحليل → حفظ) ثم تُحفظ فوراً بمجرد
-// اكتمال تحليلها — لا تنتظر بقية الصور، فيمكنك البدء بالعمل على ما اكتمل أولاً بأول.
+// اكتمال تحليلها — لا تنتظر بقية الصورة، فيمكنك البدء بالعمل على ما اكتمل أولاً بأول.
 // (مشغّل قاعدة البيانات على product_images يُكمّل التحليل تلقائياً فقط للحالات النادرة
 // التي يُغلق فيها التبويب قبل اكتمال التحليل — وهو احتياط إضافي وليس المسار الأساسي.)
 import { supabase } from "@/integrations/supabase/client";
@@ -196,11 +196,19 @@ async function saveTrayPieces(
   return pieces.length;
 }
 
-async function pool<T>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<void>) {
+// staggerMs يباعد بين بدء كل عنصر جديد داخل نفس "الحارة" — يمنع اصطدام حصة الدقيقة
+// المحدودة عند بعض المزوّدين (Gemini مثلاً 15 طلب/دقيقة فقط) عند رفع دفعات كبيرة.
+async function pool<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<void>,
+  staggerMs = 0,
+) {
   let i = 0;
   const run = async () => {
     while (i < items.length) {
       const k = i++;
+      if (staggerMs && k > 0) await new Promise((r) => setTimeout(r, staggerMs));
       await worker(items[k], k);
     }
   };
@@ -279,9 +287,10 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
   let failed = 0;
 
   // تحليل صوره واحدة تلو الأخرى مرئياً (نتيجة كل صورة تظهر فور اكتمالها) بدل الانتظار للجميع معاً.
-  // 8 بالتوازي: نعتمد على 3 مزوّدين (Gemini/Groq/OpenRouter) مع سباق متدرّج بينهم، فحصة كل
-  // مزوّد بالدقيقة تكفي هذا العدد دون اصطدام مستمر بحدود المعدّل (rate limit).
-  await pool(entries, 8, async (entry, k) => {
+  // 3 بالتوازي مع تباعد 400ms بين كل عنصر جديد — Gemini يقبل 15 طلب/دقيقة فقط وOpenRouter
+  // حصته اليومية صغيرة (50)، فرفع التوازي أعلى من هذا كان يُستنفد الحصص الثلاث معاً بسرعة
+  // ويُفشل دفعات كبيرة برسالة "كل المزوّدات مشغولة" بدل تحليلها ببطء أكبر لكن بنجاح.
+  await pool(entries, 3, async (entry, k) => {
     try {
       const path = await uploadFile(entry.file, opts.userId, k);
 
@@ -301,7 +310,7 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
       failed++;
       uploadQueue.update(entry.id, { status: "error", message: e?.message ?? "فشل الرفع" });
     }
-  });
+  }, 400);
 
   toast.success(`اكتمل رفع ${ok} صورة` + (failed ? ` (${failed} فشل)` : ""), { duration: 6000 });
 }

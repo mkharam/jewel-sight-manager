@@ -181,14 +181,16 @@ export default function ReviewUnnamed() {
     if (!selected.size || !rows) return;
     setBulkBusy(true);
     const targets = rows.filter((r) => selected.has(r.id));
-    // بالتوازي بدل الواحدة تلو الأخرى — كل قطعة تحلّلها مزوّد رؤية منفصل عبر سباق متدرّج،
-    // فتشغيل عدة قطع معاً يقلّل زمن الانتظار الكلي بشكل كبير دون التصادم مع حدود المعدّل.
-    const CONCURRENCY = 6;
+    // بالتوازي لكن محدود ومتباعد قليلاً — Gemini يقبل 15 طلب/دقيقة فقط وحصة OpenRouter
+    // اليومية صغيرة (50)؛ توازٍ أعلى كان يستنفد الحصص الثلاث معاً بسرعة فيفشل جزء كبير
+    // من الدفعة برسالة "كل المزوّدات مشغولة" بدل تحليل أبطأ لكن ناجح للجميع.
+    const CONCURRENCY = 3;
     let i = 0;
     const worker = async () => {
       while (i < targets.length) {
-        const row = targets[i++];
-        await reanalyze(row);
+        const k = i++;
+        if (k > 0) await new Promise((r) => setTimeout(r, 400));
+        await reanalyze(targets[k]);
       }
     };
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker));
