@@ -293,40 +293,57 @@ export async function analyzeJewelryImageGemini(params: {
     : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
   const systemPrompt = params.promptOverride ?? buildSystemPrompt(catList);
 
-  const res = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-goog-api-key": key },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{
-          role: "user",
-          parts: [
-            { text: "حلّل هذه القطعة وأعد JSON فقط." },
-            { inlineData: { mimeType, data: imageBase64 } },
-          ],
-        }],
-        generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
-      }),
-    },
-  );
+  // Gemini هو المزوّد الأدق (أول من نجرّب) — نضيف محاولتين إضافيتين عند 429/5xx العابرة
+  // بدل الانتقال فوراً لمزوّد أضعف؛ يرفع نسبة نجاح أفضل مزوّد بدل التنازل عن الدقة بسرعة.
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-goog-api-key": key },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [{
+              role: "user",
+              parts: [
+                { text: "حلّل هذه القطعة وأعد JSON فقط." },
+                { inlineData: { mimeType, data: imageBase64 } },
+              ],
+            }],
+            generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
+          }),
+        },
+      );
 
-  if (!res.ok) {
-    const text = await res.text();
-    console.error("Gemini error", res.status, text);
-    throw Object.assign(new Error(text || `Gemini ${res.status}`), { status: res.status });
-  }
+      if (!res.ok) {
+        const text = await res.text();
+        const retryable = res.status === 429 || res.status >= 500;
+        if (retryable && attempt < 2) {
+          lastErr = Object.assign(new Error(text || `Gemini ${res.status}`), { status: res.status });
+          await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+          continue;
+        }
+        console.error("Gemini error", res.status, text);
+        throw Object.assign(new Error(text || `Gemini ${res.status}`), { status: res.status });
+      }
 
-  const data = await res.json();
-  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
-  try {
-    return JSON.parse(rawText) as JewelryAnalysis;
-  } catch {
-    const m = rawText.match(/\{[\s\S]*\}/);
-    if (m) return JSON.parse(m[0]);
-    throw new Error("Gemini returned invalid JSON");
+      const data = await res.json();
+      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+      try {
+        return JSON.parse(rawText) as JewelryAnalysis;
+      } catch {
+        const m = rawText.match(/\{[\s\S]*\}/);
+        if (m) return JSON.parse(m[0]);
+        throw new Error("Gemini returned invalid JSON");
+      }
+    } catch (e) {
+      if (attempt === 2) throw e;
+      lastErr = e;
+    }
   }
+  throw lastErr ?? new Error("Gemini unavailable");
 }
 
 /**
@@ -338,6 +355,40 @@ const cooldown = new Map<string, number>();
 const COOLDOWN_HARD_MS = 10 * 60 * 1000;
 const COOLDOWN_SOFT_MS = 20 * 1000;
 const HARD_FAIL = new Set([400, 401, 402, 403, 404]);
+
+/**
+ * سباق مُتدرّج (hedged race): يبدأ بأدق مزوّد فوراً، وإن لم يُجب خلال hedgeDelayMs
+ * يُشغّل التالي بالتوازي معه دون إلغاء الأول — الفائز هو أول من ينجح. هذا يحدّ من أسوأ
+ * زمن انتظار (عندما يكون أدق مزوّد بطيئاً أو محدود الحصة مؤقتاً) دون التضحية بالدقة في
+ * الحالة الشائعة (عندما يستجيب أدق مزوّد بسرعة، لا يُستدعى غيره إطلاقاً — لا هدر حصة).
+ */
+async function hedgedRace<T>(
+  providers: Array<{ name: string; fn: () => Promise<T> }>,
+  onFail: (name: string, err: unknown) => void,
+  hedgeDelayMs = 900,
+): Promise<{ result: T; provider: string }> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let remaining = providers.length;
+    let lastErr: unknown = null;
+
+    providers.forEach((p, i) => {
+      setTimeout(() => {
+        if (settled) return;
+        p.fn().then((result) => {
+          if (settled) return;
+          settled = true;
+          resolve({ result, provider: p.name });
+        }).catch((e) => {
+          lastErr = e;
+          onFail(p.name, e);
+          remaining--;
+          if (remaining === 0 && !settled) reject(lastErr);
+        });
+      }, i * hedgeDelayMs);
+    });
+  });
+}
 
 export async function analyzeWithFallback(params: {
   imageBase64: string;
@@ -376,25 +427,23 @@ export async function analyzeWithFallback(params: {
   const cooled = all.filter((p) => (cooldown.get(p.name) ?? 0) >= now);
   const providers = [...fresh, ...cooled];
 
+  const markFail = (name: string, e: unknown) => {
+    const status = (e as any)?.status ?? 500;
+    cooldown.set(name, Date.now() + (HARD_FAIL.has(status) ? COOLDOWN_HARD_MS : COOLDOWN_SOFT_MS));
+    console.warn(`Provider ${name} failed [${status}]`);
+  };
+
   let lastErr: unknown = null;
-  // محاولتان كاملتان على كل المزودات مع تراجع بينهما — الحد المجاني المشترك
-  // يرفض الطلبات لحظياً ثم يعود، فلا نُظهر خطأً للمستخدم من أول رفض.
+  // محاولتان: سباق متدرّج أولاً (سريع، يفضّل الأدق)، ثم محاولة أخيرة بعد تراجع قصير
+  // فقط إن فشل الجميع — الحد المجاني المشترك يرفض الطلبات لحظياً ثم يعود بسرعة.
   for (let pass = 0; pass < 2; pass++) {
     if (pass > 0) await new Promise((r) => setTimeout(r, 1200));
-    for (const p of providers) {
-      try {
-        const analysis = await p.fn();
-        cooldown.delete(p.name);
-        return { analysis, provider: p.name };
-      } catch (e) {
-        lastErr = e;
-        const status = (e as any)?.status ?? 500;
-        cooldown.set(
-          p.name,
-          Date.now() + (HARD_FAIL.has(status) ? COOLDOWN_HARD_MS : COOLDOWN_SOFT_MS),
-        );
-        console.warn(`Provider ${p.name} failed [${status}] (pass ${pass + 1}), trying next`);
-      }
+    try {
+      const { result, provider } = await hedgedRace(providers, markFail);
+      cooldown.delete(provider);
+      return { analysis: result, provider };
+    } catch (e) {
+      lastErr = e;
     }
   }
 
@@ -551,19 +600,26 @@ export async function analyzeTrayWithFallback(params: {
     throw Object.assign(new Error("لا يوجد مفتاح ذكاء اصطناعي مجاني مُعد في المشروع."), { status: 500 });
   }
 
+  const validated = providers.map((p) => ({
+    name: p.name,
+    fn: async () => {
+      const out = await p.fn();
+      const arr = Array.isArray(out?.pieces) ? out.pieces : Array.isArray(out) ? out : null;
+      if (!arr || !arr.length) throw Object.assign(new Error("لم يتعرّف النظام على أي قطعة في الصورة"), { status: 422 });
+      return arr as JewelryAnalysis[];
+    },
+  }));
+
+  const markFail = (name: string, e: unknown) => console.warn(`Tray provider ${name} failed [${(e as any)?.status ?? 500}]`);
+
   let lastErr: unknown = null;
   for (let pass = 0; pass < 2; pass++) {
     if (pass > 0) await new Promise((r) => setTimeout(r, 1200));
-    for (const p of providers) {
-      try {
-        const out = await p.fn();
-        const arr = Array.isArray(out?.pieces) ? out.pieces : Array.isArray(out) ? out : null;
-        if (!arr || !arr.length) throw Object.assign(new Error("لم يتعرّف النظام على أي قطعة في الصورة"), { status: 422 });
-        return { pieces: arr as JewelryAnalysis[], provider: p.name };
-      } catch (e) {
-        lastErr = e;
-        console.warn(`Tray provider ${p.name} failed [${(e as any)?.status ?? 500}]`);
-      }
+    try {
+      const { result, provider } = await hedgedRace(validated, markFail);
+      return { pieces: result, provider };
+    } catch (e) {
+      lastErr = e;
     }
   }
   throw lastErr ?? Object.assign(new Error("كل المزوّدات مشغولة الآن — أعد المحاولة."), { status: 429 });
