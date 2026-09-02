@@ -11,6 +11,7 @@ import ProductDetail from "@/pages/ProductDetail";
 import ProductForm from "@/pages/ProductForm";
 import Inquiries from "@/pages/Inquiries";
 import Upload from "@/pages/Upload";
+import ReviewUnnamed from "@/pages/ReviewUnnamed";
 import Staff from "@/pages/Staff";
 import Reports from "@/pages/Reports";
 import Transfers from "@/pages/Transfers";
@@ -37,6 +38,7 @@ const App = () => (
             <Route path="/products/:id/edit" element={<ProductForm />} />
             <Route path="/inquiries" element={<Inquiries />} />
             <Route path="/upload" element={<Upload />} />
+            <Route path="/upload/review" element={<ReviewUnnamed />} />
             <Route path="/import" element={<Navigate to="/upload" replace />} />
             <Route path="/tray" element={<Navigate to="/upload" replace />} />
             <Route path="/staff" element={<Staff />} />

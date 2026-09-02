@@ -5,6 +5,7 @@
 // - الرفع والحفظ يعملان في src/lib/uploadRunner.ts بمعزل عن هذا المكوّن، فالتنقّل لصفحة
 //   أخرى داخل التطبيق لا يوقفهما — فقط إغلاق التبويب نفسه يوقفهما.
 import { useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -12,12 +13,13 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Camera, FolderUp, Loader2, Sparkles, X, CheckCircle2, AlertCircle, Layers } from "lucide-react";
+import { Camera, FolderUp, Loader2, Sparkles, X, CheckCircle2, AlertCircle, Layers, ImageOff } from "lucide-react";
 import { toast } from "sonner";
 import { runUploadBatch } from "@/lib/uploadRunner";
 import { useUploadQueue, uploadQueue } from "@/lib/uploadQueue";
 
 const NO_BRANCH = "__none__";
+const PLACEHOLDER_NAME = "قطعة جديدة";
 
 export default function Upload() {
   const { user, profile } = useAuth();
@@ -32,6 +34,18 @@ export default function Upload() {
     queryFn: async () => (await supabase.from("branches").select("id,name").eq("is_active", true)).data ?? [],
   });
 
+  const { data: unnamedCount } = useQuery({
+    queryKey: ["unnamed-products-count"],
+    queryFn: async () => {
+      const { count } = await supabase
+        .from("products")
+        .select("id", { count: "exact", head: true })
+        .eq("name", PLACEHOLDER_NAME);
+      return count ?? 0;
+    },
+    refetchInterval: 15_000,
+  });
+
   const handleFiles = (files: FileList | null) => {
     if (!files || !files.length) return;
     if (!user) return toast.error("سجّل الدخول أولاً");
@@ -44,16 +58,29 @@ export default function Upload() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Sparkles className="size-6 text-primary" />
-          رفع قطع جديدة
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          صوّر أو ارفع صوراً (أو PDF) — كل صورة تُرفع وتُحلّل وتُحفظ على حدة فور اكتمالها، فيمكنك البدء بالعمل على ما
-          اكتمل بينما البقية لا تزال قيد التحليل. يمكنك مغادرة هذه الصفحة والاستمرار في العمل، الرفع يستمر. الفرع
-          اختياري.
-        </p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Sparkles className="size-6 text-primary" />
+            رفع قطع جديدة
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            صوّر أو ارفع صوراً (أو PDF) — كل صورة تُرفع وتُحلّل وتُحفظ على حدة فور اكتمالها، فيمكنك البدء بالعمل على ما
+            اكتمل بينما البقية لا تزال قيد التحليل. يمكنك مغادرة هذه الصفحة والاستمرار في العمل، الرفع يستمر. الفرع
+            اختياري.
+          </p>
+        </div>
+        <Link to="/upload/review">
+          <Button variant="outline" className="shrink-0 relative">
+            <ImageOff className="size-4 ml-1" />
+            مراجعة غير المسمّاة
+            {!!unnamedCount && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
+                {unnamedCount > 99 ? "99+" : unnamedCount}
+              </span>
+            )}
+          </Button>
+        </Link>
       </div>
 
       <Card className="p-4 space-y-4">
