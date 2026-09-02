@@ -1,11 +1,26 @@
 import { useEffect, useState } from "react";
-import { Bell, ArrowLeftRight, Tag, MessageCircle, Package } from "lucide-react";
+import { Bell, ArrowLeftRight, Tag, MessageCircle, Package, BellRing, BellOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { formatDate } from "@/lib/constants";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { pushSupported, enablePush, disablePush } from "@/lib/push";
+import { toast } from "sonner";
+
+async function currentPushStatus(): Promise<"unsupported" | "denied" | "subscribed" | "unsubscribed"> {
+  if (!pushSupported()) return "unsupported";
+  if (typeof Notification !== "undefined" && Notification.permission === "denied") return "denied";
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    return sub ? "subscribed" : "unsubscribed";
+  } catch {
+    return "unsubscribed";
+  }
+}
 
 interface ActivityItem {
   id: string;
@@ -67,9 +82,39 @@ function describe(a: ActivityItem): { text: string; icon: any; href: string } | 
 const LS_KEY = "lamaa.notifs.lastSeen";
 
 export default function NotificationsBell() {
+  const { user } = useAuth();
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [open, setOpen] = useState(false);
   const [lastSeen, setLastSeen] = useState<string>(() => localStorage.getItem(LS_KEY) ?? "1970-01-01");
+  const [pushStatus, setPushStatus] = useState<"unsupported" | "denied" | "subscribed" | "unsubscribed">("unsubscribed");
+  const [pushBusy, setPushBusy] = useState(false);
+
+  useEffect(() => {
+    currentPushStatus().then(setPushStatus);
+  }, []);
+
+  const togglePush = async () => {
+    if (!user) return;
+    setPushBusy(true);
+    try {
+      if (pushStatus === "subscribed") {
+        await disablePush();
+        setPushStatus("unsubscribed");
+        toast.success("تم إيقاف إشعارات الجهاز");
+      } else {
+        const ok = await enablePush();
+        if (ok) {
+          setPushStatus("subscribed");
+          toast.success("تم تفعيل إشعارات الجهاز — ستصلك حتى لو كان التطبيق مغلقاً");
+        } else {
+          setPushStatus(await currentPushStatus());
+          toast.error("تعذّر التفعيل — تأكد من السماح بالإشعارات من إعدادات المتصفح/الجهاز");
+        }
+      }
+    } finally {
+      setPushBusy(false);
+    }
+  };
 
   const load = async () => {
     const { data } = await supabase
@@ -120,9 +165,23 @@ export default function NotificationsBell() {
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[92vw] max-w-sm p-0 max-h-[70vh] overflow-y-auto">
-        <div className="px-3 py-2 border-b border-border bg-muted/40 sticky top-0">
-          <p className="text-sm font-bold">آخر النشاطات</p>
-          <p className="text-[11px] text-muted-foreground">مباشر — يتحدث تلقائياً</p>
+        <div className="px-3 py-2 border-b border-border bg-muted/40 sticky top-0 flex items-center justify-between gap-2">
+          <div>
+            <p className="text-sm font-bold">آخر النشاطات</p>
+            <p className="text-[11px] text-muted-foreground">مباشر — يتحدث تلقائياً</p>
+          </div>
+          {pushStatus !== "unsupported" && pushStatus !== "denied" && (
+            <Button
+              size="sm"
+              variant={pushStatus === "subscribed" ? "secondary" : "outline"}
+              className="h-8 text-xs shrink-0"
+              onClick={togglePush}
+              disabled={pushBusy}
+            >
+              {pushStatus === "subscribed" ? <BellRing className="size-3.5 ml-1" /> : <BellOff className="size-3.5 ml-1" />}
+              {pushStatus === "subscribed" ? "إشعارات الجهاز مفعّلة" : "تفعيل إشعارات الجهاز"}
+            </Button>
+          )}
         </div>
         {items.length === 0 ? (
           <div className="p-6 text-center text-sm text-muted-foreground">لا توجد نشاطات بعد</div>

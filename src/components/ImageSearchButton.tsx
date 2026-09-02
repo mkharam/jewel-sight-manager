@@ -10,6 +10,7 @@ interface Analysis {
   name_ar?: string;
   category_name?: string | null;
   category_id?: string | null;
+  item_type?: string | null;
   karat?: string | null;
   style?: string[];
   gemstones?: string[];
@@ -200,6 +201,11 @@ export default function ImageSearchButton({ categories, onResults }: Props) {
                   {analysis.category_name && (
                     <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-semibold">
                       {analysis.category_name}
+                    </span>
+                  )}
+                  {analysis.item_type && (
+                    <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-semibold">
+                      {analysis.item_type}
                     </span>
                   )}
                   {analysis.karat && (
