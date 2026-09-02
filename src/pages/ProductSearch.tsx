@@ -33,6 +33,7 @@ const initialFilters: Filters = {
 };
 
 const SAVED_FILTERS_KEY = "lamaa.lastSearch.v1";
+const UNASSIGNED_BRANCH = "__unassigned__";
 
 function loadSavedFilters(): Filters {
   try {
@@ -65,6 +66,7 @@ export default function ProductSearch() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState<ProductStatus | "">("");
+  const [bulkBranch, setBulkBranch] = useState<string>("");
   const [bulkBusy, setBulkBusy] = useState(false);
   const isAdmin = roles.includes("admin");
 
@@ -93,6 +95,25 @@ export default function ProductSearch() {
       refreshProducts();
     } catch (e: any) {
       toast.error(e.message ?? "تعذّر التحديث الجماعي");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const applyBulkBranch = async () => {
+    if (!bulkBranch || selectedIds.size === 0) return;
+    setBulkBusy(true);
+    try {
+      const ids = Array.from(selectedIds);
+      const { error } = await supabase.from("products").update({ branch_id: bulkBranch }).in("id", ids);
+      if (error) throw error;
+      const branchName = branches?.find((b) => b.id === bulkBranch)?.name ?? "";
+      toast.success(`تم تعيين ${ids.length} قطعة إلى فرع: ${branchName}`);
+      exitSelection();
+      setBulkBranch("");
+      refreshProducts();
+    } catch (e: any) {
+      toast.error(e.message ?? "تعذّر تعيين الفرع");
     } finally {
       setBulkBusy(false);
     }
@@ -230,7 +251,8 @@ export default function ProductSearch() {
       const applyFilters = (q: any) => {
         if (debounced.tag) q = q.contains("search_tags", [debounced.tag]);
         if (debounced.karat !== "all") q = q.eq("karat", debounced.karat);
-        if (debounced.branchId !== "all") q = q.eq("branch_id", debounced.branchId);
+        if (debounced.branchId === UNASSIGNED_BRANCH) q = q.is("branch_id", null);
+        else if (debounced.branchId !== "all") q = q.eq("branch_id", debounced.branchId);
         if (debounced.categoryId !== "all") q = q.eq("category_id", debounced.categoryId);
         if (debounced.status !== "all") q = q.eq("status", debounced.status as ProductStatus);
         if (debounced.minWeight) q = q.gte("weight_grams", parseFloat(debounced.minWeight));
@@ -447,6 +469,7 @@ export default function ProductSearch() {
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">كل الفروع</SelectItem>
+                      <SelectItem value={UNASSIGNED_BRANCH}>بدون فرع (بانتظار التعيين)</SelectItem>
                       {branches?.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
@@ -575,7 +598,7 @@ export default function ProductSearch() {
             <CheckSquare className="size-4 ml-1" />
             {selectionMode ? "إلغاء التحديد" : "تحديد متعدد"}
           </Button>
-          <Link to="/products/new">
+          <Link to="/upload">
             <Button size="sm" className="bg-gold-gradient text-primary-foreground shadow-gold">
               <Plus className="size-4 ml-1" /> إضافة قطعة
             </Button>
@@ -601,6 +624,17 @@ export default function ProductSearch() {
           </Select>
           <Button size="sm" onClick={applyBulkStatus} disabled={!bulkStatus || bulkBusy}>
             {bulkBusy ? <Loader2 className="size-4 animate-spin" /> : "تطبيق"}
+          </Button>
+          <Select value={bulkBranch} onValueChange={setBulkBranch}>
+            <SelectTrigger className="h-9 w-40">
+              <SelectValue placeholder="تعيين الفرع…" />
+            </SelectTrigger>
+            <SelectContent>
+              {branches?.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button size="sm" onClick={applyBulkBranch} disabled={!bulkBranch || bulkBusy}>
+            {bulkBusy ? <Loader2 className="size-4 animate-spin" /> : "تعيين"}
           </Button>
           {isAdmin && (
             <Button size="sm" variant="destructive" onClick={bulkDelete} disabled={bulkBusy}>
