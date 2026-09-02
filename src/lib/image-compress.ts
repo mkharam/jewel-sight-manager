@@ -78,6 +78,25 @@ export async function compressImage(file: File, opts: CompressOptions = {}): Pro
   }
 }
 
+/**
+ * نسخة أصغر مخصّصة لاستدعاء الذكاء الاصطناعي فقط (منفصلة عن الصورة المرفوعة/المخزّنة
+ * بدقتها الكاملة) — نماذج الرؤية لا تستفيد من دقة أعلى من ~1024px للتصنيف والوصف، وتصغير
+ * حمولة base64 يقلّل زمن الرفع والاستدلال بشكل ملموس خصوصاً على شبكات المحلات البطيئة.
+ */
+export async function prepareForAIBase64(
+  file: File,
+  opts: CompressOptions = {},
+): Promise<{ base64: string; mimeType: string }> {
+  const small = await compressImage(file, { maxDimension: 1024, quality: 0.75, ...opts });
+  const base64: string = await new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result || "").split(",")[1] ?? "");
+    r.onerror = reject;
+    r.readAsDataURL(small);
+  });
+  return { base64, mimeType: small.type || file.type || "image/jpeg" };
+}
+
 /** يضغط عدة صور بالتوازي المحدود حتى لا يتجمّد الهاتف. */
 export async function compressMany(
   files: File[],

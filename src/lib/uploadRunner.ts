@@ -7,7 +7,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { KARAT_OPTIONS } from "@/lib/constants";
-import { compressMany } from "@/lib/image-compress";
+import { compressMany, prepareForAIBase64 } from "@/lib/image-compress";
 import { isPdf, pdfToImageFiles } from "@/lib/pdf-to-images";
 import { uploadQueue } from "@/lib/uploadQueue";
 
@@ -32,15 +32,6 @@ function describeWithExtras(a: any): string | null {
   const extras = [a?.stone_count, a?.condition].filter(Boolean).join(" — ");
   const out = extras ? `${base}\n(${extras})` : base;
   return out || null;
-}
-
-async function fileToBase64(f: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result || "").split(",")[1] ?? "");
-    r.onerror = reject;
-    r.readAsDataURL(f);
-  });
 }
 
 async function uploadFile(file: File, userId: string, k: number): Promise<string> {
@@ -80,11 +71,13 @@ async function analyzeAndSaveProduct(
   let analysis: any = null;
   let provider: string | undefined;
 
+  // نُحضّر نسخة مصغّرة مرة واحدة فقط — تُستخدم لكل محاولات إعادة الإرسال دون إعادة الترميز.
+  const { base64, mimeType } = await prepareForAIBase64(file);
+
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const base64 = await fileToBase64(file);
       const { data, error } = await supabase.functions.invoke("analyze-product-image", {
-        body: { imageBase64: base64, mimeType: file.type, categories },
+        body: { imageBase64: base64, mimeType, categories },
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
@@ -149,10 +142,11 @@ async function saveTrayPieces(
   opts: UploadOptions,
   categories: { id: string; name: string }[],
 ) {
-  const base64 = await fileToBase64(file);
+  // وضع الصينية يحتاج دقة أعلى قليلاً من الوضع العادي لفصل عدة قطع صغيرة في إطار واحد.
+  const { base64, mimeType } = await prepareForAIBase64(file, { maxDimension: 1280 });
 
   const { data, error } = await supabase.functions.invoke("analyze-tray", {
-    body: { imageBase64: base64, mimeType: file.type, categories },
+    body: { imageBase64: base64, mimeType, categories },
   });
   if (error) throw error;
   if ((data as any)?.error) throw new Error((data as any).error);
