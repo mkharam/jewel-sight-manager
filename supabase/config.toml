@@ -4,6 +4,12 @@ project_id = "jzgzdypwcohwxpbzhhtw"
 verify_jwt = false
 
 [functions.analyze-product-image]
+verify_jwt = true
+
+[functions.analyze-tray]
+verify_jwt = true
+
+[functions.process-analysis-queue]
 verify_jwt = false
 
 [functions.send-push]
