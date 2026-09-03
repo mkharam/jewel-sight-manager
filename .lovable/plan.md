@@ -1,55 +1,52 @@
-# Plan: External Website Access to Project Backend
+# Plan: Add a Staff AI Assistant Powered by Lovable AI Gateway
 
 ## Goal
-Let another website or mobile app read/write data from this project’s backend (Lovable Cloud / Supabase) safely, without giving away full database access.
-
-## Recommended approach: Edge Functions as a controlled API
-
-Instead of exposing the public Supabase anon key to an external site and widening RLS, create dedicated Edge Functions that act as a secure gateway. This keeps the existing staff permissions intact and lets you decide exactly what the external site can do.
-
-## Why this approach
-
-- The current app uses branch-scoped RLS and staff-only auth; opening that to an external domain is risky.
-- Edge Functions run with a service-role client, so they can bypass RLS while enforcing their own rules.
-- You can add API-key or webhook-secret validation per external client.
-- CORS is handled inside the function, so any domain you whitelist can call it.
+Give staff a built-in AI assistant they can use from inside the app (ask about inventory, products, sales trends, or get help with transfers). The assistant runs through Supabase Edge Functions using Lovable AI Gateway, with Claude as the preferred model if the gateway supports it.
 
 ## What will be built
 
-1. **Public catalog endpoint** — `GET /public-products`
-   - Returns available products for a selected branch or all branches.
-   - Filters: category, karat, price range, search text.
-   - Returns safe fields only: name, sku, karat, weight, sale_price, promo_price, primary image URL, branch name.
+1. **Supabase Edge Function: `ai-assistant`**
+   - `POST /ai-assistant`
+   - Accepts a message thread and an optional model choice.
+   - Calls Lovable AI Gateway using the AI SDK (`@ai-sdk/openai-compatible`).
+   - Uses `anthropic/claude-3.5-sonnet` or the closest Claude identifier the gateway supports; falls back to `openai/gpt-5.6-sol` if Claude is unavailable.
+   - Returns the assistant reply as JSON.
 
-2. **Inquiry submission endpoint** — `POST /public-inquiry`
-   - Lets a customer on the external site submit an inquiry.
-   - Creates a row in `customer_inquiries` tied to a branch.
-   - Triggers the existing push notification to that branch’s staff.
+2. **Secure context injection**
+   - The function can optionally read the current user’s branch and role from the JWT.
+   - It does NOT expose full database rows to the model; only small, safe context snippets are attached when the user asks about inventory.
 
-3. **API-key protection**
-   - Store an `external_api_key` secret.
-   - Each public endpoint requires the key in the `x-api-key` header.
+3. **New page: `/assistant`**
+   - Simple chat UI in the existing Arabic RTL style.
+   - Message history kept in local component state (no persistent chat logs in the database).
+   - Shows the active model and a fallback notice if Claude is not available.
 
-4. **CORS setup**
-   - Allow the external website’s origin(s) in function responses.
+4. **Navigation link**
+   - Add "مساعد AI" to the staff navigation menu.
 
-5. **External-site integration guide**
-   - Provide a small JavaScript snippet showing how to call the endpoints.
+## Why this approach
+
+- Keeps the AI key (`LOVABLE_API_KEY`) server-side inside the Edge Function.
+- Reuses the existing Supabase auth and branch security.
+- Does not change existing product/transfers/inquiry logic.
+- Lets staff experiment with AI help without giving the model direct write access.
 
 ## Technical steps
 
-1. Add a migration that creates no new tables but ensures `customer_inquiries` can be inserted by the service role (already true) and that `products` SELECT is reachable for the function.
-2. Create `supabase/functions/public-catalog/index.ts`.
-3. Create `supabase/functions/public-inquiry/index.ts`.
-4. Store `EXTERNAL_API_KEY` as an Edge Function secret.
-5. Deploy the new Edge Functions.
-6. Add a short usage snippet to the project README.
-
-## Alternative: Direct Supabase client
-
-If the external site is also built by you and you want real-time subscriptions, we can instead give it the Supabase URL + anon key and add an `anon` SELECT policy on `products` plus an `anon` INSERT policy on `customer_inquiries`. This is faster to set up but less flexible and harder to audit.
+1. Verify `LOVABLE_API_KEY` exists; create it if missing.
+2. Create `supabase/functions/ai-assistant/index.ts` with CORS, JWT validation, and AI SDK call.
+3. Create the `createLovableAiGatewayProvider` helper in `supabase/functions/_shared/ai-gateway.ts`.
+4. Create `src/pages/Assistant.tsx` chat UI.
+5. Add `/assistant` route in `src/App.tsx`.
+6. Add the navigation item in `src/components/AppLayout.tsx`.
+7. Deploy the new Edge Function.
 
 ## Out of scope
 
-- OAuth server / user-delegated access (only needed if the external site must act as a logged-in staff user).
-- Modifying the existing staff app UI or RLS beyond what the new endpoints require.
+- Persistent chat history across sessions.
+- Direct database writes from the AI (read-only assistant only).
+- Replacing the existing image-analysis pipeline, which already uses Lovable AI.
+
+## Note on Claude availability
+
+Claude is available through Lovable AI Gateway only if the gateway routes to Anthropic or OpenRouter. The implementation will request a Claude model and gracefully fall back to the default GPT model if the gateway rejects the model ID.
