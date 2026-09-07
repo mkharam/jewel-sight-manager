@@ -61,6 +61,7 @@ Deno.serve(async (req) => {
     const payload = JSON.stringify({ title, body: message, url });
     let sent = 0;
     const stale: string[] = [];
+    const errors: Array<{ id: string; status?: number; message?: string; body?: string }> = [];
 
     await Promise.all(
       subs.map(async (s: { id: string; endpoint: string; p256dh: string; auth: string }) => {
@@ -71,16 +72,21 @@ Deno.serve(async (req) => {
           );
           sent++;
         } catch (e) {
-          const status = (e as { statusCode?: number })?.statusCode;
-          if (status === 404 || status === 410) stale.push(s.id);
-          else console.error("push failed", status, (e as Error)?.message);
+          const err = e as { statusCode?: number; body?: string; message?: string };
+          const status = err?.statusCode;
+          console.error("push send failed", s.id, status, err?.body, err?.message);
+          errors.push({ id: s.id, status, message: err?.message, body: err?.body });
+          // 404/410: endpoint gone. 403 BadJwtToken: subscription was created with a VAPID
+          // key that no longer matches VAPID_PRIVATE_KEY (e.g. after regenerating keys) —
+          // it can never succeed again until the device re-subscribes, so drop it too.
+          if (status === 404 || status === 410 || status === 403) stale.push(s.id);
         }
       }),
     );
 
     if (stale.length) await admin.from("push_subscriptions").delete().in("id", stale);
 
-    return json({ sent, removed: stale.length });
+    return json({ sent, removed: stale.length, errors });
   } catch (e) {
     console.error(e);
     return json({ error: (e as Error)?.message ?? "unexpected error" }, 500);
