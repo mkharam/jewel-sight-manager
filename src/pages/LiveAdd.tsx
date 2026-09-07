@@ -170,42 +170,53 @@ export default function LiveAdd() {
     }
   };
 
-  // رفع صورة واحدة أو الاثنتين معاً (وجه الباركود ووجه البيانات) من المعرض دفعة واحدة —
-  // كل صورة تُفحص بالطريقتين معاً بلا حاجة لتحديد أيّ وجه هي: فك تشفير الباركود الدقيق
-  // (ZXing) إن كانت صورة الباركود، وقراءة الذكاء الاصطناعي (وزن/عيار/باركود احتياطي) إن
-  // كانت صورة البيانات أو حتى الباركود نفسه (يقرأ الرقم المطبوع كنص احتياطي).
-  const handleTagFilesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // رفع عدة صور دفعة واحدة (وجه الباركود، وجه بيانات الوسم، وصورة القطعة نفسها — أي
+  // مزيج منها بأي عدد) والتعرّف تلقائياً على كل صورة بلا حاجة لتحديد أيّها: كل صورة
+  // تُفحص أولاً كوجه باركود (ZXing)، ثم كوجه بيانات (BRANCH/KARAT/TYPE/WEIGHT عبر
+  // الذكاء الاصطناعي) — وأي صورة لا تُطابق أياً من الوجهين تُعتبر تلقائياً صورة القطعة
+  // نفسها (أول صورة غير مُتعرَّف عليها فقط، إن كانت صورة القطعة غير مُلتقطة بعد).
+  const handleUploadFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     e.target.value = "";
     if (!files.length) return;
     setTagUploadLoading(true);
     let gotBarcode = false;
     let gotInfo = false;
+    let gotPhoto = false;
     try {
       for (const file of files) {
+        let matched = false;
+
         try {
           const zxingText = await decodeBarcodeFromFile(file);
-          if (zxingText && !barcode) {
-            setBarcode(zxingText);
-            setBarcodeSkipped(false);
-            gotBarcode = true;
+          if (zxingText) {
+            matched = true;
+            if (!barcode) { setBarcode(zxingText); setBarcodeSkipped(false); gotBarcode = true; }
           }
-        } catch { /* هذه الصورة على الأرجح ليست وجه الباركود — نكمل لقراءة الوسم */ }
+        } catch { /* هذه الصورة على الأرجح ليست وجه الباركود */ }
 
+        let dataUrl: string | null = null;
         try {
-          const dataUrl = await fileToDataUrl(file);
+          dataUrl = await fileToDataUrl(file);
           const tag = await fetchTagInfo(dataUrl);
-          if (tag?.weight_grams != null) { setWeight(String(tag.weight_grams)); gotInfo = true; }
           const normalizedKarat = normalizeKarat(tag?.karat_raw ?? null);
+          if (tag?.weight_grams != null || normalizedKarat || tag?.type_raw) matched = true;
+          if (tag?.weight_grams != null) { setWeight(String(tag.weight_grams)); gotInfo = true; }
           if (normalizedKarat) { setKarat(normalizedKarat); gotInfo = true; }
           if (tag?.type_raw) setItemType(tag.type_raw);
-          if (!barcode && !gotBarcode && tag?.barcode) { setBarcode(tag.barcode); setBarcodeSkipped(false); gotBarcode = true; }
-        } catch { /* فشل قراءة هذه الصورة بالذكاء الاصطناعي — نكمل للصورة التالية */ }
+          if (!barcode && !gotBarcode && tag?.barcode) { setBarcode(tag.barcode); setBarcodeSkipped(false); gotBarcode = true; matched = true; }
+        } catch { /* فشل قراءة هذه الصورة بالذكاء الاصطناعي */ }
+
+        // لم تُطابق هذه الصورة وجه الباركود ولا وجه البيانات — على الأرجح صورة القطعة نفسها.
+        if (!matched && !gotPhoto && !capturedBlob) {
+          setCapturedBlob(file);
+          setCapturedUrl(dataUrl ?? URL.createObjectURL(file));
+          gotPhoto = true;
+        }
       }
 
-      if (gotBarcode && gotInfo) toast.success("تم قراءة الباركود وبيانات الوسم من الصور");
-      else if (gotBarcode) toast.success("تم قراءة الباركود من الصورة");
-      else if (gotInfo) toast.success("تم قراءة بيانات الوسم من الصورة");
+      const found = [gotBarcode && "الباركود", gotInfo && "بيانات الوسم", gotPhoto && "صورة القطعة"].filter(Boolean);
+      if (found.length) toast.success("تم التعرّف على: " + found.join("، "));
       else toast.error("تعذّرت قراءة أي شيء من الصور — جرّب صوراً أوضح أو أدخل البيانات يدوياً");
     } finally {
       setTagUploadLoading(false);
@@ -368,7 +379,7 @@ export default function LiveAdd() {
       </div>
 
       {/* شريط الحقول الثلاثة — دائماً ظاهر، تُملأ بأي ترتيب */}
-      <input ref={tagFilesRef} type="file" accept="image/*" multiple className="hidden" onChange={handleTagFilesChange} />
+      <input ref={tagFilesRef} type="file" accept="image/*" multiple className="hidden" onChange={handleUploadFiles} />
 
       <div className="bg-black/70 safe-area-pb">
         {/* حالة الباركود */}
@@ -397,14 +408,15 @@ export default function LiveAdd() {
           )}
         </div>
 
-        {/* رفع صورة/صورتين للوسم (أي وجه أو الوجهين معاً) بدل المسح الحي */}
+        {/* رفع عدة صور دفعة واحدة (باركود/وسم/صورة القطعة بأي عدد وترتيب) — يتعرّف
+            النظام تلقائياً على كل صورة بلا حاجة لتحديد أيّها */}
         <div className="px-4 pt-1.5">
           <button
             onClick={() => tagFilesRef.current?.click()}
             disabled={tagUploadLoading}
             className="w-full flex items-center justify-center gap-1.5 text-xs text-white/70 underline underline-offset-2 disabled:opacity-50 py-0.5"
           >
-            <FolderUp className="size-3.5" /> أو ارفع صورة الوسم (وجه واحد أو الوجهين معاً)
+            <FolderUp className="size-3.5" /> أو ارفع الصور (باركود / وسم / صورة القطعة — بأي عدد)
           </button>
         </div>
 
