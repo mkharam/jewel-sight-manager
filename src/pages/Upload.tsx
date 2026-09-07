@@ -17,6 +17,10 @@ import { Camera, FolderUp, Loader2, Sparkles, X, CheckCircle2, AlertCircle, Laye
 import { toast } from "sonner";
 import { runUploadBatch } from "@/lib/uploadRunner";
 import { useUploadQueue, uploadQueue } from "@/lib/uploadQueue";
+import BulkCameraCapture from "@/components/BulkCameraCapture";
+
+const supportsInAppCamera = () =>
+  typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
 
 const NO_BRANCH = "__none__";
 const PLACEHOLDER_NAME = "قطعة جديدة";
@@ -28,6 +32,7 @@ export default function Upload() {
   const galleryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const queue = useUploadQueue();
+  const [bulkCameraOpen, setBulkCameraOpen] = useState(false);
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
@@ -46,7 +51,7 @@ export default function Upload() {
     refetchInterval: 15_000,
   });
 
-  const handleFiles = (files: FileList | null) => {
+  const handleFiles = (files: FileList | File[] | null) => {
     if (!files || !files.length) return;
     if (!user) return toast.error("سجّل الدخول أولاً");
     void runUploadBatch(files, {
@@ -54,6 +59,11 @@ export default function Upload() {
       branchId: branchId === NO_BRANCH ? null : branchId,
       trayMode,
     });
+  };
+
+  const openCamera = () => {
+    if (supportsInAppCamera()) setBulkCameraOpen(true);
+    else cameraRef.current?.click();
   };
 
   return (
@@ -98,13 +108,18 @@ export default function Upload() {
         <div className="grid grid-cols-2 gap-2">
           <input ref={galleryRef} type="file" accept="image/*,application/pdf,.pdf" multiple className="hidden" onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }} />
           <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }} />
-          <Button variant="outline" className="h-12" onClick={() => cameraRef.current?.click()}>
-            <Camera className="size-4 ml-2" /> تصوير الآن
+          <Button variant="outline" className="h-12" onClick={openCamera}>
+            <Camera className="size-4 ml-2" /> تصوير متتالي
           </Button>
           <Button variant="outline" className="h-12" onClick={() => galleryRef.current?.click()}>
             <FolderUp className="size-4 ml-2" /> من المعرض / PDF
           </Button>
         </div>
+        {supportsInAppCamera() && (
+          <p className="text-xs text-muted-foreground -mt-2">
+            تفتح الكاميرا وتبقى مفتوحة — صوّر كل قطعة بضغطة ثم اضغط "تم" في النهاية لرفعها كلها دفعة واحدة.
+          </p>
+        )}
 
         <div>
           <label className="text-xs text-muted-foreground">الفرع (اختياري — يمكن تحديده لاحقاً)</label>
@@ -170,6 +185,12 @@ export default function Upload() {
           لم تختر أي صور بعد. اضغط أحد الزرين أعلاه لبدء الرفع.
         </p>
       )}
+
+      <BulkCameraCapture
+        open={bulkCameraOpen}
+        onClose={() => setBulkCameraOpen(false)}
+        onDone={(files) => handleFiles(files)}
+      />
     </div>
   );
 }
