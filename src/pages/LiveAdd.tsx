@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { runUploadBatch } from "@/lib/uploadRunner";
 import { useBoxedBarcodeScanner } from "@/lib/useBoxedBarcodeScanner";
 import { decodeBarcodeFromFile } from "@/lib/decodeBarcodeFromImage";
+import { readInfoTagLocally } from "@/lib/readInfoTag";
 import ScanBoxOverlay from "@/components/ScanBoxOverlay";
 import type { CapturedFile } from "@/components/BulkCameraCapture";
 
@@ -148,6 +149,22 @@ export default function LiveAdd() {
     throw lastErr;
   };
 
+  // يشغّل القارئ المحلي المخصّص لوجه البيانات (Tesseract.js OCR — فوري، بلا شبكة) بالتوازي
+  // مع نداء الذكاء الاصطناعي بدل التسلسل — الخط النقطي (dot-matrix) على وسوم المحل صغير
+  // ومائل غالباً، فالـOCR المحلي البسيط لا ينجح دائماً؛ التوازي يعني أن فشله لا يُكلّف أي
+  // وقت إضافي (المدة الكلية = الأبطأ بينهما، لا مجموعهما)، بينما نجاحه السريع يُغني فوراً
+  // عن انتظار الشبكة أصلاً.
+  const resolveInfoTag = async (
+    source: Blob,
+    dataUrl: string,
+  ): Promise<{ weight_grams: number | null; karat_raw: string | null; type_raw: string | null; barcode: string | null } | null> => {
+    const localPromise = readInfoTagLocally(source).catch(() => null);
+    const aiPromise = fetchTagInfo(dataUrl);
+    const local = await localPromise;
+    if (local) return { ...local, barcode: null };
+    return aiPromise;
+  };
+
   // قراءة وجه بيانات الوسم (BRANCH/KARAT/TYPE/WEIGHT) من الكاميرا الحية — تملأ الوزن
   // والعيار تلقائياً بدل الكتابة اليدوية.
   const captureTagFromCamera = async () => {
@@ -165,7 +182,9 @@ export default function LiveAdd() {
 
     setTagLoading(true);
     try {
-      const tag = await fetchTagInfo(canvas.toDataURL("image/jpeg", 0.85));
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+      const tag = blob ? await resolveInfoTag(blob, dataUrl) : await fetchTagInfo(dataUrl);
       const normalizedKarat = normalizeKarat(tag?.karat_raw ?? null);
       if (tag?.weight_grams != null) setWeight(String(tag.weight_grams));
       if (normalizedKarat) setKarat(normalizedKarat);
@@ -213,7 +232,7 @@ export default function LiveAdd() {
         let dataUrl: string | null = null;
         try {
           dataUrl = await fileToDataUrl(file);
-          const tag = await fetchTagInfo(dataUrl);
+          const tag = await resolveInfoTag(file, dataUrl);
           const normalizedKarat = normalizeKarat(tag?.karat_raw ?? null);
           if (tag?.weight_grams != null || normalizedKarat || tag?.type_raw) isInfoFace = true;
           if (tag?.weight_grams != null) { setWeight(String(tag.weight_grams)); gotInfo = true; }
