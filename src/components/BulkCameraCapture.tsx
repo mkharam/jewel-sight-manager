@@ -9,6 +9,7 @@
 // (runUploadBatch) عند الضغط على "تم" — يبقى تحليل الذكاء الاصطناعي فقط لتحديد
 // الاسم/الفئة/العيار والوصف.
 import { useEffect, useRef, useState } from "react";
+import { BrowserMultiFormatReader, NotFoundException } from "@zxing/library";
 import { Button } from "@/components/ui/button";
 import { Camera, X, Check, Trash2, RotateCcw, ImageOff, Scale, ScanLine } from "lucide-react";
 
@@ -22,11 +23,6 @@ interface Props {
   onDone: (files: CapturedFile[]) => void;
 }
 
-// BarcodeDetector مدعومة في Chrome/Android (وليست في Safari/iOS حتى الآن) — نتحقق
-// من وجودها في وقت التشغيل ونتجاهلها بهدوء إن لم تكن متاحة (الحقل يبقى قابلاً للتعبئة
-// يدوياً دائماً).
-const supportsBarcodeDetector = () => typeof (window as any).BarcodeDetector !== "undefined";
-
 export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -38,7 +34,7 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
   const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
   const weightInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const lastShotId = useRef<string | null>(null);
-  const detectorRef = useRef<any>(null);
+  const zxingReaderRef = useRef<BrowserMultiFormatReader | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -76,31 +72,27 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
 
   // فحص مستمر للباركود/QR طالما الكاميرا مفتوحة وجاهزة — يلتقط باركود المنتج قبل أو
   // بعد تصوير القطعة نفسها، ويبقى "بانتظار" حتى يُرفق تلقائياً بالصورة القادمة.
+  // نستخدم مكتبة ZXing (فك تشفير بالجافاسكربت من إطارات الفيديو) بدل واجهة المتصفح
+  // BarcodeDetector المدمجة: تلك الواجهة تعتمد على خدمات جوجل (Play Services) على
+  // أندرويد ولا توجد إطلاقاً في iOS Safari — كثيراً ما "تعمل" بدون خطأ لكنها لا تكتشف
+  // أي شيء أبداً. ZXing تفك التشفير بنفسها من بكسلات كل إطار فتعمل على كل الأجهزة.
   useEffect(() => {
-    if (!open || !ready || !supportsBarcodeDetector()) return;
-    if (!detectorRef.current) {
-      try {
-        detectorRef.current = new (window as any).BarcodeDetector({
-          formats: ["qr_code", "code_128", "code_39", "ean_13", "ean_8", "upc_a", "upc_e", "codabar", "itf"],
-        });
-      } catch {
-        return;
-      }
-    }
+    if (!open || !ready || !videoRef.current) return;
+    const reader = new BrowserMultiFormatReader(undefined, 300);
+    zxingReaderRef.current = reader;
     let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const tick = async () => {
-      if (stopped || !videoRef.current) return;
-      try {
-        const codes = await detectorRef.current.detect(videoRef.current);
-        if (codes?.length && codes[0].rawValue) setPendingBarcode(codes[0].rawValue);
-      } catch {
-        /* إطار غير صالح مؤقتاً — يتجاهل ويحاول مجدداً */
-      }
-      if (!stopped) timer = setTimeout(tick, 600);
+    reader
+      .decodeFromVideoElementContinuously(videoRef.current, (result, err) => {
+        if (stopped) return;
+        if (result) setPendingBarcode(result.getText());
+        else if (err && !(err instanceof NotFoundException)) console.warn("barcode decode error", err);
+      })
+      .catch((e) => console.warn("zxing start failed", e));
+    return () => {
+      stopped = true;
+      reader.reset();
+      zxingReaderRef.current = null;
     };
-    timer = setTimeout(tick, 600);
-    return () => { stopped = true; clearTimeout(timer); };
   }, [open, ready]);
 
   // تحرير روابط الصور الملتقطة عند إغلاق المكوّن نهائياً لتفادي تسرّب الذاكرة

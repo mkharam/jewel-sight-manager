@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { BrowserMultiFormatReader, NotFoundException } from "@zxing/library";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -17,8 +18,6 @@ import { runUploadBatch } from "@/lib/uploadRunner";
 import type { CapturedFile } from "@/components/BulkCameraCapture";
 
 const NO_BRANCH = "__none__";
-
-const supportsBarcodeDetector = () => typeof (window as any).BarcodeDetector !== "undefined";
 
 type Stage = "scan" | "info" | "photo" | "review";
 type SavedItem = { id: string; url: string; weight: string; barcode: string | null };
@@ -39,7 +38,7 @@ export default function LiveAdd() {
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const detectorRef = useRef<any>(null);
+  const zxingReaderRef = useRef<BrowserMultiFormatReader | null>(null);
   const weightRef = useRef<HTMLInputElement>(null);
 
   const [ready, setReady] = useState(false);
@@ -100,30 +99,28 @@ export default function LiveAdd() {
     };
   }, [facing]);
 
-  // فحص مستمر للباركود فقط في مرحلة "scan" — يتوقف تلقائياً بعد التأكيد/التخطي
+  // فحص مستمر للباركود فقط في مرحلة "scan" — يتوقف تلقائياً بعد التأكيد/التخطي.
+  // نستخدم مكتبة ZXing (فك تشفير بالجافاسكربت من إطارات الفيديو) بدل واجهة المتصفح
+  // BarcodeDetector المدمجة: تلك الواجهة تعتمد على خدمات جوجل (Play Services) على
+  // أندرويد ولا توجد إطلاقاً في iOS Safari — كثيراً ما "تعمل" بدون خطأ لكنها لا تكتشف
+  // أي شيء أبداً. ZXing تفك التشفير بنفسها من بكسلات كل إطار فتعمل على كل الأجهزة.
   useEffect(() => {
-    if (stage !== "scan" || !ready || !supportsBarcodeDetector()) return;
-    if (!detectorRef.current) {
-      try {
-        detectorRef.current = new (window as any).BarcodeDetector({
-          formats: ["qr_code", "code_128", "code_39", "ean_13", "ean_8", "upc_a", "upc_e", "codabar", "itf"],
-        });
-      } catch {
-        return;
-      }
-    }
+    if (stage !== "scan" || !ready || !videoRef.current) return;
+    const reader = new BrowserMultiFormatReader(undefined, 250);
+    zxingReaderRef.current = reader;
     let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const tick = async () => {
-      if (stopped || !videoRef.current) return;
-      try {
-        const codes = await detectorRef.current.detect(videoRef.current);
-        if (codes?.length && codes[0].rawValue) setPendingBarcode(codes[0].rawValue);
-      } catch { /* إطار غير صالح مؤقتاً */ }
-      if (!stopped) timer = setTimeout(tick, 500);
+    reader
+      .decodeFromVideoElementContinuously(videoRef.current, (result, err) => {
+        if (stopped) return;
+        if (result) setPendingBarcode(result.getText());
+        else if (err && !(err instanceof NotFoundException)) console.warn("barcode decode error", err);
+      })
+      .catch((e) => console.warn("zxing start failed", e));
+    return () => {
+      stopped = true;
+      reader.reset();
+      zxingReaderRef.current = null;
     };
-    timer = setTimeout(tick, 500);
-    return () => { stopped = true; clearTimeout(timer); };
   }, [stage, ready]);
 
   useEffect(() => {
