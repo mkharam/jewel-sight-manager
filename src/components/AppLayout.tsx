@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Search, MessageCircle, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck } from "lucide-react";
+import { Search, MessageCircle, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -11,7 +11,7 @@ import NotificationsBell from "@/components/NotificationsBell";
 import InstallPrompt from "@/components/InstallPrompt";
 import { useUploadQueuePendingCount } from "@/lib/uploadQueue";
 
-type NavItem = { to: string; label: string; icon: any; end?: boolean; badgeKey?: "transfers" | "uploads" };
+type NavItem = { to: string; label: string; icon: any; end?: boolean; badgeKey?: "transfers" | "uploads" | "reorders" };
 
 const baseNav: NavItem[] = [
   { to: "/", label: "البحث", icon: Search, end: true },
@@ -26,6 +26,7 @@ const adminExtras: NavItem[] = [
   { to: "/reports", label: "التقارير", icon: BarChart3 },
   { to: "/gold-price", label: "سعر الذهب", icon: Coins },
   { to: "/stock-take", label: "جرد ميداني", icon: ClipboardCheck },
+  { to: "/reorders", label: "طلبات إعادة الطلب", icon: PackagePlus, badgeKey: "reorders" },
 ];
 
 export default function AppLayout() {
@@ -35,6 +36,31 @@ export default function AppLayout() {
   const isManager = roles.includes("manager");
   const qc = useQueryClient();
   const branchId = profile?.branch_id ?? null;
+
+  // عدد طلبات إعادة الطلب التي بانتظار قرار المدير
+  const { data: pendingReorders = 0 } = useQuery({
+    queryKey: ["pending-reorders-count"],
+    queryFn: async () => {
+      const { count } = await supabase
+        .from("product_reorder_requests")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "pending");
+      return count ?? 0;
+    },
+    enabled: !!user && (isAdmin || isManager),
+    refetchInterval: 60_000,
+  });
+
+  useEffect(() => {
+    if (!user || (!isAdmin && !isManager)) return;
+    const ch = supabase
+      .channel("reorders-badge")
+      .on("postgres_changes", { event: "*", schema: "public", table: "product_reorder_requests" }, () => {
+        qc.invalidateQueries({ queryKey: ["pending-reorders-count"] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [user, isAdmin, isManager, qc]);
 
   // عدد التحويلات المعلّقة للموظف: واردة بانتظار استلام، أو صادرة بانتظار موافقة
   const { data: pendingTransfers = 0 } = useQuery({
@@ -70,7 +96,7 @@ export default function AppLayout() {
   }, [user, qc]);
 
   const pendingUploads = useUploadQueuePendingCount();
-  const badges: Record<string, number> = { transfers: pendingTransfers, uploads: pendingUploads };
+  const badges: Record<string, number> = { transfers: pendingTransfers, uploads: pendingUploads, reorders: pendingReorders };
 
   const [moreOpen, setMoreOpen] = useState(false);
 
@@ -80,6 +106,7 @@ export default function AppLayout() {
     ...desktopExtras,
     { to: "/gold-price", label: "سعر الذهب", icon: Coins },
     { to: "/stock-take", label: "جرد ميداني", icon: ClipboardCheck },
+    { to: "/reorders", label: "طلبات إعادة الطلب", icon: PackagePlus, badgeKey: "reorders" },
     ...(isAdmin || isManager ? [{ to: "/reports", label: "التقارير", icon: BarChart3 }] : []),
     ...(isAdmin ? [{ to: "/staff", label: "موظفون", icon: Users }] : []),
   ];
@@ -87,7 +114,7 @@ export default function AppLayout() {
   const desktopNav: NavItem[] = isAdmin
     ? [...baseNav, ...desktopExtras, ...adminExtras, { to: "/staff", label: "موظفون", icon: Users }]
     : isManager
-      ? [...baseNav, ...desktopExtras, { to: "/reports", label: "التقارير", icon: BarChart3 }]
+      ? [...baseNav, ...desktopExtras, { to: "/reports", label: "التقارير", icon: BarChart3 }, { to: "/reorders", label: "طلبات إعادة الطلب", icon: PackagePlus, badgeKey: "reorders" }]
       : [...baseNav, ...desktopExtras];
 
   const signOut = async () => {
@@ -197,20 +224,28 @@ export default function AppLayout() {
                 <SheetTitle>المزيد</SheetTitle>
               </SheetHeader>
               <div className="grid grid-cols-3 gap-3 mt-4">
-                {moreItems.map((item) => (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    onClick={() => setMoreOpen(false)}
-                    className={({ isActive }) => cn(
-                      "flex flex-col items-center justify-center gap-2 rounded-xl border border-border p-3 min-h-[86px] text-xs font-semibold",
-                      isActive ? "bg-secondary text-primary" : "text-foreground active:bg-muted/50"
-                    )}
-                  >
-                    <item.icon className="size-6" />
-                    <span className="text-center leading-tight">{item.label}</span>
-                  </NavLink>
-                ))}
+                {moreItems.map((item) => {
+                  const count = item.badgeKey ? badges[item.badgeKey] : 0;
+                  return (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      onClick={() => setMoreOpen(false)}
+                      className={({ isActive }) => cn(
+                        "relative flex flex-col items-center justify-center gap-2 rounded-xl border border-border p-3 min-h-[86px] text-xs font-semibold",
+                        isActive ? "bg-secondary text-primary" : "text-foreground active:bg-muted/50"
+                      )}
+                    >
+                      <item.icon className="size-6" />
+                      <span className="text-center leading-tight">{item.label}</span>
+                      {count > 0 && (
+                        <span className="absolute top-1.5 left-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center">
+                          {count > 9 ? "9+" : count}
+                        </span>
+                      )}
+                    </NavLink>
+                  );
+                })}
               </div>
             </SheetContent>
           </Sheet>

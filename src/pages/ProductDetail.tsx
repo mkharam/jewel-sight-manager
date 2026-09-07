@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import QuickQuoteSheet from "@/components/QuickQuoteSheet";
 import SellDialog from "@/components/SellDialog";
 import ReserveDialog from "@/components/ReserveDialog";
+import ReorderRequestDialog from "@/components/ReorderRequestDialog";
 
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
@@ -278,6 +279,8 @@ export default function ProductDetail() {
               <Sparkles className="size-4 ml-1" /> قطع مشابهة في المخزون
             </Button>
           </Link>
+
+          <ReorderRequestDialog productId={id!} productName={product.name} branchId={product.branch_id} />
         </div>
       </div>
 

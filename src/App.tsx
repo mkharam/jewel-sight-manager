@@ -16,6 +16,7 @@ import ReviewUnnamed from "@/pages/ReviewUnnamed";
 import Staff from "@/pages/Staff";
 import Reports from "@/pages/Reports";
 import Transfers from "@/pages/Transfers";
+import Reorders from "@/pages/Reorders";
 import GoldPrice from "@/pages/GoldPrice";
 import StockTake from "@/pages/StockTake";
 import NotFound from "./pages/NotFound.tsx";
@@ -46,6 +47,7 @@ const App = () => (
               <Route path="/staff" element={<Staff />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/transfers" element={<Transfers />} />
+              <Route path="/reorders" element={<Reorders />} />
               <Route path="/gold-price" element={<GoldPrice />} />
               <Route path="/stock-take" element={<StockTake />} />
             </Route>

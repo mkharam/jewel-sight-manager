@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bell, ArrowLeftRight, Tag, MessageCircle, Package, BellRing, BellOff } from "lucide-react";
+import { Bell, ArrowLeftRight, Tag, MessageCircle, Package, BellRing, BellOff, PackagePlus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -75,6 +75,14 @@ function describe(a: ActivityItem): { text: string; icon: any; href: string } | 
   }
   if (a.entity_type === "customer_inquiries") {
     return { text: `${actor} سجّل استفسار${a.details?.customer ? ` من ${a.details.customer}` : ""}`, icon: MessageCircle, href: "/inquiries" };
+  }
+  if (a.entity_type === "product_reorder_requests") {
+    const product = a.details?.product ?? "قطعة";
+    if (a.action === "reorder_requested") return { text: `${actor} طلب إعادة طلب: ${product}`, icon: PackagePlus, href: "/reorders" };
+    if (a.action === "reorder_ordered") return { text: `تم طلب «${product}» من المورد`, icon: PackagePlus, href: "/reorders" };
+    if (a.action === "reorder_received") return { text: `وصلت «${product}» من المورد 🎉`, icon: PackagePlus, href: "/reorders" };
+    if (a.action === "reorder_cancelled") return { text: `أُلغي طلب إعادة طلب: ${product}`, icon: PackagePlus, href: "/reorders" };
+    return null;
   }
   return null;
 }
