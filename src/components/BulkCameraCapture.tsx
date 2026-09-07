@@ -9,9 +9,9 @@
 // (runUploadBatch) عند الضغط على "تم" — يبقى تحليل الذكاء الاصطناعي فقط لتحديد
 // الاسم/الفئة/العيار والوصف.
 import { useEffect, useRef, useState } from "react";
-import { BrowserMultiFormatReader, NotFoundException } from "@zxing/library";
 import { Button } from "@/components/ui/button";
 import { Camera, X, Check, Trash2, RotateCcw, ImageOff, Scale, ScanLine } from "lucide-react";
+import { useBoxedBarcodeScanner, SCAN_BOX } from "@/lib/useBoxedBarcodeScanner";
 
 type Shot = { id: string; url: string; blob: Blob; weight: string; barcode: string };
 
@@ -34,7 +34,6 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
   const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
   const weightInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const lastShotId = useRef<string | null>(null);
-  const zxingReaderRef = useRef<BrowserMultiFormatReader | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -70,30 +69,11 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
     };
   }, [open, facing]);
 
-  // فحص مستمر للباركود/QR طالما الكاميرا مفتوحة وجاهزة — يلتقط باركود المنتج قبل أو
-  // بعد تصوير القطعة نفسها، ويبقى "بانتظار" حتى يُرفق تلقائياً بالصورة القادمة.
-  // نستخدم مكتبة ZXing (فك تشفير بالجافاسكربت من إطارات الفيديو) بدل واجهة المتصفح
-  // BarcodeDetector المدمجة: تلك الواجهة تعتمد على خدمات جوجل (Play Services) على
-  // أندرويد ولا توجد إطلاقاً في iOS Safari — كثيراً ما "تعمل" بدون خطأ لكنها لا تكتشف
-  // أي شيء أبداً. ZXing تفك التشفير بنفسها من بكسلات كل إطار فتعمل على كل الأجهزة.
-  useEffect(() => {
-    if (!open || !ready || !videoRef.current) return;
-    const reader = new BrowserMultiFormatReader(undefined, 300);
-    zxingReaderRef.current = reader;
-    let stopped = false;
-    reader
-      .decodeFromVideoElementContinuously(videoRef.current, (result, err) => {
-        if (stopped) return;
-        if (result) setPendingBarcode(result.getText());
-        else if (err && !(err instanceof NotFoundException)) console.warn("barcode decode error", err);
-      })
-      .catch((e) => console.warn("zxing start failed", e));
-    return () => {
-      stopped = true;
-      reader.reset();
-      zxingReaderRef.current = null;
-    };
-  }, [open, ready]);
+  // فحص مستمر للباركود/QR — محصور بمنطقة إطار التصويب الظاهر على الشاشة فقط (وليس
+  // الصورة كاملة)، فيقرأ تحديداً الباركود الذي يُحوَّم فوقه الموظف بدل أي باركود آخر
+  // ظاهر بالخطأ في زاوية الصورة (شائع في خزائن العرض المزدحمة). يبقى "بانتظار" حتى
+  // يُرفق تلقائياً بالصورة القادمة.
+  useBoxedBarcodeScanner(videoRef, open && ready, (text) => setPendingBarcode(text));
 
   // تحرير روابط الصور الملتقطة عند إغلاق المكوّن نهائياً لتفادي تسرّب الذاكرة
   useEffect(() => {
@@ -197,6 +177,16 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
           <video ref={videoRef} playsInline muted className="w-full h-full object-contain" />
         )}
         {flash && <div className="absolute inset-0 bg-white/80 animate-pulse" />}
+
+        {/* إطار تصويب يحدّد بدقة المنطقة التي يُقرأ منها الباركود فقط */}
+        <div
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-xl pointer-events-none transition-colors"
+          style={{
+            width: `${SCAN_BOX.widthPct * 100}%`,
+            height: `${SCAN_BOX.heightPct * 100}%`,
+            border: `2px solid ${pendingBarcode ? "rgba(34,197,94,0.85)" : "rgba(255,255,255,0.4)"}`,
+          }}
+        />
 
         {/* شريط الباركود المكتشَف — سيُرفق تلقائياً بالصورة القادمة */}
         {pendingBarcode && (

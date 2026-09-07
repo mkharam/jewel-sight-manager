@@ -7,7 +7,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { BrowserMultiFormatReader, NotFoundException } from "@zxing/library";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -15,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ArrowRight, Camera, Check, X, ScanLine, RotateCcw, ImageOff, RefreshCw, CheckCircle2, SkipForward, ScanText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { runUploadBatch } from "@/lib/uploadRunner";
+import { useBoxedBarcodeScanner, SCAN_BOX } from "@/lib/useBoxedBarcodeScanner";
 import type { CapturedFile } from "@/components/BulkCameraCapture";
 
 const NO_BRANCH = "__none__";
@@ -38,7 +38,6 @@ export default function LiveAdd() {
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const zxingReaderRef = useRef<BrowserMultiFormatReader | null>(null);
   const weightRef = useRef<HTMLInputElement>(null);
 
   const [ready, setReady] = useState(false);
@@ -99,29 +98,10 @@ export default function LiveAdd() {
     };
   }, [facing]);
 
-  // فحص مستمر للباركود فقط في مرحلة "scan" — يتوقف تلقائياً بعد التأكيد/التخطي.
-  // نستخدم مكتبة ZXing (فك تشفير بالجافاسكربت من إطارات الفيديو) بدل واجهة المتصفح
-  // BarcodeDetector المدمجة: تلك الواجهة تعتمد على خدمات جوجل (Play Services) على
-  // أندرويد ولا توجد إطلاقاً في iOS Safari — كثيراً ما "تعمل" بدون خطأ لكنها لا تكتشف
-  // أي شيء أبداً. ZXing تفك التشفير بنفسها من بكسلات كل إطار فتعمل على كل الأجهزة.
-  useEffect(() => {
-    if (stage !== "scan" || !ready || !videoRef.current) return;
-    const reader = new BrowserMultiFormatReader(undefined, 250);
-    zxingReaderRef.current = reader;
-    let stopped = false;
-    reader
-      .decodeFromVideoElementContinuously(videoRef.current, (result, err) => {
-        if (stopped) return;
-        if (result) setPendingBarcode(result.getText());
-        else if (err && !(err instanceof NotFoundException)) console.warn("barcode decode error", err);
-      })
-      .catch((e) => console.warn("zxing start failed", e));
-    return () => {
-      stopped = true;
-      reader.reset();
-      zxingReaderRef.current = null;
-    };
-  }, [stage, ready]);
+  // فحص مستمر للباركود فقط في مرحلة "scan"، ومحصور بمنطقة إطار التصويب الظاهر على
+  // الشاشة فقط (وليس الصورة كاملة) — هذا يقرأ تحديداً الباركود الذي يُحوَّم فوقه
+  // الموظف، لا أي باركود آخر ظاهر بالخطأ في زاوية الصورة (شائع في خزائن العرض المزدحمة).
+  useBoxedBarcodeScanner(videoRef, stage === "scan" && ready, (text) => setPendingBarcode(text));
 
   useEffect(() => {
     if (stage === "review") setTimeout(() => weightRef.current?.focus(), 50);
@@ -322,20 +302,32 @@ export default function LiveAdd() {
           </div>
         )}
 
-        {/* مرحلة المسح: شريط الباركود المكتشَف */}
+        {/* مرحلة المسح: إطار تصويب يحدّد بدقة المنطقة التي يُقرأ منها الباركود فقط،
+            بالإضافة لشريط الباركود المكتشَف */}
         {stage === "scan" && (
-          <div className="absolute top-3 inset-x-3 space-y-2">
-            {pendingBarcode ? (
-              <div className="flex items-center gap-2 bg-status-available/90 text-white rounded-xl px-3 py-2 shadow-lg">
-                <ScanLine className="size-4 shrink-0" />
-                <span className="text-xs font-mono truncate flex-1" dir="ltr">{pendingBarcode}</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 bg-white/10 text-white/80 rounded-xl px-3 py-2 text-xs justify-center">
-                <ScanLine className="size-4 shrink-0 animate-pulse" /> وجّه الكاميرا نحو الباركود…
-              </div>
-            )}
-          </div>
+          <>
+            <div
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-xl pointer-events-none transition-colors"
+              style={{
+                width: `${SCAN_BOX.widthPct * 100}%`,
+                height: `${SCAN_BOX.heightPct * 100}%`,
+                border: `3px solid ${pendingBarcode ? "rgba(34,197,94,0.9)" : "rgba(255,255,255,0.6)"}`,
+                boxShadow: "0 0 0 999px rgba(0,0,0,0.35)",
+              }}
+            />
+            <div className="absolute top-3 inset-x-3 space-y-2">
+              {pendingBarcode ? (
+                <div className="flex items-center gap-2 bg-status-available/90 text-white rounded-xl px-3 py-2 shadow-lg">
+                  <ScanLine className="size-4 shrink-0" />
+                  <span className="text-xs font-mono truncate flex-1" dir="ltr">{pendingBarcode}</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 bg-white/10 text-white/80 rounded-xl px-3 py-2 text-xs justify-center">
+                  <ScanLine className="size-4 shrink-0 animate-pulse" /> ضع الباركود داخل الإطار وحوّم فوقه بثبات
+                </div>
+              )}
+            </div>
+          </>
         )}
 
         {stage === "info" && !infoUrl && (
