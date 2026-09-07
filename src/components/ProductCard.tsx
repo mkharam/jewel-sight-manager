@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ImageIcon, MapPin, Tag, MoreVertical, Check } from "lucide-react";
+import { ImageIcon, MapPin, Tag, MoreVertical, Check, Barcode } from "lucide-react";
 import { PRODUCT_STATUS, formatCurrency, formatWeight, getImageUrl, ProductStatus } from "@/lib/constants";
 import { GOLD_COLORS } from "@/lib/luxury";
 import QuickQuoteSheet from "@/components/QuickQuoteSheet";
@@ -23,6 +23,7 @@ export interface ProductCardData {
   id: string;
   name: string;
   sku?: string | null;
+  barcode_value?: string | null;
   karat: string | null;
   gold_color?: string | null;
   weight_grams: number | null;
@@ -100,6 +101,12 @@ export default function ProductCard({
         {product.sku && (
           <p className="text-[11px] font-mono text-primary/80 truncate tracking-wide" dir="ltr">
             {product.sku}
+          </p>
+        )}
+        {product.barcode_value && (
+          <p className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground truncate tracking-wide" dir="ltr">
+            <Barcode className="size-3 shrink-0" />
+            {product.barcode_value}
           </p>
         )}
         <div className="flex items-center gap-2 text-xs text-muted-foreground">

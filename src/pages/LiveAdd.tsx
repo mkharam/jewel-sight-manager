@@ -337,8 +337,24 @@ export default function LiveAdd() {
           </div>
         )}
 
-        {/* إطار التصويب يظهر فقط طالما الكاميرا تفحص الباركود فعلياً */}
-        {scanning && <ScanBoxOverlay active={false} />}
+        {/* إطار التصويب + رقم الباركود يظهران فوق الكاميرا مباشرة أثناء الفحص وبعده */}
+        {scanning && (
+          <>
+            <ScanBoxOverlay active={false} />
+            <div className="absolute top-3 inset-x-3 flex items-center gap-2 bg-white/10 text-white/70 rounded-xl px-3 py-2 text-xs justify-center">
+              <ScanLine className="size-4 shrink-0 animate-pulse" /> وجّه الكاميرا نحو الباركود…
+            </div>
+          </>
+        )}
+        {barcode && !capturedUrl && (
+          <div className="absolute top-3 inset-x-3 flex items-center gap-2 bg-status-available/90 text-white rounded-xl px-3 py-2.5 shadow-lg">
+            <ScanLine className="size-5 shrink-0" />
+            <span className="text-base font-mono font-bold flex-1 text-center tracking-wider" dir="ltr">{barcode}</span>
+            <button onClick={clearBarcode} className="shrink-0 p-1 -m-1" aria-label="مسح الباركود وإعادة المسح">
+              <X className="size-4" />
+            </button>
+          </div>
+        )}
 
         {/* صورة القطعة مُلتقطة — زر إعادة تصوير صغير */}
         {capturedUrl && (
