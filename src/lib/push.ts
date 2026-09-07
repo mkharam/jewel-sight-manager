@@ -22,13 +22,15 @@ export async function enablePush(): Promise<boolean> {
   if (permission !== "granted") return false;
 
   const reg = await navigator.serviceWorker.ready;
+  // لا نُعيد استخدام اشتراك قديم مطلقاً — قد يكون مرتبطاً بمفتاح VAPID سابق (مثلاً بعد
+  // توليد مفاتيح جديدة على الخادم)، فيفشل الإرسال بصمت لاحقاً بخطأ BadJwtToken دون أي
+  // مؤشر للموظف. إلغاء الاشتراك القديم أولاً يضمن اشتراكاً جديداً مطابقاً للمفتاح الحالي دائماً.
   const existing = await reg.pushManager.getSubscription();
-  const sub =
-    existing ??
-    (await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-    }));
+  if (existing) await existing.unsubscribe();
+  const sub = await reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+  });
 
   const json = sub.toJSON();
   const { data: userRes } = await supabase.auth.getUser();
