@@ -11,8 +11,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, MessageCircle, Phone, MapPin } from "lucide-react";
+import { Plus, MessageCircle, Phone, MapPin, PackagePlus } from "lucide-react";
 import { INQUIRY_STATUS, KARAT_OPTIONS, formatCurrency, formatDate, InquiryStatus } from "@/lib/constants";
+import ReorderRequestDialog from "@/components/ReorderRequestDialog";
 import { toast } from "sonner";
 
 const schema = z.object({
@@ -76,6 +77,15 @@ export default function Inquiries() {
           <h1 className="text-2xl font-bold">استفسارات العملاء</h1>
           <p className="text-sm text-muted-foreground">سجّل ما يطلبه العملاء حتى لو القطعة غير موجودة الآن.</p>
         </div>
+        <div className="flex gap-2">
+          <ReorderRequestDialog
+            branchId={profile?.branch_id ?? null}
+            trigger={
+              <Button variant="outline">
+                <PackagePlus className="size-4 ml-1" /> طلب إعادة طلب بصورة
+              </Button>
+            }
+          />
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button className="bg-gold-gradient text-primary-foreground shadow-gold">
@@ -95,6 +105,7 @@ export default function Inquiries() {
             />
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="flex gap-1 overflow-x-auto pb-1">

@@ -436,6 +436,7 @@ export type Database = {
           handled_at: string | null
           handled_by: string | null
           id: string
+          image_path: string | null
           note: string | null
           product_id: string | null
           product_name_snapshot: string
@@ -452,6 +453,7 @@ export type Database = {
           handled_at?: string | null
           handled_by?: string | null
           id?: string
+          image_path?: string | null
           note?: string | null
           product_id?: string | null
           product_name_snapshot: string
@@ -468,6 +470,7 @@ export type Database = {
           handled_at?: string | null
           handled_by?: string | null
           id?: string
+          image_path?: string | null
           note?: string | null
           product_id?: string | null
           product_name_snapshot?: string

@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { PackagePlus, Clock, ShoppingCart, PackageCheck, X } from "lucide-react";
+import { PackagePlus, Clock, ShoppingCart, PackageCheck, X, ImageIcon } from "lucide-react";
 import { formatDate } from "@/lib/constants";
 import { toast } from "sonner";
 
@@ -28,11 +29,34 @@ interface ReorderRequest {
   customer_phone: string | null;
   quantity: number;
   note: string | null;
+  image_path: string | null;
   status: ReorderStatus;
   requested_by: string | null;
   created_at: string;
   branch?: { name: string } | null;
   requester?: { full_name: string } | null;
+}
+
+function ReorderThumb({ path }: { path: string }) {
+  const { data: url } = useQuery({
+    queryKey: ["reorder-image-url", path],
+    queryFn: async () => {
+      const { data } = await supabase.storage.from("inquiry-images").createSignedUrl(path, 3600);
+      return data?.signedUrl ?? null;
+    },
+    staleTime: 55 * 60 * 1000,
+  });
+  return (
+    <div className="size-14 rounded-lg overflow-hidden bg-muted shrink-0">
+      {url ? (
+        <img src={url} className="w-full h-full object-cover" alt="" />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+          <ImageIcon className="size-5 opacity-40" />
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function Reorders() {
@@ -101,6 +125,7 @@ export default function Reorders() {
             return (
               <Card key={r.id} className="p-3 sm:p-4 space-y-2">
                 <div className="flex items-start justify-between gap-2 flex-wrap">
+                  {r.image_path && <ReorderThumb path={r.image_path} />}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       {r.product_id ? (
