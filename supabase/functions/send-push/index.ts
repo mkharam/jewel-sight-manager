@@ -9,13 +9,79 @@ import webpush from "npm:web-push@3.6.7";
 const VAPID_PUBLIC = Deno.env.get("VAPID_PUBLIC_KEY") ?? "";
 const VAPID_PRIVATE = Deno.env.get("VAPID_PRIVATE_KEY") ?? "";
 const WEBHOOK_SECRET = Deno.env.get("PUSH_WEBHOOK_SECRET") ?? "";
+// ملاحظة مهمة: خدمة Apple لدفع الويب (web.push.apple.com) ترفض توكن VAPID الذي يحمل
+// "sub" بنطاق غير حقيقي (مثل ".local") بخطأ "BadJwtToken" غامض لا يشير للسبب الفعلي —
+// تأكّدنا من ذلك تجريبياً بعد استبعاد كل الاحتمالات الأخرى (التوقيع، تطابق المفاتيح،
+// صيغة الترويسة، تثبيت PWA...). يجب أن يبقى هذا بريداً حقيقياً قابلاً للوصول.
+const VAPID_SUBJECT = "mailto:mohamedmkharm@gmail.com";
+
+function b64urlToBytes(s: string): Uint8Array {
+  const pad = "=".repeat((4 - (s.length % 4)) % 4);
+  const raw = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+function bytesToB64url(b: Uint8Array): string {
+  let s = "";
+  for (const byte of b) s += String.fromCharCode(byte);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// نوقّع JWT الخاص بـ VAPID بأنفسنا عبر Web Crypto الأصلية في Deno بدل الاعتماد على
+// آلية التوقيع الداخلية لمكتبة web-push (المبنية على crypto.createSign الخاصة بـ Node
+// وتحويل DER إلى JOSE يدوياً) — تحققنا أن Web Crypto في Deno تُخرج توقيع ECDSA خام
+// بصيغة r||s الصحيحة (64 بايت) مباشرة، وهذا أوثق وأبسط من محاولة إصلاح توافق مكتبة
+// web-push مع بيئة Deno.
+async function signVapidJwt(audience: string): Promise<string> {
+  const pub = b64urlToBytes(VAPID_PUBLIC);
+  const x = pub.slice(1, 33);
+  const y = pub.slice(33, 65);
+  const d = b64urlToBytes(VAPID_PRIVATE);
+
+  const jwk = { kty: "EC", crv: "P-256", x: bytesToB64url(x), y: bytesToB64url(y), d: bytesToB64url(d), ext: true };
+  const key = await crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+
+  const header = { typ: "JWT", alg: "ES256" };
+  const now = Math.floor(Date.now() / 1000);
+  const payload = { aud: audience, iat: now, exp: now + 3600, sub: VAPID_SUBJECT };
+  const enc = (o: unknown) => bytesToB64url(new TextEncoder().encode(JSON.stringify(o)));
+  const signingInput = `${enc(header)}.${enc(payload)}`;
+  const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, new TextEncoder().encode(signingInput));
+  return `${signingInput}.${bytesToB64url(new Uint8Array(sig))}`;
+}
+
+async function sendPush(sub: { endpoint: string; p256dh: string; auth: string }, payload: string): Promise<void> {
+  // نستخدم web-push فقط لبناء الطلب (التشفير RFC8291 والترويسات)، ونوقّع Authorization
+  // بأنفسنا كما هو موضّح أعلاه بدل الاعتماد على توقيعها الداخلي.
+  const details = webpush.generateRequestDetails(
+    { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+    payload,
+    { vapidDetails: { subject: VAPID_SUBJECT, publicKey: VAPID_PUBLIC, privateKey: VAPID_PRIVATE } },
+  );
+  const audience = new URL(sub.endpoint).origin;
+  const jwt = await signVapidJwt(audience);
+
+  // نحذف أي مفتاح Authorization موجود بالفعل بغض النظر عن حالة الأحرف قبل إضافة مفتاحنا
+  // الخاص — لو اكتفينا بالنشر فقط ومفتاح web-push بحالة أحرف مختلفة (مثلاً "authorization"
+  // مقابل "Authorization")، فإن fetch() يدمج القيمتين بفاصلة بدل استبدال أحدهما بالآخر،
+  // ما يُرسل رأساً مشوّهاً لـ Apple.
+  const headers: Record<string, string> = { ...details.headers };
+  for (const k of Object.keys(headers)) {
+    if (k.toLowerCase() === "authorization") delete headers[k];
+  }
+  headers["Authorization"] = `vapid t=${jwt}, k=${VAPID_PUBLIC}`;
+
+  const res = await fetch(details.endpoint, { method: details.method, headers, body: details.body });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw Object.assign(new Error("push send failed"), { statusCode: res.status, body: text });
+  }
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
     if (!VAPID_PUBLIC || !VAPID_PRIVATE) return json({ error: "VAPID keys not configured" }, 500);
-    webpush.setVapidDetails("mailto:notifications@lamaa.local", VAPID_PUBLIC, VAPID_PRIVATE);
 
     const fromTrigger = req.headers.get("x-webhook-secret") === WEBHOOK_SECRET && !!WEBHOOK_SECRET;
     const authHeader = req.headers.get("Authorization") ?? "";
@@ -66,20 +132,15 @@ Deno.serve(async (req) => {
     await Promise.all(
       subs.map(async (s: { id: string; endpoint: string; p256dh: string; auth: string }) => {
         try {
-          await webpush.sendNotification(
-            { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-            payload,
-          );
+          await sendPush(s, payload);
           sent++;
         } catch (e) {
           const err = e as { statusCode?: number; body?: string; message?: string };
           const status = err?.statusCode;
           console.error("push send failed", s.id, status, err?.body, err?.message);
           errors.push({ id: s.id, status, message: err?.message, body: err?.body });
-          // 404/410: endpoint gone. 403 BadJwtToken: subscription was created with a VAPID
-          // key that no longer matches VAPID_PRIVATE_KEY (e.g. after regenerating keys) —
-          // it can never succeed again until the device re-subscribes, so drop it too.
-          if (status === 404 || status === 410 || status === 403) stale.push(s.id);
+          // 404/410: endpoint gone — لن ينجح أبداً، احذفه.
+          if (status === 404 || status === 410) stale.push(s.id);
         }
       }),
     );
