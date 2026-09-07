@@ -20,6 +20,18 @@ export const STONE_TYPES = [
   "ألماس", "زركون", "زمرد", "ياقوت", "سفير", "جمشت", "سيترين", "لؤلؤ", "فيروز", "عقيق", "أخرى",
 ];
 
+export const STONE_COLORS = [
+  { value: "white", label: "أبيض/شفاف" },
+  { value: "red", label: "أحمر" },
+  { value: "green", label: "أخضر" },
+  { value: "blue", label: "أزرق" },
+  { value: "yellow", label: "أصفر" },
+  { value: "pink", label: "وردي" },
+  { value: "purple", label: "بنفسجي" },
+  { value: "black", label: "أسود" },
+  { value: "multi", label: "ألوان متعددة" },
+];
+
 export function daysInStock(createdAt: string | null | undefined, receivedAt?: string | null): number {
   const base = receivedAt ?? createdAt;
   if (!base) return 0;

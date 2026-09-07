@@ -97,7 +97,7 @@ export default function AppLayout() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <header className="sticky top-0 z-30 border-b border-border bg-card/95 backdrop-blur shadow-card">
+      <header className="sticky top-0 z-30 border-b border-border bg-card/95 backdrop-blur shadow-card safe-area-pt">
         <div className="container mx-auto px-3 sm:px-4 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-4">
           <Link to="/" className="flex items-center gap-2">
             <div className="size-8 sm:size-9 rounded-xl bg-gold-gradient flex items-center justify-center shadow-gold">

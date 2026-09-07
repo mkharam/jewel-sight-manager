@@ -13,6 +13,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { ImageIcon, MapPin, Tag, MoreVertical, Check } from "lucide-react";
 import { PRODUCT_STATUS, formatCurrency, formatWeight, getImageUrl, ProductStatus } from "@/lib/constants";
+import { GOLD_COLORS } from "@/lib/luxury";
 import QuickQuoteSheet from "@/components/QuickQuoteSheet";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -23,6 +24,7 @@ export interface ProductCardData {
   name: string;
   sku?: string | null;
   karat: string | null;
+  gold_color?: string | null;
   weight_grams: number | null;
   ring_size: string | null;
   sale_price: number | null;
@@ -84,9 +86,9 @@ export default function ProductCard({
         <Badge className={`absolute top-2 right-2 ${status.color} border-0 shadow-md`}>
           {status.label}
         </Badge>
-        {product.karat && (
+        {(product.karat || product.gold_color) && (
           <Badge variant="secondary" className="absolute top-2 left-2 bg-card/90 backdrop-blur border-0">
-            {product.karat}
+            {[product.karat, GOLD_COLORS.find((c) => c.value === product.gold_color)?.label].filter(Boolean).join(" · ")}
           </Badge>
         )}
         {selectable && (

@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowRight, Upload, X, Star, Sparkles, Loader2 } from "lucide-react";
 import { PRODUCT_STATUS, KARAT_OPTIONS, getImageUrl } from "@/lib/constants";
+import { GOLD_COLORS, STONE_TYPES, STONE_COLORS } from "@/lib/luxury";
 import { prepareForAIBase64 } from "@/lib/image-compress";
 import { toast } from "sonner";
 
@@ -21,6 +22,7 @@ type AiSuggestion = {
   category_name?: string | null;
   item_type?: string | null;
   karat?: string | null;
+  metal_color?: "yellow" | "white" | "rose" | "mixed" | null;
   style?: string[];
   gemstones?: string[];
   stone_count?: string | null;
@@ -34,6 +36,7 @@ const schema = z.object({
   category_id: z.string().uuid().nullable(),
   branch_id: z.string().uuid().nullable(),
   karat: z.string().max(20).nullable(),
+  gold_color: z.string().max(20).nullable(),
   item_type: z.string().max(50).nullable(),
   weight_grams: z.number().nonnegative().nullable(),
   ring_size: z.string().max(20).nullable(),
@@ -56,12 +59,15 @@ export default function ProductForm() {
 
   const [form, setForm] = useState({
     name: "", sku: "", category_id: "", branch_id: "",
-    karat: "", item_type: "", weight_grams: "", ring_size: "",
+    karat: "", gold_color: "", item_type: "", weight_grams: "", ring_size: "",
     status: "available" as keyof typeof PRODUCT_STATUS,
     cost_price: "", sale_price: "", promo_price: "",
     description: "", internal_notes: "",
     serial_number: "", barcode_value: "", showcase_location: "",
   });
+  const [hasStones, setHasStones] = useState(false);
+  const [stoneType, setStoneType] = useState("");
+  const [stoneColor, setStoneColor] = useState("");
   const [existingImages, setExistingImages] = useState<{ id: string; storage_path: string; is_primary: boolean }[]>([]);
   const [newFiles, setNewFiles] = useState<File[]>([]);
   const [primaryIndex, setPrimaryIndex] = useState(0);
@@ -92,7 +98,7 @@ export default function ProductForm() {
       setForm({
         name: data.name ?? "", sku: data.sku ?? "",
         category_id: data.category_id ?? "", branch_id: data.branch_id ?? "",
-        karat: data.karat ?? "", item_type: data.item_type ?? "",
+        karat: data.karat ?? "", gold_color: data.gold_color ?? "", item_type: data.item_type ?? "",
         weight_grams: data.weight_grams?.toString() ?? "",
         ring_size: data.ring_size ?? "", status: data.status,
         cost_price: data.cost_price?.toString() ?? "",
@@ -102,6 +108,14 @@ export default function ProductForm() {
         serial_number: data.serial_number ?? "", barcode_value: data.barcode_value ?? "", showcase_location: data.showcase_location ?? "",
       });
       setExistingImages(data.images ?? []);
+
+      const { data: stones } = await supabase.from("product_stones").select("*").eq("product_id", id!).limit(1);
+      const s = stones?.[0];
+      if (s) {
+        setHasStones(true);
+        setStoneType(s.stone_type ?? "");
+        setStoneColor(s.color ?? "");
+      }
     })();
   }, [editing, id, profile?.branch_id]);
 
@@ -147,6 +161,9 @@ export default function ProductForm() {
         if (!f.karat && s.karat && KARAT_OPTIONS.includes(s.karat)) {
           next.karat = s.karat; applied.add("karat");
         }
+        if (!f.gold_color && s.metal_color) {
+          next.gold_color = s.metal_color; applied.add("gold_color");
+        }
         if (!f.description && s.description_ar) {
           const extras = [s.stone_count, s.condition].filter(Boolean).join(" — ");
           next.description = extras ? `${s.description_ar}\n(${extras})` : s.description_ar;
@@ -154,6 +171,11 @@ export default function ProductForm() {
         }
         return next;
       });
+      // القيراط الوحيد الذي يُعتمد للتفريق هو stone_count — لا نلمس اختيار الموظف اليدوي إن كان موجوداً بالفعل.
+      if (!hasStones && !stoneType && s.stone_count && s.stone_count !== "بدون أحجار") {
+        setHasStones(true);
+        if (s.stone_count === "حجر واحد" || s.stone_count === "عدة أحجار") applied.add("has_stones");
+      }
       setAiApplied(applied);
       toast.success("تم التحليل بالذكاء ✨", { description: "راجع الحقول قبل الحفظ" });
     } catch (err: any) {
@@ -168,7 +190,7 @@ export default function ProductForm() {
     const parsed = schema.safeParse({
       name: form.name, sku: form.sku || undefined,
       category_id: form.category_id || null, branch_id: form.branch_id || null,
-      karat: form.karat || null, item_type: form.item_type || null,
+      karat: form.karat || null, gold_color: form.gold_color || null, item_type: form.item_type || null,
       weight_grams: form.weight_grams ? parseFloat(form.weight_grams) : null,
       ring_size: form.ring_size || null, status: form.status,
       cost_price: form.cost_price ? parseFloat(form.cost_price) : null,
@@ -211,6 +233,18 @@ export default function ProductForm() {
           .single();
         if (error) throw error;
         productId = data.id;
+      }
+
+      // الأحجار: صف واحد يمثّل الحجر الأساسي — نحذف القديم ونعيد الإدراج إن وُجد.
+      await supabase.from("product_stones").delete().eq("product_id", productId!);
+      if (hasStones && stoneType) {
+        const { error: stoneErr } = await supabase.from("product_stones").insert({
+          product_id: productId!,
+          stone_type: stoneType,
+          color: stoneColor || null,
+          quantity: 1,
+        });
+        if (stoneErr) console.warn("تعذّر حفظ بيانات الحجر", stoneErr);
       }
 
       // Upload new images — path convention: branch-<branchId>/<productId>/<file>
@@ -332,12 +366,58 @@ export default function ProductForm() {
                 </SelectContent>
               </Select>
             </Field>
+            <Field label="لون الذهب" aiHint={aiApplied.has("gold_color")}>
+              <Select value={form.gold_color} onValueChange={(v) => setForm({ ...form, gold_color: v })}>
+                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectContent>
+                  {GOLD_COLORS.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
             <Field label="الوزن (غ)">
               <Input type="number" step="0.001" inputMode="decimal" value={form.weight_grams} onChange={(e) => setForm({ ...form, weight_grams: e.target.value })} dir="ltr" />
             </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             <Field label="المقاس">
               <Input value={form.ring_size} onChange={(e) => setForm({ ...form, ring_size: e.target.value })} maxLength={20} dir="ltr" />
             </Field>
+          </div>
+          <div className="rounded-xl border border-border p-3 space-y-3">
+            <label className="flex items-center gap-2 text-sm font-semibold cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={hasStones}
+                onChange={(e) => { setHasStones(e.target.checked); if (!e.target.checked) { setStoneType(""); setStoneColor(""); } }}
+                className="size-4"
+              />
+              {aiApplied.has("has_stones") && (
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold">
+                  <Sparkles className="size-2.5" /> AI
+                </span>
+              )}
+              القطعة بها أحجار (غير ذلك: ذهب بدون أحجار)
+            </label>
+            {hasStones && (
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="نوع الحجر">
+                  <Select value={stoneType} onValueChange={setStoneType}>
+                    <SelectTrigger><SelectValue placeholder="اختر..." /></SelectTrigger>
+                    <SelectContent>
+                      {STONE_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="لون الحجر">
+                  <Select value={stoneColor} onValueChange={setStoneColor}>
+                    <SelectTrigger><SelectValue placeholder="اختر..." /></SelectTrigger>
+                    <SelectContent>
+                      {STONE_COLORS.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="الفرع">

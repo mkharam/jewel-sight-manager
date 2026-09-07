@@ -10,6 +10,7 @@ import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store, Chec
 import ProductCard from "@/components/ProductCard";
 import ImageSearchButton from "@/components/ImageSearchButton";
 import { PRODUCT_STATUS, KARAT_OPTIONS, ProductStatus } from "@/lib/constants";
+import { GOLD_COLORS } from "@/lib/luxury";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
@@ -19,6 +20,7 @@ import { cn } from "@/lib/utils";
 interface Filters {
   q: string;
   karat: string;
+  goldColor: string;
   branchId: string;
   categoryId: string;
   status: string;
@@ -31,7 +33,7 @@ interface Filters {
 }
 
 const initialFilters: Filters = {
-  q: "", karat: "all", branchId: "all", categoryId: "all", status: "all", minWeight: "", maxWeight: "", tag: "", sortDir: "desc",
+  q: "", karat: "all", goldColor: "all", branchId: "all", categoryId: "all", status: "all", minWeight: "", maxWeight: "", tag: "", sortDir: "desc",
 };
 
 const SAVED_FILTERS_KEY = "lamaa.lastSearch.v1";
@@ -248,12 +250,13 @@ export default function ProductSearch() {
     queryKey: ["products", debounced, similarIds, similarIds ? 0 : pages],
     queryFn: async () => {
       const SELECT =
-        "id,name,sku,karat,weight_grams,ring_size,sale_price,promo_price,status,branch_id,search_tags,description,category_id,created_at,branch:branches(name),category:categories(name),images:product_images(storage_path,is_primary)";
+        "id,name,sku,karat,gold_color,weight_grams,ring_size,sale_price,promo_price,status,branch_id,search_tags,description,category_id,created_at,branch:branches(name),category:categories(name),images:product_images(storage_path,is_primary)";
       const sortAsc = debounced.sortDir === "asc";
 
       const applyFilters = (q: any) => {
         if (debounced.tag) q = q.contains("search_tags", [debounced.tag]);
         if (debounced.karat !== "all") q = q.eq("karat", debounced.karat);
+        if (debounced.goldColor !== "all") q = q.eq("gold_color", debounced.goldColor);
         if (debounced.branchId === UNASSIGNED_BRANCH) q = q.is("branch_id", null);
         else if (debounced.branchId !== "all") q = q.eq("branch_id", debounced.branchId);
         if (debounced.categoryId !== "all") q = q.eq("category_id", debounced.categoryId);
@@ -354,6 +357,7 @@ export default function ProductSearch() {
   const activeFilterCount = useMemo(() => {
     let n = 0;
     if (filters.karat !== "all") n++;
+    if (filters.goldColor !== "all") n++;
     if (filters.branchId !== "all") n++;
     if (filters.categoryId !== "all") n++;
     if (filters.status !== "all") n++;
@@ -473,6 +477,15 @@ export default function ProductSearch() {
                     </SelectContent>
                   </Select>
                 </FilterField>
+                <FilterField label="لون الذهب">
+                  <Select value={filters.goldColor} onValueChange={(v) => setFilters((f) => ({ ...f, goldColor: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">كل الألوان</SelectItem>
+                      {GOLD_COLORS.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </FilterField>
                 <FilterField label="الفرع">
                   <Select value={filters.branchId} onValueChange={(v) => setFilters((f) => ({ ...f, branchId: v }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
@@ -529,7 +542,7 @@ export default function ProductSearch() {
             onClick={() => setFilters((f) => ({ ...f, categoryId: f.categoryId === c.id ? "all" : c.id }))}
           >{c.name}</Chip>
         ))}
-        {(filters.karat !== "all" || filters.categoryId !== "all" || filters.branchId !== "all" || filters.status !== "all" || filters.minWeight || filters.maxWeight || filters.tag) && (
+        {(filters.karat !== "all" || filters.goldColor !== "all" || filters.categoryId !== "all" || filters.branchId !== "all" || filters.status !== "all" || filters.minWeight || filters.maxWeight || filters.tag) && (
           <Chip onClick={() => setFilters(initialFilters)} active={false}>
             <X className="size-3 inline" /> مسح
           </Chip>
