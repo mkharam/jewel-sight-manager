@@ -1,5 +1,7 @@
+import { lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { Loader2 } from "lucide-react";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -8,18 +10,29 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import { AuthProvider } from "@/hooks/useAuth";
 import Auth from "@/pages/Auth";
 import ProductSearch from "@/pages/ProductSearch";
-import ProductDetail from "@/pages/ProductDetail";
-import ProductForm from "@/pages/ProductForm";
-import Inquiries from "@/pages/Inquiries";
-import Upload from "@/pages/Upload";
-import ReviewUnnamed from "@/pages/ReviewUnnamed";
-import Staff from "@/pages/Staff";
-import Reports from "@/pages/Reports";
-import Transfers from "@/pages/Transfers";
-import Reorders from "@/pages/Reorders";
-import GoldPrice from "@/pages/GoldPrice";
-import StockTake from "@/pages/StockTake";
-import NotFound from "./pages/NotFound.tsx";
+
+// الصفحة الرئيسية وتسجيل الدخول فقط تُحمّل فوراً — الباقي يُحمّل عند الحاجة (route-based
+// code splitting) بدل حزمة JS واحدة ضخمة تُبطئ أول ظهور على الجوال.
+const ProductDetail = lazy(() => import("@/pages/ProductDetail"));
+const ProductForm = lazy(() => import("@/pages/ProductForm"));
+const Inquiries = lazy(() => import("@/pages/Inquiries"));
+const Upload = lazy(() => import("@/pages/Upload"));
+const ReviewUnnamed = lazy(() => import("@/pages/ReviewUnnamed"));
+const Staff = lazy(() => import("@/pages/Staff"));
+const Reports = lazy(() => import("@/pages/Reports"));
+const Transfers = lazy(() => import("@/pages/Transfers"));
+const Reorders = lazy(() => import("@/pages/Reorders"));
+const GoldPrice = lazy(() => import("@/pages/GoldPrice"));
+const StockTake = lazy(() => import("@/pages/StockTake"));
+const NotFound = lazy(() => import("./pages/NotFound.tsx"));
+
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center py-24">
+      <Loader2 className="size-6 animate-spin text-primary" />
+    </div>
+  );
+}
 
 const queryClient = new QueryClient();
 
@@ -30,29 +43,31 @@ const App = () => (
       <Sonner position="top-center" dir="rtl" richColors />
       <BrowserRouter basename={import.meta.env.BASE_URL}>
         <AuthProvider>
-          <Routes>
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/index" element={<Navigate to="/" replace />} />
-            <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-              <Route path="/" element={<ProductSearch />} />
-              <Route path="/products" element={<ProductSearch />} />
-              <Route path="/products/new" element={<ProductForm />} />
-              <Route path="/products/:id" element={<ProductDetail />} />
-              <Route path="/products/:id/edit" element={<ProductForm />} />
-              <Route path="/inquiries" element={<Inquiries />} />
-              <Route path="/upload" element={<Upload />} />
-              <Route path="/upload/review" element={<ReviewUnnamed />} />
-              <Route path="/import" element={<Navigate to="/upload" replace />} />
-              <Route path="/tray" element={<Navigate to="/upload" replace />} />
-              <Route path="/staff" element={<Staff />} />
-              <Route path="/reports" element={<Reports />} />
-              <Route path="/transfers" element={<Transfers />} />
-              <Route path="/reorders" element={<Reorders />} />
-              <Route path="/gold-price" element={<GoldPrice />} />
-              <Route path="/stock-take" element={<StockTake />} />
-            </Route>
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              <Route path="/auth" element={<Auth />} />
+              <Route path="/index" element={<Navigate to="/" replace />} />
+              <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
+                <Route path="/" element={<ProductSearch />} />
+                <Route path="/products" element={<ProductSearch />} />
+                <Route path="/products/new" element={<ProductForm />} />
+                <Route path="/products/:id" element={<ProductDetail />} />
+                <Route path="/products/:id/edit" element={<ProductForm />} />
+                <Route path="/inquiries" element={<Inquiries />} />
+                <Route path="/upload" element={<Upload />} />
+                <Route path="/upload/review" element={<ReviewUnnamed />} />
+                <Route path="/import" element={<Navigate to="/upload" replace />} />
+                <Route path="/tray" element={<Navigate to="/upload" replace />} />
+                <Route path="/staff" element={<Staff />} />
+                <Route path="/reports" element={<Reports />} />
+                <Route path="/transfers" element={<Transfers />} />
+                <Route path="/reorders" element={<Reorders />} />
+                <Route path="/gold-price" element={<GoldPrice />} />
+                <Route path="/stock-take" element={<StockTake />} />
+              </Route>
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
