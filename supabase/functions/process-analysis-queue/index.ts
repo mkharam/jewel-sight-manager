@@ -10,14 +10,14 @@ import { analysisToEmbeddingText, analyzeBatchWithFallback, embedText, type Jewe
 // سرّ مشترك ثابت للتحقق من أن المستدعي هو pg_cron الخاص بمشروعنا فقط — الدالة verify_jwt=false
 // (لأن pg_cron لا يملك JWT مستخدم)، فهذا الفحص يمنع أي طرف خارجي من استدعائها لاستهلاك
 // حصص الذكاء الاصطناعي المجانية عبثاً.
-const QUEUE_SECRET = "555b188d91d392e574d5b939db23f50d39e4a9c68c425350";
+const QUEUE_SECRET = Deno.env.get("QUEUE_SECRET") ?? "";
 const BATCH_SIZE = 4;
 const PLACEHOLDER_NAME = "قطعة جديدة";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
-  if (req.headers.get("x-queue-secret") !== QUEUE_SECRET) {
+  if (!QUEUE_SECRET || req.headers.get("x-queue-secret") !== QUEUE_SECRET) {
     return json({ error: "unauthorized" }, 401);
   }
 

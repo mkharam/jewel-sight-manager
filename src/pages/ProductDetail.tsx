@@ -13,10 +13,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 import { ArrowRight, Edit, ImageIcon, MapPin, MessageCircle, Tag, Trash2, User, ArrowLeftRight, Sparkles, Copy, Share2, CheckCircle2, ShieldCheck } from "lucide-react";
 import { PRODUCT_STATUS, formatCurrency, formatDate, formatWeight, getImageUrl } from "@/lib/constants";
+import { GOLD_COLORS, STONE_COLORS } from "@/lib/luxury";
 import { toast } from "sonner";
 import QuickQuoteSheet from "@/components/QuickQuoteSheet";
 import SellDialog from "@/components/SellDialog";
 import ReserveDialog from "@/components/ReserveDialog";
+import ReorderRequestDialog from "@/components/ReorderRequestDialog";
 
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
@@ -45,6 +47,15 @@ export default function ProductDetail() {
         .maybeSingle();
       if (error) throw error;
       return data;
+    },
+    enabled: !!id,
+  });
+
+  const { data: stones } = useQuery({
+    queryKey: ["product-stones", id],
+    queryFn: async () => {
+      const { data } = await supabase.from("product_stones").select("*").eq("product_id", id!);
+      return data ?? [];
     },
     enabled: !!id,
   });
@@ -182,6 +193,15 @@ export default function ProductDetail() {
 
             <div className="grid grid-cols-2 gap-y-3 text-sm pt-2 border-t border-border">
               <Spec label="القيراط" value={product.karat} />
+              <Spec label="لون الذهب" value={GOLD_COLORS.find((c) => c.value === product.gold_color)?.label} />
+              <Spec
+                label="الأحجار"
+                value={
+                  stones && stones.length > 0
+                    ? stones.map((s: any) => `${s.stone_type}${s.color ? ` (${STONE_COLORS.find((c) => c.value === s.color)?.label ?? s.color})` : ""}`).join("، ")
+                    : "بدون أحجار"
+                }
+              />
               <Spec label="الوزن" value={formatWeight(product.weight_grams)} />
               {product.ring_size && <Spec label="المقاس" value={product.ring_size} />}
               {product.item_type && <Spec label="النوع" value={product.item_type} />}
@@ -259,6 +279,8 @@ export default function ProductDetail() {
               <Sparkles className="size-4 ml-1" /> قطع مشابهة في المخزون
             </Button>
           </Link>
+
+          <ReorderRequestDialog productId={id!} productName={product.name} branchId={product.branch_id} />
         </div>
       </div>
 

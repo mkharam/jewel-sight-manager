@@ -9,7 +9,13 @@ if ("serviceWorker" in navigator) {
   if (import.meta.env.PROD) {
     window.addEventListener("load", async () => {
       try {
-        const reg = await navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" });
+        // مسار ونطاق نسبيّان لـ BASE_URL حتى يعملا سواء استُضيف التطبيق على الجذر
+        // (Lovable/نطاق مخصّص) أو تحت مسار فرعي (GitHub Pages: /jewel-sight-manager/).
+        const swUrl = `${import.meta.env.BASE_URL}sw.js`;
+        const reg = await navigator.serviceWorker.register(swUrl, {
+          updateViaCache: "none",
+          scope: import.meta.env.BASE_URL,
+        });
         // تحديث فوري عند نزول نسخة جديدة حتى لا يبقى المستخدم على نسخة قديمة
         reg.addEventListener("updatefound", () => {
           const sw = reg.installing;

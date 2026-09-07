@@ -269,30 +269,6 @@ export type Database = {
           },
         ]
       }
-      mstrmnd_events: {
-        Row: {
-          event_type: string | null
-          id: string
-          payload: Json
-          processed: boolean
-          received_at: string
-        }
-        Insert: {
-          event_type?: string | null
-          id?: string
-          payload: Json
-          processed?: boolean
-          received_at?: string
-        }
-        Update: {
-          event_type?: string | null
-          id?: string
-          payload?: Json
-          processed?: boolean
-          received_at?: string
-        }
-        Relationships: []
-      }
       product_certificates: {
         Row: {
           cert_number: string | null
@@ -451,6 +427,86 @@ export type Database = {
           },
         ]
       }
+      product_reorder_requests: {
+        Row: {
+          branch_id: string | null
+          created_at: string
+          customer_name: string | null
+          customer_phone: string | null
+          handled_at: string | null
+          handled_by: string | null
+          id: string
+          note: string | null
+          product_id: string | null
+          product_name_snapshot: string
+          quantity: number
+          requested_by: string | null
+          status: Database["public"]["Enums"]["reorder_status"]
+          updated_at: string
+        }
+        Insert: {
+          branch_id?: string | null
+          created_at?: string
+          customer_name?: string | null
+          customer_phone?: string | null
+          handled_at?: string | null
+          handled_by?: string | null
+          id?: string
+          note?: string | null
+          product_id?: string | null
+          product_name_snapshot: string
+          quantity?: number
+          requested_by?: string | null
+          status?: Database["public"]["Enums"]["reorder_status"]
+          updated_at?: string
+        }
+        Update: {
+          branch_id?: string | null
+          created_at?: string
+          customer_name?: string | null
+          customer_phone?: string | null
+          handled_at?: string | null
+          handled_by?: string | null
+          id?: string
+          note?: string | null
+          product_id?: string | null
+          product_name_snapshot?: string
+          quantity?: number
+          requested_by?: string | null
+          status?: Database["public"]["Enums"]["reorder_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_reorder_requests_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_reorder_requests_handled_by_fkey"
+            columns: ["handled_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_reorder_requests_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_reorder_requests_requested_by_fkey"
+            columns: ["requested_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       product_stones: {
         Row: {
           carat: number | null
@@ -518,7 +574,6 @@ export type Database = {
           received_at: string | null
           ring_size: string | null
           sale_price: number | null
-          search_blob: string | null
           search_tags: string[]
           serial_number: string | null
           showcase_location: string | null
@@ -551,7 +606,6 @@ export type Database = {
           received_at?: string | null
           ring_size?: string | null
           sale_price?: number | null
-          search_blob?: string | null
           search_tags?: string[]
           serial_number?: string | null
           showcase_location?: string | null
@@ -584,7 +638,6 @@ export type Database = {
           received_at?: string | null
           ring_size?: string | null
           sale_price?: number | null
-          search_blob?: string | null
           search_tags?: string[]
           serial_number?: string | null
           showcase_location?: string | null
@@ -1253,41 +1306,10 @@ export type Database = {
         Args: { _branch_id: string; _item_type?: string }
         Returns: string
       }
-      normalize_arabic: { Args: { input: string }; Returns: string }
       return_sale: {
         Args: { _reason: string; _sale_id: string }
         Returns: undefined
       }
-      search_products_fuzzy: {
-        Args: {
-          _branch_id?: string
-          _category_id?: string
-          _karat?: string
-          _limit?: number
-          _max_weight?: number
-          _min_weight?: number
-          _query: string
-          _status?: string
-          _tag?: string
-        }
-        Returns: {
-          branch_id: string
-          category_id: string
-          id: string
-          karat: string
-          name: string
-          promo_price: number
-          rank: number
-          ring_size: string
-          sale_price: number
-          search_tags: string[]
-          sku: string
-          status: Database["public"]["Enums"]["product_status"]
-          weight_grams: number
-        }[]
-      }
-      show_limit: { Args: never; Returns: number }
-      show_trgm: { Args: { "": string }; Returns: string[] }
       sku_type_letter: { Args: { _item_type: string }; Returns: string }
       tags_from_ai_labels: { Args: { labels: Json }; Returns: string[] }
     }
@@ -1304,6 +1326,7 @@ export type Database = {
         | "in_repair"
         | "stock_discrepancy"
         | "archived"
+      reorder_status: "pending" | "ordered" | "received" | "cancelled"
       reservation_status: "active" | "expired" | "cancelled" | "converted"
       stock_take_result: "found" | "missing" | "extra"
       stock_take_status: "open" | "closed"
@@ -1454,6 +1477,7 @@ export const Constants = {
         "stock_discrepancy",
         "archived",
       ],
+      reorder_status: ["pending", "ordered", "received", "cancelled"],
       reservation_status: ["active", "expired", "cancelled", "converted"],
       stock_take_result: ["found", "missing", "extra"],
       stock_take_status: ["open", "closed"],

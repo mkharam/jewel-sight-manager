@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 export const VAPID_PUBLIC_KEY: string =
   (import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined) ??
-  "BDxeqeamR8DAfdQHcxJzoD9wRTdBRr2KMIRnYlpJvKVhmkrObVNAZncoO-dQyKFZmM_EeQW97YZEjf4xU8wT19Y";
+  "BF4CADXhbzDcY_SyDdmo3NvGSANcHwAjVpzcmm-lrhwSu0C8OHuJJXsJKDNYUjj8DaJHcbkni_dLmovfJB7H_Uo";
 
 export function pushSupported() {
   return typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window;
