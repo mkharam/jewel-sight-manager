@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,12 +46,20 @@ function usernameToEmail(input: string): string {
 
 export default function Auth() {
   const navigate = useNavigate();
+  const { session } = useAuth();
   const [tab, setTab] = useState<"login" | "signup">("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Redirect once the session actually lands in context — signInWithPassword
+  // resolving doesn't mean the AuthProvider's session state has updated yet,
+  // so navigating right after the call can race ProtectedRoute back here.
+  useEffect(() => {
+    if (session) navigate("/", { replace: true });
+  }, [session, navigate]);
 
 
   const submitLogin = async (e: React.FormEvent) => {
@@ -62,16 +71,15 @@ export default function Auth() {
     }
     setLoading(true);
     try {
-      const email = usernameToEmail(username);
-      let { error } = await supabase.auth.signInWithPassword({ email, password });
-      // Backwards compat: try the old admin email if user typed "admin"
-      if (error && username.trim().toLowerCase() === "admin") {
-        const r2 = await supabase.auth.signInWithPassword({ email: "admin@lamaa.com", password });
-        error = r2.error;
-      }
+      // "admin" only ever exists under the legacy email — go straight there
+      // instead of burning a guaranteed-401 attempt (and rate-limit budget)
+      // on the new-style address first.
+      const isLegacyAdmin = username.trim().toLowerCase() === "admin";
+      const email = isLegacyAdmin ? "admin@lamaa.com" : usernameToEmail(username);
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       toast.success("مرحباً بعودتك");
-      navigate("/");
+      // Navigation happens via the session effect above once context updates.
     } catch (err: any) {
       const msg = err.message?.includes("Invalid login")
         ? "اسم المستخدم أو كلمة المرور غير صحيحة"
@@ -107,7 +115,8 @@ export default function Auth() {
         throw error;
       }
       toast.success("تم إنشاء حسابك — بانتظار تعيينك في فرع من المدير");
-      navigate("/");
+      // Navigation happens via the session effect above once context updates,
+      // if the project auto-confirms email and signs the new user in.
 
     } catch (err: any) {
       toast.error(err.message ?? "حدث خطأ أثناء إنشاء الحساب");

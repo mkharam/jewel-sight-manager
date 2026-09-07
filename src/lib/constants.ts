@@ -23,7 +23,7 @@ export const INQUIRY_STATUS = {
 
 export type InquiryStatus = keyof typeof INQUIRY_STATUS;
 
-export const KARAT_OPTIONS = ["18K", "21K", "22K", "24K", "ألماس", "فضة", "أخرى"];
+export const KARAT_OPTIONS = ["18K", "21K"];
 
 export function formatCurrency(n: number | null | undefined) {
   if (n == null) return "—";

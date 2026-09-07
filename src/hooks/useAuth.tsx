@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -13,7 +13,9 @@ export interface AuthState {
   profile: { full_name: string; branch_id: string | null } | null;
 }
 
-export function useAuth(): AuthState {
+const AuthContext = createContext<AuthState | null>(null);
+
+function useAuthState(): AuthState {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [rolesLoading, setRolesLoading] = useState(true);
@@ -71,6 +73,19 @@ export function useAuth(): AuthState {
     roles,
     profile,
   };
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const state = useAuthState();
+  return <AuthContext.Provider value={state}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth(): AuthState {
+  const ctx = useContext(AuthContext);
+  if (!ctx) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return ctx;
 }
 
 export const hasRole = (roles: AppRole[], role: AppRole) => roles.includes(role);
