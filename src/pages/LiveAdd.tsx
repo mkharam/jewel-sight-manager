@@ -126,14 +126,26 @@ export default function LiveAdd() {
   // يستدعي قراءة وسم الذكاء الاصطناعي فقط، بلا تحديث حالة ولا toast — يُستخدم من كل من
   // اللقطة الحية (تحديث فوري + toast خاص بها) ورفع الملفات المتعددة (تجميع النتائج
   // وtoast واحد في النهاية).
+  // محاولتان قبل الاستسلام — الفشل العابر (ازدحام مؤقت لمزوّدات الذكاء الاصطناعي) شائع
+  // ولا يجب أن يُفسَّر خطأً بأن الصورة "لا تحتوي بيانات وسم" (كان هذا سبب تصنيف وجه
+  // البيانات خطأً كصورة قطعة عند فشل النداء الأول فقط).
   const fetchTagInfo = async (dataUrl: string): Promise<{ weight_grams: number | null; karat_raw: string | null; type_raw: string | null; barcode: string | null } | null> => {
     const base64 = dataUrl.split(",")[1] ?? "";
-    const { data, error: fnError } = await supabase.functions.invoke("analyze-tag", {
-      body: { imageBase64: base64, mimeType: "image/jpeg" },
-    });
-    if (fnError) throw fnError;
-    if ((data as any)?.error) throw new Error((data as any).error);
-    return (data as any)?.tag ?? null;
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const { data, error: fnError } = await supabase.functions.invoke("analyze-tag", {
+          body: { imageBase64: base64, mimeType: "image/jpeg" },
+        });
+        if (fnError) throw fnError;
+        if ((data as any)?.error) throw new Error((data as any).error);
+        return (data as any)?.tag ?? null;
+      } catch (e) {
+        lastErr = e;
+        if (attempt === 0) await new Promise((r) => setTimeout(r, 800));
+      }
+    }
+    throw lastErr;
   };
 
   // قراءة وجه بيانات الوسم (BRANCH/KARAT/TYPE/WEIGHT) من الكاميرا الحية — تملأ الوزن
@@ -183,14 +195,17 @@ export default function LiveAdd() {
     let gotBarcode = false;
     let gotInfo = false;
     let gotPhoto = false;
+    let unclear = 0;
     try {
       for (const file of files) {
-        let matched = false;
+        let isBarcodeFace = false;
+        let isInfoFace = false;
+        let ocrFailed = false;
 
         try {
           const zxingText = await decodeBarcodeFromFile(file);
           if (zxingText) {
-            matched = true;
+            isBarcodeFace = true;
             if (!barcode) { setBarcode(zxingText); setBarcodeSkipped(false); gotBarcode = true; }
           }
         } catch { /* هذه الصورة على الأرجح ليست وجه الباركود */ }
@@ -200,24 +215,32 @@ export default function LiveAdd() {
           dataUrl = await fileToDataUrl(file);
           const tag = await fetchTagInfo(dataUrl);
           const normalizedKarat = normalizeKarat(tag?.karat_raw ?? null);
-          if (tag?.weight_grams != null || normalizedKarat || tag?.type_raw) matched = true;
+          if (tag?.weight_grams != null || normalizedKarat || tag?.type_raw) isInfoFace = true;
           if (tag?.weight_grams != null) { setWeight(String(tag.weight_grams)); gotInfo = true; }
           if (normalizedKarat) { setKarat(normalizedKarat); gotInfo = true; }
           if (tag?.type_raw) setItemType(tag.type_raw);
-          if (!barcode && !gotBarcode && tag?.barcode) { setBarcode(tag.barcode); setBarcodeSkipped(false); gotBarcode = true; matched = true; }
-        } catch { /* فشل قراءة هذه الصورة بالذكاء الاصطناعي */ }
+          if (!barcode && !gotBarcode && tag?.barcode) { setBarcode(tag.barcode); setBarcodeSkipped(false); gotBarcode = true; isBarcodeFace = true; }
+        } catch {
+          // فشل نداء الذكاء الاصطناعي فعلياً (شبكة/ازدحام) — هذا لا يعني إطلاقاً أن
+          // الصورة خالية من بيانات الوسم، فلا نُصنّفها كصورة قطعة أبداً في هذه الحالة.
+          ocrFailed = true;
+        }
 
-        // لم تُطابق هذه الصورة وجه الباركود ولا وجه البيانات — على الأرجح صورة القطعة نفسها.
-        if (!matched && !gotPhoto && !capturedBlob) {
+        // نضعها كصورة القطعة فقط عندما نتأكد فعلاً أنها ليست أياً من وجهي الوسم: فشل فك
+        // تشفير الباركود، ونجحت قراءة الذكاء الاصطناعي لكنها لم تجد فيها أي بيانات وسم.
+        if (!isBarcodeFace && !isInfoFace && !ocrFailed && !gotPhoto && !capturedBlob) {
           setCapturedBlob(file);
           setCapturedUrl(dataUrl ?? URL.createObjectURL(file));
           gotPhoto = true;
+        } else if (ocrFailed && !isBarcodeFace) {
+          unclear++;
         }
       }
 
       const found = [gotBarcode && "الباركود", gotInfo && "بيانات الوسم", gotPhoto && "صورة القطعة"].filter(Boolean);
       if (found.length) toast.success("تم التعرّف على: " + found.join("، "));
-      else toast.error("تعذّرت قراءة أي شيء من الصور — جرّب صوراً أوضح أو أدخل البيانات يدوياً");
+      if (unclear > 0) toast.error(`تعذّرت قراءة ${unclear > 1 ? "صورتين أو أكثر" : "صورة واحدة"} بسبب ازدحام مؤقت — أعد رفعها`);
+      if (!found.length && !unclear) toast.error("تعذّرت قراءة أي شيء من الصور — جرّب صوراً أوضح أو أدخل البيانات يدوياً");
     } finally {
       setTagUploadLoading(false);
     }
