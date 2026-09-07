@@ -1,7 +1,12 @@
 // Service worker خفيف: يجعل التطبيق يعمل كتطبيق مثبَّت على الآيفون
 // ويسرّع فتح الشاشة الأولى. لا نخزّن أي طلبات API/قاعدة بيانات.
 const CACHE = "mkharrm-shell-v3";
-const SHELL = ["/", "/index.html", "/manifest.webmanifest", "/app-icon-192.png", "/apple-touch-icon.png"];
+// نطاق تسجيل هذا الـ SW هو الأساس الصحيح للمسارات — يعمل سواء كان التطبيق على
+// الجذر (Lovable/نطاق مخصّص) أو تحت مسار فرعي (GitHub Pages: /jewel-sight-manager/).
+const SCOPE = self.registration.scope;
+const SHELL = ["", "index.html", "manifest.webmanifest", "app-icon-192.png", "apple-touch-icon.png"].map((p) =>
+  new URL(p, SCOPE).toString(),
+);
 
 self.addEventListener("install", (e) => {
   // إن فشل تخزين أحد الملفات (مثلاً أيقونة غير موجودة) لا نُفشل التثبيت كاملاً —
@@ -22,18 +27,21 @@ self.addEventListener("activate", (e) => {
 
 // إشعار Web Push — يظهر على شاشة القفل حتى والتطبيق مغلق تماماً.
 self.addEventListener("push", (event) => {
-  let data = { title: "مخرّم", body: "لديك إشعار جديد", url: "/" };
+  let data = { title: "مخرّم", body: "لديك إشعار جديد", url: SCOPE };
   try {
     if (event.data) data = { ...data, ...event.data.json() };
   } catch {
     /* ignore */
   }
+  // رابط الإشعار قد يصل كمسار مطلق من الجذر (مثال: "/products/123") — نحوّله دائماً
+  // إلى مسار كامل تحت نطاق هذا الـ SW حتى يعمل تحت أي مسار فرعي مستضاف عليه.
+  const targetUrl = new URL(data.url || ".", SCOPE).toString();
   event.waitUntil(
     self.registration.showNotification(data.title, {
       body: data.body,
-      icon: "/app-icon-192.png",
-      badge: "/app-icon-192.png",
-      data: { url: data.url || "/" },
+      icon: new URL("app-icon-192.png", SCOPE).toString(),
+      badge: new URL("app-icon-192.png", SCOPE).toString(),
+      data: { url: targetUrl },
       dir: "rtl",
       lang: "ar",
     }),
@@ -43,7 +51,7 @@ self.addEventListener("push", (event) => {
 // الضغط على الإشعار: يفتح التطبيق على الرابط المرتبط، أو يُركّز نافذة مفتوحة بالفعل.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = event.notification.data?.url || "/";
+  const url = event.notification.data?.url || SCOPE;
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
       for (const c of clients) {
@@ -66,7 +74,9 @@ self.addEventListener("fetch", (event) => {
 
   // التنقّل: الشبكة أولاً ثم النسخة المخزّنة عند انقطاع الإنترنت
   if (req.mode === "navigate") {
-    event.respondWith(fetch(req).catch(() => caches.match("/index.html").then((r) => r || fetch(req))));
+    event.respondWith(
+      fetch(req).catch(() => caches.match(new URL("index.html", SCOPE).toString()).then((r) => r || fetch(req))),
+    );
     return;
   }
 

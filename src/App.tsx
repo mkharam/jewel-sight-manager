@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import AppLayout from "@/components/AppLayout";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { AuthProvider } from "@/hooks/useAuth";
 import Auth from "@/pages/Auth";
 import ProductSearch from "@/pages/ProductSearch";
 import ProductDetail from "@/pages/ProductDetail";
@@ -15,6 +16,7 @@ import ReviewUnnamed from "@/pages/ReviewUnnamed";
 import Staff from "@/pages/Staff";
 import Reports from "@/pages/Reports";
 import Transfers from "@/pages/Transfers";
+import Reorders from "@/pages/Reorders";
 import GoldPrice from "@/pages/GoldPrice";
 import StockTake from "@/pages/StockTake";
 import NotFound from "./pages/NotFound.tsx";
@@ -27,28 +29,31 @@ const App = () => (
       <Toaster />
       <Sonner position="top-center" dir="rtl" richColors />
       <BrowserRouter>
-        <Routes>
-          <Route path="/auth" element={<Auth />} />
-          <Route path="/index" element={<Navigate to="/" replace />} />
-          <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-            <Route path="/" element={<ProductSearch />} />
-            <Route path="/products" element={<ProductSearch />} />
-            <Route path="/products/new" element={<ProductForm />} />
-            <Route path="/products/:id" element={<ProductDetail />} />
-            <Route path="/products/:id/edit" element={<ProductForm />} />
-            <Route path="/inquiries" element={<Inquiries />} />
-            <Route path="/upload" element={<Upload />} />
-            <Route path="/upload/review" element={<ReviewUnnamed />} />
-            <Route path="/import" element={<Navigate to="/upload" replace />} />
-            <Route path="/tray" element={<Navigate to="/upload" replace />} />
-            <Route path="/staff" element={<Staff />} />
-            <Route path="/reports" element={<Reports />} />
-            <Route path="/transfers" element={<Transfers />} />
-            <Route path="/gold-price" element={<GoldPrice />} />
-            <Route path="/stock-take" element={<StockTake />} />
-          </Route>
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <AuthProvider>
+          <Routes>
+            <Route path="/auth" element={<Auth />} />
+            <Route path="/index" element={<Navigate to="/" replace />} />
+            <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
+              <Route path="/" element={<ProductSearch />} />
+              <Route path="/products" element={<ProductSearch />} />
+              <Route path="/products/new" element={<ProductForm />} />
+              <Route path="/products/:id" element={<ProductDetail />} />
+              <Route path="/products/:id/edit" element={<ProductForm />} />
+              <Route path="/inquiries" element={<Inquiries />} />
+              <Route path="/upload" element={<Upload />} />
+              <Route path="/upload/review" element={<ReviewUnnamed />} />
+              <Route path="/import" element={<Navigate to="/upload" replace />} />
+              <Route path="/tray" element={<Navigate to="/upload" replace />} />
+              <Route path="/staff" element={<Staff />} />
+              <Route path="/reports" element={<Reports />} />
+              <Route path="/transfers" element={<Transfers />} />
+              <Route path="/reorders" element={<Reorders />} />
+              <Route path="/gold-price" element={<GoldPrice />} />
+              <Route path="/stock-take" element={<StockTake />} />
+            </Route>
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
