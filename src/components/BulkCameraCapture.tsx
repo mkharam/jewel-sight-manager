@@ -1,22 +1,31 @@
 // كاميرا مستمرة داخل التطبيق: تفتح مرة واحدة وتبقى مفتوحة، فيلتقط الموظف عشرات القطع
 // بضغطة زر متتالية دون إغلاق/فتح تطبيق الكاميرا في كل مرة (وهو ما يجعل رفع فرع كامل
 // بطيئاً جداً مع <input capture>). بعد كل صورة يظهر حقل وزن صغير يُركَّز عليه تلقائياً
-// (الميزان أمام الموظف عادة) لتسجيل الوزن فوراً قبل الانتقال للقطعة التالية. كل الصور
-// (مع أوزانها) تُرسَل دفعة واحدة لنفس خط الرفع والتحليل الخلفي الحالي (runUploadBatch)
-// عند الضغط على "تم".
+// (الميزان أمام الموظف عادة) لتسجيل الوزن فوراً قبل الانتقال للقطعة التالية. وبينما
+// الكاميرا مفتوحة، تُفحص كل إطارات الفيديو تلقائياً بحثاً عن باركود/QR عبر واجهة
+// BarcodeDetector المدمجة في المتصفح (بدون مكتبة خارجية) — بمجرد اكتشاف باركود يظهر
+// شريط أخضر أعلى الشاشة، ويُرفق تلقائياً بالصورة القادمة التي تُلتقط. كل الصور (مع
+// أوزانها وباركوداتها) تُرسَل دفعة واحدة لنفس خط الرفع والتحليل الخلفي الحالي
+// (runUploadBatch) عند الضغط على "تم" — يبقى تحليل الذكاء الاصطناعي فقط لتحديد
+// الاسم/الفئة/العيار والوصف.
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Camera, X, Check, Trash2, RotateCcw, ImageOff, Scale } from "lucide-react";
+import { Camera, X, Check, Trash2, RotateCcw, ImageOff, Scale, ScanLine } from "lucide-react";
 
-type Shot = { id: string; url: string; blob: Blob; weight: string };
+type Shot = { id: string; url: string; blob: Blob; weight: string; barcode: string };
 
-export type CapturedFile = File & { weightGrams?: number };
+export type CapturedFile = File & { weightGrams?: number; barcodeValue?: string };
 
 interface Props {
   open: boolean;
   onClose: () => void;
   onDone: (files: CapturedFile[]) => void;
 }
+
+// BarcodeDetector مدعومة في Chrome/Android (وليست في Safari/iOS حتى الآن) — نتحقق
+// من وجودها في وقت التشغيل ونتجاهلها بهدوء إن لم تكن متاحة (الحقل يبقى قابلاً للتعبئة
+// يدوياً دائماً).
+const supportsBarcodeDetector = () => typeof (window as any).BarcodeDetector !== "undefined";
 
 export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -26,14 +35,17 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
   const [facing, setFacing] = useState<"environment" | "user">("environment");
+  const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
   const weightInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const lastShotId = useRef<string | null>(null);
+  const detectorRef = useRef<any>(null);
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     setReady(false);
     setError(null);
+    setPendingBarcode(null);
 
     const start = async () => {
       try {
@@ -61,6 +73,35 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
       streamRef.current = null;
     };
   }, [open, facing]);
+
+  // فحص مستمر للباركود/QR طالما الكاميرا مفتوحة وجاهزة — يلتقط باركود المنتج قبل أو
+  // بعد تصوير القطعة نفسها، ويبقى "بانتظار" حتى يُرفق تلقائياً بالصورة القادمة.
+  useEffect(() => {
+    if (!open || !ready || !supportsBarcodeDetector()) return;
+    if (!detectorRef.current) {
+      try {
+        detectorRef.current = new (window as any).BarcodeDetector({
+          formats: ["qr_code", "code_128", "code_39", "ean_13", "ean_8", "upc_a", "upc_e", "codabar", "itf"],
+        });
+      } catch {
+        return;
+      }
+    }
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      if (stopped || !videoRef.current) return;
+      try {
+        const codes = await detectorRef.current.detect(videoRef.current);
+        if (codes?.length && codes[0].rawValue) setPendingBarcode(codes[0].rawValue);
+      } catch {
+        /* إطار غير صالح مؤقتاً — يتجاهل ويحاول مجدداً */
+      }
+      if (!stopped) timer = setTimeout(tick, 600);
+    };
+    timer = setTimeout(tick, 600);
+    return () => { stopped = true; clearTimeout(timer); };
+  }, [open, ready]);
 
   // تحرير روابط الصور الملتقطة عند إغلاق المكوّن نهائياً لتفادي تسرّب الذاكرة
   useEffect(() => {
@@ -92,12 +133,14 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const barcodeForShot = pendingBarcode ?? "";
+    setPendingBarcode(null);
     canvas.toBlob(
       (blob) => {
         if (!blob) return;
         const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         lastShotId.current = id;
-        setShots((prev) => [...prev, { id, url: URL.createObjectURL(blob), blob, weight: "" }]);
+        setShots((prev) => [...prev, { id, url: URL.createObjectURL(blob), blob, weight: "", barcode: barcodeForShot }]);
       },
       "image/jpeg",
       0.9,
@@ -109,6 +152,10 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
 
   const setWeight = (id: string, weight: string) => {
     setShots((prev) => prev.map((s) => (s.id === id ? { ...s, weight } : s)));
+  };
+
+  const setBarcode = (id: string, barcode: string) => {
+    setShots((prev) => prev.map((s) => (s.id === id ? { ...s, barcode } : s)));
   };
 
   const removeShot = (id: string) => {
@@ -125,6 +172,7 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
       const file = new File([s.blob], `capture-${Date.now()}-${i}.jpg`, { type: "image/jpeg" }) as CapturedFile;
       const w = parseFloat(s.weight);
       if (!isNaN(w) && w > 0) file.weightGrams = w;
+      if (s.barcode.trim()) file.barcodeValue = s.barcode.trim();
       return file;
     });
     onDone(files);
@@ -157,9 +205,21 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
           <video ref={videoRef} playsInline muted className="w-full h-full object-contain" />
         )}
         {flash && <div className="absolute inset-0 bg-white/80 animate-pulse" />}
+
+        {/* شريط الباركود المكتشَف — سيُرفق تلقائياً بالصورة القادمة */}
+        {pendingBarcode && (
+          <div className="absolute top-3 inset-x-3 flex items-center gap-2 bg-status-available/90 text-white rounded-xl px-3 py-2 shadow-lg">
+            <ScanLine className="size-4 shrink-0" />
+            <span className="text-xs font-mono truncate flex-1" dir="ltr">{pendingBarcode}</span>
+            <span className="text-[10px] shrink-0">سيُرفق بالصورة القادمة</span>
+            <button onClick={() => setPendingBarcode(null)} className="shrink-0 p-1 -m-1" aria-label="تجاهل الباركود">
+              <X className="size-3.5" />
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* شريط مصغّرات الصور الملتقطة مع حقل وزن لكل صورة */}
+      {/* شريط مصغّرات الصور الملتقطة مع حقلي وزن وباركود لكل صورة */}
       {shots.length > 0 && (
         <div className="flex gap-2 overflow-x-auto px-3 py-2 bg-black/60">
           {shots.map((s) => (
@@ -173,6 +233,11 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
                 >
                   <Trash2 className="size-3 text-white" />
                 </button>
+                {s.barcode && (
+                  <span className="absolute -bottom-1 -left-1 -right-1 flex justify-center">
+                    <ScanLine className="size-3 text-status-available bg-black/70 rounded-full p-0.5" />
+                  </span>
+                )}
               </div>
               <input
                 ref={(el) => { weightInputRefs.current[s.id] = el; }}
@@ -182,7 +247,16 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
                 placeholder="وزن (جم)"
                 value={s.weight}
                 onChange={(e) => setWeight(s.id, e.target.value)}
-                className="w-14 h-7 rounded-md bg-white/10 border border-white/25 text-white text-[10px] text-center placeholder:text-white/40 focus:bg-white/20 focus:outline-none focus:ring-1 focus:ring-primary"
+                className="w-16 h-7 rounded-md bg-white/10 border border-white/25 text-white text-[10px] text-center placeholder:text-white/40 focus:bg-white/20 focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <input
+                type="text"
+                inputMode="text"
+                placeholder="باركود"
+                value={s.barcode}
+                onChange={(e) => setBarcode(s.id, e.target.value)}
+                dir="ltr"
+                className="w-16 h-6 rounded-md bg-white/10 border border-white/25 text-white text-[9px] text-center font-mono placeholder:text-white/40 focus:bg-white/20 focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
           ))}
@@ -214,7 +288,7 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
 
       {shots.length > 0 && (
         <p className="flex items-center justify-center gap-1 text-[11px] text-white/50 pb-2 -mt-3">
-          <Scale className="size-3" /> اكتب وزن كل قطعة أسفل صورتها (اختياري) — يُحفظ مباشرة مع القطعة
+          <Scale className="size-3" /> الوزن والباركود اختياريان ويُحفظان مباشرة مع القطعة
         </p>
       )}
     </div>

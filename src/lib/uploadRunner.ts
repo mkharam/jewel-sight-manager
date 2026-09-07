@@ -69,6 +69,7 @@ async function saveUnanalyzedProduct(
   storagePath: string,
   opts: UploadOptions,
   weightGrams?: number | null,
+  barcodeValue?: string | null,
 ): Promise<string> {
   const name = "قطعة جديدة";
   const { data: prod, error: e1 } = await supabase
@@ -79,6 +80,7 @@ async function saveUnanalyzedProduct(
       status: "available",
       created_by: opts.userId,
       weight_grams: weightGrams ?? null,
+      barcode_value: barcodeValue || null,
     } as any)
     .select("id")
     .single();
@@ -220,11 +222,13 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
     }
   }
 
-  // وزن كل قطعة (اختياري) يُلتقط في كاميرا التصوير المتتالي ويُرفق كخاصية إضافية على
-  // ملف الصورة نفسه (weightGrams) — نستخرجه هنا قبل الضغط بترتيب مطابق لـ `picked`،
-  // فصور الـ PDF لا وزن لها (null).
+  // وزن وباركود كل قطعة (اختياريان) يُلتقطان في كاميرا التصوير المتتالي ويُرفقان
+  // كخاصيتين إضافيتين على ملف الصورة نفسه (weightGrams / barcodeValue) — نستخرجهما هنا
+  // قبل الضغط بترتيب مطابق لـ `picked`، فصور الـ PDF ليس لها وزن أو باركود (null).
   const weightsForImages = images.map((f) => (f as any).weightGrams ?? null);
   const weights: (number | null)[] = [...weightsForImages, ...pdfPages.map(() => null)];
+  const barcodesForImages = images.map((f) => (f as any).barcodeValue ?? null);
+  const barcodes: (string | null)[] = [...barcodesForImages, ...pdfPages.map(() => null)];
 
   const picked = [...images, ...pdfPages];
   if (!picked.length) {
@@ -246,6 +250,7 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
     file,
     previewUrl: URL.createObjectURL(file),
     weightGrams: weights[idx] ?? null,
+    barcodeValue: barcodes[idx] ?? null,
   }));
 
   entries.forEach((e) =>
@@ -269,9 +274,10 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
         const n = await saveTrayPieces(entry.file, path, opts, categories);
         uploadQueue.update(entry.id, { status: "done", label: `تم حفظ ${n} قطعة` });
       } else {
-        const name = await saveUnanalyzedProduct(path, opts, entry.weightGrams);
+        const name = await saveUnanalyzedProduct(path, opts, entry.weightGrams, entry.barcodeValue);
         const weightLabel = entry.weightGrams ? ` (${entry.weightGrams} جم)` : "";
-        uploadQueue.update(entry.id, { status: "done", label: `تم الحفظ: ${name}${weightLabel} — سيُحلّل تلقائياً قريباً` });
+        const barcodeLabel = entry.barcodeValue ? ` — باركود ${entry.barcodeValue}` : "";
+        uploadQueue.update(entry.id, { status: "done", label: `تم الحفظ: ${name}${weightLabel}${barcodeLabel} — سيُحلّل تلقائياً قريباً` });
       }
       ok++;
     } catch (e: any) {
