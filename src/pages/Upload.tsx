@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Camera, FolderUp, Loader2, Sparkles, X, CheckCircle2, AlertCircle, Layers, ImageOff } from "lucide-react";
+import { Camera, FolderUp, Loader2, Sparkles, X, CheckCircle2, AlertCircle, Layers, ImageOff, ScanLine } from "lucide-react";
 import { toast } from "sonner";
 import { runUploadBatch } from "@/lib/uploadRunner";
 import { useUploadQueue, uploadQueue } from "@/lib/uploadQueue";
@@ -119,6 +119,14 @@ export default function Upload() {
           <p className="text-xs text-muted-foreground -mt-2">
             تفتح الكاميرا وتبقى مفتوحة — صوّر كل قطعة بضغطة ثم اضغط "تم" في النهاية لرفعها كلها دفعة واحدة.
           </p>
+        )}
+
+        {supportsInAppCamera() && (
+          <Link to="/live-add">
+            <Button variant="secondary" className="h-11 w-full">
+              <ScanLine className="size-4 ml-2" /> إضافة مباشرة (باركود ثم صورة لكل قطعة)
+            </Button>
+          </Link>
         )}
 
         <div>
