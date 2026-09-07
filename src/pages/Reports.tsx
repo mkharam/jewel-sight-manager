@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { BarChart3, Download, TrendingUp, ArrowLeftRight, Package, DollarSign, Clock, AlertTriangle } from "lucide-react";
+import { BarChart3, Download, TrendingUp, ArrowLeftRight, Package, DollarSign, Clock, AlertTriangle, Receipt } from "lucide-react";
 import ReindexImagesCard from "@/components/ReindexImagesCard";
 
 type Branch = { id: string; name: string; code: string | null };
@@ -64,6 +64,20 @@ export default function Reports() {
     },
   });
 
+  // المبيعات الفعلية المكتملة (وليست عروض الأسعار فقط) — هذا هو الإيراد الحقيقي.
+  // نستبعد المُرجعة من الإيراد لكن نُبقيها في العدد الإجمالي لتظهر في السجل التفصيلي.
+  const { data: sales = [] } = useQuery({
+    queryKey: ["report-sales", month],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("sales")
+        .select("id, branch_id, final_price, discount, returned_at, sold_at, product_name_snapshot, customer_name")
+        .gte("sold_at", startISO)
+        .lt("sold_at", endISO);
+      return data ?? [];
+    },
+  });
+
   const { data: transfers = [] } = useQuery({
     queryKey: ["report-transfers", month],
     queryFn: async () => {
@@ -105,6 +119,7 @@ export default function Reports() {
       branch_id: string;
       name: string;
       quotes: number;
+      salesCount: number;
       revenue: number;
       transfersOut: number;
       transfersIn: number;
@@ -116,6 +131,7 @@ export default function Reports() {
         branch_id: b.id,
         name: b.name,
         quotes: 0,
+        salesCount: 0,
         revenue: 0,
         transfersOut: 0,
         transfersIn: 0,
@@ -128,7 +144,14 @@ export default function Reports() {
       const row = map.get(q.branch_id);
       if (!row) continue;
       row.quotes += 1;
-      row.revenue += Number(q.price ?? 0);
+    }
+    // الإيراد الحقيقي من المبيعات الفعلية المكتملة — نستبعد المُرجعة منه.
+    for (const s of sales as any[]) {
+      if (!s.branch_id) continue;
+      const row = map.get(s.branch_id);
+      if (!row) continue;
+      row.salesCount += 1;
+      if (!s.returned_at) row.revenue += Number(s.final_price ?? 0);
     }
     for (const t of transfers) {
       const from = map.get(t.from_branch_id);
@@ -145,17 +168,18 @@ export default function Reports() {
       if (row) row.newProducts += 1;
     }
     return Array.from(map.values());
-  }, [branches, quotes, transfers, newProducts]);
+  }, [branches, quotes, sales, transfers, newProducts]);
 
   const totals = useMemo(() => {
     return summary.reduce(
       (acc, r) => ({
         quotes: acc.quotes + r.quotes,
+        salesCount: acc.salesCount + r.salesCount,
         revenue: acc.revenue + r.revenue,
         transfersOut: acc.transfersOut + r.transfersOut,
         newProducts: acc.newProducts + r.newProducts,
       }),
-      { quotes: 0, revenue: 0, transfersOut: 0, newProducts: 0 },
+      { quotes: 0, salesCount: 0, revenue: 0, transfersOut: 0, newProducts: 0 },
     );
   }, [summary]);
 
@@ -222,11 +246,12 @@ export default function Reports() {
   }, [month, monthOptions]);
 
   const exportCSV = () => {
-    const header = ["الفرع", "عروض أسعار", "إجمالي المبيعات (د.ل)", "تحويلات صادرة", "تحويلات واردة", "استلمت فعلياً", "قطع جديدة"];
+    const header = ["الفرع", "عدد المبيعات", "إجمالي الإيراد (د.ل)", "عروض أسعار", "تحويلات صادرة", "تحويلات واردة", "استلمت فعلياً", "قطع جديدة"];
     const rows = summary.map((r) => [
       r.name,
-      r.quotes,
+      r.salesCount,
       r.revenue.toFixed(2),
+      r.quotes,
       r.transfersOut,
       r.transfersIn,
       r.transfersReceived,
@@ -273,7 +298,8 @@ export default function Reports() {
       </header>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard icon={<DollarSign className="size-4" />} label="إجمالي المبيعات" value={`${fmt(totals.revenue)} د.ل`} />
+        <StatCard icon={<DollarSign className="size-4" />} label="إجمالي الإيراد (مبيعات فعلية)" value={`${fmt(totals.revenue)} د.ل`} />
+        <StatCard icon={<Receipt className="size-4" />} label="عدد المبيعات" value={fmt(totals.salesCount)} />
         <StatCard icon={<TrendingUp className="size-4" />} label="عدد عروض الأسعار" value={fmt(totals.quotes)} />
         <StatCard icon={<ArrowLeftRight className="size-4" />} label="تحويلات بين الفروع" value={fmt(totals.transfersOut)} />
         <StatCard icon={<Package className="size-4" />} label="قطع جديدة أُضيفت" value={fmt(totals.newProducts)} />
@@ -374,8 +400,9 @@ export default function Reports() {
             <TableHeader>
               <TableRow>
                 <TableHead>الفرع</TableHead>
-                <TableHead className="text-center">مبيعات (عروض)</TableHead>
-                <TableHead className="text-center">إجمالي (د.ل)</TableHead>
+                <TableHead className="text-center">مبيعات</TableHead>
+                <TableHead className="text-center">إيراد (د.ل)</TableHead>
+                <TableHead className="text-center">عروض أسعار</TableHead>
                 <TableHead className="text-center">صادر</TableHead>
                 <TableHead className="text-center">وارد</TableHead>
                 <TableHead className="text-center">استُلم</TableHead>
@@ -386,8 +413,9 @@ export default function Reports() {
               {summary.map((r) => (
                 <TableRow key={r.branch_id}>
                   <TableCell className="font-semibold">{r.name}</TableCell>
-                  <TableCell className="text-center">{fmt(r.quotes)}</TableCell>
+                  <TableCell className="text-center">{fmt(r.salesCount)}</TableCell>
                   <TableCell className="text-center font-mono">{fmt(r.revenue)}</TableCell>
+                  <TableCell className="text-center">{fmt(r.quotes)}</TableCell>
                   <TableCell className="text-center">{fmt(r.transfersOut)}</TableCell>
                   <TableCell className="text-center">{fmt(r.transfersIn)}</TableCell>
                   <TableCell className="text-center text-primary font-semibold">{fmt(r.transfersReceived)}</TableCell>
@@ -395,7 +423,7 @@ export default function Reports() {
                 </TableRow>
               ))}
               {summary.length === 0 && (
-                <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">لا توجد فروع</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">لا توجد فروع</TableCell></TableRow>
               )}
             </TableBody>
           </Table>

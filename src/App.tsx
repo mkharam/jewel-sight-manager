@@ -24,6 +24,8 @@ const Transfers = lazy(() => import("@/pages/Transfers"));
 const Reorders = lazy(() => import("@/pages/Reorders"));
 const GoldPrice = lazy(() => import("@/pages/GoldPrice"));
 const StockTake = lazy(() => import("@/pages/StockTake"));
+const Sales = lazy(() => import("@/pages/Sales"));
+const Suppliers = lazy(() => import("@/pages/Suppliers"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 function PageLoader() {
@@ -64,6 +66,8 @@ const App = () => (
                 <Route path="/reorders" element={<Reorders />} />
                 <Route path="/gold-price" element={<GoldPrice />} />
                 <Route path="/stock-take" element={<StockTake />} />
+                <Route path="/sales" element={<Sales />} />
+                <Route path="/suppliers" element={<Suppliers />} />
               </Route>
               <Route path="*" element={<NotFound />} />
             </Routes>
