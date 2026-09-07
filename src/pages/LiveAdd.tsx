@@ -11,10 +11,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowRight, Camera, Check, X, ScanLine, RotateCcw, ImageOff, RefreshCw, CheckCircle2, SkipForward, ScanText, Loader2 } from "lucide-react";
+import { ArrowRight, Camera, Check, X, ScanLine, RotateCcw, ImageOff, RefreshCw, CheckCircle2, SkipForward, ScanText, Loader2, FolderUp } from "lucide-react";
 import { toast } from "sonner";
 import { runUploadBatch } from "@/lib/uploadRunner";
 import { useBoxedBarcodeScanner } from "@/lib/useBoxedBarcodeScanner";
+import { decodeBarcodeFromFile } from "@/lib/decodeBarcodeFromImage";
 import ScanBoxOverlay from "@/components/ScanBoxOverlay";
 import type { CapturedFile } from "@/components/BulkCameraCapture";
 
@@ -40,11 +41,14 @@ export default function LiveAdd() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const weightRef = useRef<HTMLInputElement>(null);
+  const barcodeFileRef = useRef<HTMLInputElement>(null);
+  const infoFileRef = useRef<HTMLInputElement>(null);
 
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [facing, setFacing] = useState<"environment" | "user">("environment");
   const [flash, setFlash] = useState(false);
+  const [barcodeUploadLoading, setBarcodeUploadLoading] = useState(false);
 
   const [stage, setStage] = useState<Stage>("scan");
   const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
@@ -142,18 +146,14 @@ export default function LiveAdd() {
     return { blob, dataUrl };
   };
 
-  // يصوّر وجه بيانات الوسم (BRANCH/KARAT/TYPE/WEIGHT) ويقرأه فوراً عبر الذكاء الاصطناعي —
-  // يملأ الوزن والعيار تلقائياً بدل الكتابة اليدوية، مع بقاء الحقول قابلة للتعديل دائماً.
-  const captureInfoTag = async () => {
-    const frame = grabFrame();
-    if (!frame) return;
-    setFlash(true);
-    setTimeout(() => setFlash(false), 120);
-    if (navigator.vibrate) navigator.vibrate(15);
-    setInfoUrl(frame.dataUrl);
+  // يقرأ وجه بيانات الوسم (BRANCH/KARAT/TYPE/WEIGHT) عبر الذكاء الاصطناعي من أي مصدر
+  // صورة (لقطة كاميرا حية أو ملف مرفوع من المعرض) — يملأ الوزن والعيار تلقائياً بدل
+  // الكتابة اليدوية، مع بقاء الحقول قابلة للتعديل دائماً.
+  const analyzeInfoTag = async (dataUrl: string) => {
+    setInfoUrl(dataUrl);
     setInfoLoading(true);
     try {
-      const base64 = frame.dataUrl.split(",")[1] ?? "";
+      const base64 = dataUrl.split(",")[1] ?? "";
       const { data, error: fnError } = await supabase.functions.invoke("analyze-tag", {
         body: { imageBase64: base64, mimeType: "image/jpeg" },
       });
@@ -174,6 +174,45 @@ export default function LiveAdd() {
     } finally {
       setInfoLoading(false);
     }
+  };
+
+  const captureInfoTag = () => {
+    const frame = grabFrame();
+    if (!frame) return;
+    setFlash(true);
+    setTimeout(() => setFlash(false), 120);
+    if (navigator.vibrate) navigator.vibrate(15);
+    void analyzeInfoTag(frame.dataUrl);
+  };
+
+  // رفع صورة وجه الباركود من المعرض بدل المسح الحي — يجرّب كل الزوايا تلقائياً.
+  const handleBarcodeFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setBarcodeUploadLoading(true);
+    try {
+      const text = await decodeBarcodeFromFile(file);
+      if (text) {
+        setConfirmedBarcode(text);
+        toast.success("تم قراءة الباركود من الصورة");
+        setStage("info");
+      } else {
+        toast.error("تعذّرت قراءة الباركود من هذه الصورة — جرّب صورة أوضح أو أدخله يدوياً");
+      }
+    } finally {
+      setBarcodeUploadLoading(false);
+    }
+  };
+
+  // رفع صورة وجه بيانات الوسم من المعرض بدل التصوير الحي.
+  const handleInfoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => void analyzeInfoTag(String(reader.result));
+    reader.readAsDataURL(file);
   };
 
   const retakeInfo = () => {
@@ -296,10 +335,10 @@ export default function LiveAdd() {
         )}
         {flash && <div className="absolute inset-0 bg-white/80 animate-pulse" />}
 
-        {infoLoading && (
+        {(infoLoading || barcodeUploadLoading) && (
           <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-2 text-white">
             <Loader2 className="size-8 animate-spin" />
-            <p className="text-sm">جارٍ قراءة الوسم…</p>
+            <p className="text-sm">{barcodeUploadLoading ? "جارٍ قراءة الباركود من الصورة…" : "جارٍ قراءة الوسم…"}</p>
           </div>
         )}
 
@@ -333,14 +372,26 @@ export default function LiveAdd() {
       </div>
 
       {/* أزرار كل مرحلة */}
+      <input ref={barcodeFileRef} type="file" accept="image/*" className="hidden" onChange={handleBarcodeFileChange} />
+      <input ref={infoFileRef} type="file" accept="image/*" className="hidden" onChange={handleInfoFileChange} />
+
       {stage === "scan" && (
-        <div className="flex items-center justify-center gap-4 py-6 safe-area-pb bg-black/60">
-          <Button variant="outline" className="text-white border-white/30 bg-transparent" onClick={skipBarcode}>
-            <SkipForward className="size-4 ml-1" /> تخطّي (بدون باركود)
-          </Button>
-          <Button onClick={confirmBarcode} disabled={!pendingBarcode} className="bg-gold-gradient text-primary-foreground shadow-gold">
-            <Check className="size-4 ml-1" /> تأكيد ومتابعة
-          </Button>
+        <div className="flex flex-col items-center gap-3 py-6 safe-area-pb bg-black/60">
+          <div className="flex items-center justify-center gap-4">
+            <Button variant="outline" className="text-white border-white/30 bg-transparent" onClick={skipBarcode}>
+              <SkipForward className="size-4 ml-1" /> تخطّي (بدون باركود)
+            </Button>
+            <Button onClick={confirmBarcode} disabled={!pendingBarcode} className="bg-gold-gradient text-primary-foreground shadow-gold">
+              <Check className="size-4 ml-1" /> تأكيد ومتابعة
+            </Button>
+          </div>
+          <button
+            onClick={() => barcodeFileRef.current?.click()}
+            disabled={barcodeUploadLoading}
+            className="flex items-center gap-1.5 text-xs text-white/70 underline underline-offset-2 disabled:opacity-50"
+          >
+            <FolderUp className="size-3.5" /> أو ارفع صورة الباركود من المعرض
+          </button>
         </div>
       )}
 
@@ -356,6 +407,12 @@ export default function LiveAdd() {
             aria-label="التقاط صورة الوسم"
           >
             <ScanText className="size-6 text-white" />
+          </button>
+          <button
+            onClick={() => infoFileRef.current?.click()}
+            className="flex items-center gap-1.5 text-xs text-white/70 underline underline-offset-2"
+          >
+            <FolderUp className="size-3.5" /> أو ارفع صورة وجه البيانات من المعرض
           </button>
         </div>
       )}
@@ -432,7 +489,14 @@ export default function LiveAdd() {
               className="w-20 h-11 rounded-lg bg-white/10 border border-white/25 text-white text-center placeholder:text-white/40 focus:bg-white/20 focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
-          {confirmedBarcode && <p className="text-[11px] text-white/60 font-mono" dir="ltr">باركود: {confirmedBarcode}</p>}
+          <input
+            type="text"
+            placeholder="الباركود (اختياري)"
+            value={confirmedBarcode ?? ""}
+            onChange={(e) => setConfirmedBarcode(e.target.value || null)}
+            dir="ltr"
+            className="w-full max-w-xs h-9 rounded-lg bg-white/10 border border-white/25 text-white text-center text-xs font-mono placeholder:text-white/40 focus:bg-white/20 focus:outline-none focus:ring-1 focus:ring-primary"
+          />
           <div className="flex items-center gap-3 w-full max-w-xs">
             <Button variant="outline" className="flex-1 text-white border-white/30 bg-transparent" onClick={retakePhoto}>
               <RefreshCw className="size-4 ml-1" /> إعادة التصوير
