@@ -14,7 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ArrowRight, Camera, Check, X, ScanLine, RotateCcw, ImageOff, RefreshCw, CheckCircle2, SkipForward, ScanText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { runUploadBatch } from "@/lib/uploadRunner";
-import { useBoxedBarcodeScanner, SCAN_BOX } from "@/lib/useBoxedBarcodeScanner";
+import { useBoxedBarcodeScanner } from "@/lib/useBoxedBarcodeScanner";
+import ScanBoxOverlay from "@/components/ScanBoxOverlay";
 import type { CapturedFile } from "@/components/BulkCameraCapture";
 
 const NO_BRANCH = "__none__";
@@ -306,15 +307,7 @@ export default function LiveAdd() {
             بالإضافة لشريط الباركود المكتشَف */}
         {stage === "scan" && (
           <>
-            <div
-              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-xl pointer-events-none transition-colors"
-              style={{
-                width: `${SCAN_BOX.widthPct * 100}%`,
-                height: `${SCAN_BOX.heightPct * 100}%`,
-                border: `3px solid ${pendingBarcode ? "rgba(34,197,94,0.9)" : "rgba(255,255,255,0.6)"}`,
-                boxShadow: "0 0 0 999px rgba(0,0,0,0.35)",
-              }}
-            />
+            <ScanBoxOverlay active={!!pendingBarcode} />
             <div className="absolute top-3 inset-x-3 space-y-2">
               {pendingBarcode ? (
                 <div className="flex items-center gap-2 bg-status-available/90 text-white rounded-xl px-3 py-2 shadow-lg">

@@ -11,7 +11,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Camera, X, Check, Trash2, RotateCcw, ImageOff, Scale, ScanLine } from "lucide-react";
-import { useBoxedBarcodeScanner, SCAN_BOX } from "@/lib/useBoxedBarcodeScanner";
+import { useBoxedBarcodeScanner } from "@/lib/useBoxedBarcodeScanner";
+import ScanBoxOverlay from "@/components/ScanBoxOverlay";
 
 type Shot = { id: string; url: string; blob: Blob; weight: string; barcode: string };
 
@@ -179,14 +180,7 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
         {flash && <div className="absolute inset-0 bg-white/80 animate-pulse" />}
 
         {/* إطار تصويب يحدّد بدقة المنطقة التي يُقرأ منها الباركود فقط */}
-        <div
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-xl pointer-events-none transition-colors"
-          style={{
-            width: `${SCAN_BOX.widthPct * 100}%`,
-            height: `${SCAN_BOX.heightPct * 100}%`,
-            border: `2px solid ${pendingBarcode ? "rgba(34,197,94,0.85)" : "rgba(255,255,255,0.4)"}`,
-          }}
-        />
+        <ScanBoxOverlay active={!!pendingBarcode} />
 
         {/* شريط الباركود المكتشَف — سيُرفق تلقائياً بالصورة القادمة */}
         {pendingBarcode && (
