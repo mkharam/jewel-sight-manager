@@ -1,9 +1,9 @@
-// إضافة مباشرة: تدفّق صارم لكل قطعة على حدة — مسح الباركود أولاً (أو تخطّيه)، تأكيد،
-// ثم تتحول الكاميرا تلقائياً لوضع تصوير القطعة، إدخال الوزن، وحفظ فوري قبل الانتقال
+// إضافة مباشرة: تدفّق صارم لكل قطعة على حدة — مسح وجه الباركود من الوسم أولاً، ثم
+// مسح وجه بيانات الوسم (الوزن/العيار مطبوعان جاهزان عليه فتُقرآن تلقائياً بدل الكتابة
+// اليدوية)، ثم تتحول الكاميرا تلقائياً لوضع تصوير القطعة، ثم حفظ فوري قبل الانتقال
 // للقطعة التالية تلقائياً. هذا يختلف عن صفحة "رفع قطع جديدة": هناك تصوير عادي (قطعة
 // واحدة بضغطة) أو تصوير متتالي (عدة قطع دفعة واحدة ثم رفعها معاً)، بينما هنا كل قطعة
-// تُحفظ فوراً بمجرد اكتمال خطواتها الثلاث، ما يمنع التباس أي باركود بقطعة غير قطعته —
-// أبطأ قليلاً من التصوير المتتالي لكن أكثر أماناً لمطابقة الباركود بالصورة الصحيحة.
+// تُحفظ فوراً بمجرد اكتمال خطواتها، ما يمنع التباس أي باركود/وزن بقطعة غير قطعته.
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -11,7 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowRight, Camera, Check, X, ScanLine, RotateCcw, ImageOff, RefreshCw, CheckCircle2, SkipForward } from "lucide-react";
+import { ArrowRight, Camera, Check, X, ScanLine, RotateCcw, ImageOff, RefreshCw, CheckCircle2, SkipForward, ScanText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { runUploadBatch } from "@/lib/uploadRunner";
 import type { CapturedFile } from "@/components/BulkCameraCapture";
@@ -20,8 +20,17 @@ const NO_BRANCH = "__none__";
 
 const supportsBarcodeDetector = () => typeof (window as any).BarcodeDetector !== "undefined";
 
-type Stage = "scan" | "photo" | "review";
+type Stage = "scan" | "info" | "photo" | "review";
 type SavedItem = { id: string; url: string; weight: string; barcode: string | null };
+
+// يحوّل "18KB"/"21 K"/"18 كارات" إلى "18K"/"21K" المعروفتين في النظام — أي شكل آخر يُترك فارغاً
+// ليقرره الذكاء الاصطناعي لاحقاً بدل تخمين خاطئ.
+function normalizeKarat(raw: string | null): string | null {
+  if (!raw) return null;
+  const m = raw.match(/(18|21)/);
+  if (!m) return null;
+  return `${m[1]}K`;
+}
 
 export default function LiveAdd() {
   const navigate = useNavigate();
@@ -41,9 +50,15 @@ export default function LiveAdd() {
   const [stage, setStage] = useState<Stage>("scan");
   const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
   const [confirmedBarcode, setConfirmedBarcode] = useState<string | null>(null);
+
+  const [infoUrl, setInfoUrl] = useState<string | null>(null);
+  const [infoLoading, setInfoLoading] = useState(false);
+  const [weight, setWeight] = useState("");
+  const [karat, setKarat] = useState<string | null>(null);
+  const [itemType, setItemType] = useState<string | null>(null);
+
   const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
   const [capturedUrl, setCapturedUrl] = useState<string | null>(null);
-  const [weight, setWeight] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<SavedItem[]>([]);
 
@@ -111,65 +126,115 @@ export default function LiveAdd() {
     return () => { stopped = true; clearTimeout(timer); };
   }, [stage, ready]);
 
-  // تركيز تلقائي على حقل الوزن عند الدخول لمرحلة المراجعة (الميزان أمام الموظف الآن)
   useEffect(() => {
     if (stage === "review") setTimeout(() => weightRef.current?.focus(), 50);
   }, [stage]);
 
   useEffect(() => {
-    return () => { if (capturedUrl) URL.revokeObjectURL(capturedUrl); };
+    return () => {
+      if (capturedUrl) URL.revokeObjectURL(capturedUrl);
+      if (infoUrl) URL.revokeObjectURL(infoUrl);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const confirmBarcode = () => {
     setConfirmedBarcode(pendingBarcode);
     setPendingBarcode(null);
-    setStage("photo");
+    setStage("info");
   };
 
   const skipBarcode = () => {
     setConfirmedBarcode(null);
     setPendingBarcode(null);
-    setStage("photo");
+    setStage("info");
   };
 
-  const capturePhoto = () => {
+  const grabFrame = (): { blob: Promise<Blob | null>; dataUrl: string } | null => {
     const video = videoRef.current;
-    if (!video || !ready) return;
+    if (!video || !ready) return null;
     const canvas = document.createElement("canvas");
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    if (!ctx) return null;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) return;
-        setCapturedBlob(blob);
-        setCapturedUrl(URL.createObjectURL(blob));
-        setStage("review");
-      },
-      "image/jpeg",
-      0.9,
-    );
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+    const blob = new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+    return { blob, dataUrl };
+  };
+
+  // يصوّر وجه بيانات الوسم (BRANCH/KARAT/TYPE/WEIGHT) ويقرأه فوراً عبر الذكاء الاصطناعي —
+  // يملأ الوزن والعيار تلقائياً بدل الكتابة اليدوية، مع بقاء الحقول قابلة للتعديل دائماً.
+  const captureInfoTag = async () => {
+    const frame = grabFrame();
+    if (!frame) return;
+    setFlash(true);
+    setTimeout(() => setFlash(false), 120);
+    if (navigator.vibrate) navigator.vibrate(15);
+    setInfoUrl(frame.dataUrl);
+    setInfoLoading(true);
+    try {
+      const base64 = frame.dataUrl.split(",")[1] ?? "";
+      const { data, error: fnError } = await supabase.functions.invoke("analyze-tag", {
+        body: { imageBase64: base64, mimeType: "image/jpeg" },
+      });
+      if (fnError) throw fnError;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      const tag = (data as any)?.tag ?? {};
+      if (tag.weight_grams != null) setWeight(String(tag.weight_grams));
+      const normalizedKarat = normalizeKarat(tag.karat_raw ?? null);
+      if (normalizedKarat) setKarat(normalizedKarat);
+      if (tag.type_raw) setItemType(tag.type_raw);
+      if (!confirmedBarcode && tag.barcode) setConfirmedBarcode(tag.barcode);
+      const gotSomething = tag.weight_grams != null || normalizedKarat || tag.type_raw;
+      toast[gotSomething ? "success" : "error"](
+        gotSomething ? "تم قراءة بيانات الوسم — تحقّق منها قبل المتابعة" : "لم يتّضح شيء في الصورة — أدخل الوزن يدوياً أو أعد المحاولة",
+      );
+    } catch (e: any) {
+      toast.error(e?.message ?? "تعذّرت قراءة الوسم — أدخل الوزن يدوياً");
+    } finally {
+      setInfoLoading(false);
+    }
+  };
+
+  const retakeInfo = () => {
+    if (infoUrl) URL.revokeObjectURL(infoUrl);
+    setInfoUrl(null);
+  };
+
+  const proceedToPhoto = () => setStage("photo");
+  const skipInfo = () => { setInfoUrl(null); setStage("photo"); };
+
+  const capturePhoto = async () => {
+    const frame = grabFrame();
+    if (!frame) return;
+    const blob = await frame.blob;
+    if (!blob) return;
+    setCapturedBlob(blob);
+    setCapturedUrl(URL.createObjectURL(blob));
+    setStage("review");
     setFlash(true);
     setTimeout(() => setFlash(false), 120);
     if (navigator.vibrate) navigator.vibrate(15);
   };
 
-  const retake = () => {
+  const retakePhoto = () => {
     if (capturedUrl) URL.revokeObjectURL(capturedUrl);
     setCapturedBlob(null);
     setCapturedUrl(null);
-    setWeight("");
     setStage("photo");
   };
 
   const resetForNext = () => {
     if (capturedUrl) URL.revokeObjectURL(capturedUrl);
+    if (infoUrl) URL.revokeObjectURL(infoUrl);
     setCapturedBlob(null);
     setCapturedUrl(null);
+    setInfoUrl(null);
     setWeight("");
+    setKarat(null);
+    setItemType(null);
     setConfirmedBarcode(null);
     setPendingBarcode(null);
     setStage("scan");
@@ -178,10 +243,12 @@ export default function LiveAdd() {
   const saveAndNext = async () => {
     if (!capturedBlob || !user) return;
     setSaving(true);
-    const file = new File([capturedBlob], `capture-${Date.now()}.jpg`, { type: "image/jpeg" }) as CapturedFile;
+    const file = new File([capturedBlob], `capture-${Date.now()}.jpg`, { type: "image/jpeg" }) as CapturedFile & { karat?: string; itemType?: string };
     const w = parseFloat(weight);
     if (!isNaN(w) && w > 0) file.weightGrams = w;
     if (confirmedBarcode) file.barcodeValue = confirmedBarcode;
+    if (karat) file.karat = karat;
+    if (itemType) file.itemType = itemType;
 
     try {
       await runUploadBatch([file], {
@@ -208,9 +275,10 @@ export default function LiveAdd() {
         </button>
         <div className="text-center">
           <p className="text-sm font-semibold">
-            {stage === "scan" && "١. امسح الباركود"}
-            {stage === "photo" && "٢. صوّر القطعة"}
-            {stage === "review" && "٣. أدخل الوزن واحفظ"}
+            {stage === "scan" && "١. امسح وجه الباركود"}
+            {stage === "info" && "٢. صوّر وجه بيانات الوسم"}
+            {stage === "photo" && "٣. صوّر القطعة"}
+            {stage === "review" && "٤. تحقّق واحفظ"}
           </p>
           {saved.length > 0 && <p className="text-[10px] text-white/60">{saved.length} قطعة أُضيفت هذه الجلسة</p>}
         </div>
@@ -241,6 +309,8 @@ export default function LiveAdd() {
             <ImageOff className="size-10 mx-auto text-white/70" />
             <p className="font-semibold">{error}</p>
           </div>
+        ) : stage === "info" && infoUrl ? (
+          <img src={infoUrl} alt="" className="w-full h-full object-contain" />
         ) : stage === "review" && capturedUrl ? (
           <img src={capturedUrl} alt="" className="w-full h-full object-contain" />
         ) : (
@@ -248,7 +318,14 @@ export default function LiveAdd() {
         )}
         {flash && <div className="absolute inset-0 bg-white/80 animate-pulse" />}
 
-        {/* مرحلة المسح: شريط الباركود المكتشَف + أزرار تأكيد/تخطي */}
+        {infoLoading && (
+          <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-2 text-white">
+            <Loader2 className="size-8 animate-spin" />
+            <p className="text-sm">جارٍ قراءة الوسم…</p>
+          </div>
+        )}
+
+        {/* مرحلة المسح: شريط الباركود المكتشَف */}
         {stage === "scan" && (
           <div className="absolute top-3 inset-x-3 space-y-2">
             {pendingBarcode ? (
@@ -261,6 +338,14 @@ export default function LiveAdd() {
                 <ScanLine className="size-4 shrink-0 animate-pulse" /> وجّه الكاميرا نحو الباركود…
               </div>
             )}
+          </div>
+        )}
+
+        {stage === "info" && !infoUrl && (
+          <div className="absolute top-3 inset-x-3">
+            <div className="flex items-center gap-2 bg-white/10 text-white/80 rounded-xl px-3 py-2 text-xs justify-center text-center">
+              <ScanText className="size-4 shrink-0" /> صوّر الوجه المطبوع عليه BRANCH/KARAT/TYPE/WEIGHT
+            </div>
           </div>
         )}
       </div>
@@ -277,11 +362,61 @@ export default function LiveAdd() {
         </div>
       )}
 
+      {stage === "info" && !infoUrl && (
+        <div className="flex flex-col items-center gap-3 py-6 safe-area-pb bg-black/60">
+          <Button variant="outline" className="text-white border-white/30 bg-transparent" onClick={skipInfo}>
+            <SkipForward className="size-4 ml-1" /> تخطّي (إدخال يدوي لاحقاً)
+          </Button>
+          <button
+            onClick={captureInfoTag}
+            disabled={!ready}
+            className="size-16 rounded-full border-4 border-white flex items-center justify-center disabled:opacity-40"
+            aria-label="التقاط صورة الوسم"
+          >
+            <ScanText className="size-6 text-white" />
+          </button>
+        </div>
+      )}
+
+      {stage === "info" && infoUrl && !infoLoading && (
+        <div className="flex flex-col items-center gap-3 py-5 safe-area-pb bg-black/60 px-4">
+          <div className="flex items-center gap-2 w-full max-w-xs">
+            <input
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              placeholder="الوزن (جم)"
+              value={weight}
+              onChange={(e) => setWeight(e.target.value)}
+              className="flex-1 h-11 rounded-lg bg-white/10 border border-white/25 text-white text-center placeholder:text-white/40 focus:bg-white/20 focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <input
+              type="text"
+              placeholder="العيار (18K)"
+              value={karat ?? ""}
+              onChange={(e) => setKarat(e.target.value || null)}
+              dir="ltr"
+              className="w-24 h-11 rounded-lg bg-white/10 border border-white/25 text-white text-center placeholder:text-white/40 focus:bg-white/20 focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+          {confirmedBarcode && <p className="text-[11px] text-white/60 font-mono" dir="ltr">باركود: {confirmedBarcode}</p>}
+          <div className="flex items-center gap-3 w-full max-w-xs">
+            <Button variant="outline" className="flex-1 text-white border-white/30 bg-transparent" onClick={retakeInfo}>
+              <RefreshCw className="size-4 ml-1" /> إعادة
+            </Button>
+            <Button onClick={proceedToPhoto} className="flex-1 bg-gold-gradient text-primary-foreground shadow-gold">
+              <Check className="size-4 ml-1" /> متابعة
+            </Button>
+          </div>
+        </div>
+      )}
+
       {stage === "photo" && (
         <div className="flex flex-col items-center gap-3 py-6 safe-area-pb bg-black/60">
-          {confirmedBarcode && (
-            <p className="text-[11px] text-white/60 font-mono" dir="ltr">باركود: {confirmedBarcode}</p>
-          )}
+          <div className="flex items-center gap-3 text-[11px] text-white/60">
+            {confirmedBarcode && <span className="font-mono" dir="ltr">باركود: {confirmedBarcode}</span>}
+            {weight && <span>الوزن: {weight} جم</span>}
+          </div>
           <button
             onClick={capturePhoto}
             disabled={!ready}
@@ -306,10 +441,18 @@ export default function LiveAdd() {
               onChange={(e) => setWeight(e.target.value)}
               className="flex-1 h-11 rounded-lg bg-white/10 border border-white/25 text-white text-center placeholder:text-white/40 focus:bg-white/20 focus:outline-none focus:ring-1 focus:ring-primary"
             />
+            <input
+              type="text"
+              placeholder="العيار"
+              value={karat ?? ""}
+              onChange={(e) => setKarat(e.target.value || null)}
+              dir="ltr"
+              className="w-20 h-11 rounded-lg bg-white/10 border border-white/25 text-white text-center placeholder:text-white/40 focus:bg-white/20 focus:outline-none focus:ring-1 focus:ring-primary"
+            />
           </div>
           {confirmedBarcode && <p className="text-[11px] text-white/60 font-mono" dir="ltr">باركود: {confirmedBarcode}</p>}
           <div className="flex items-center gap-3 w-full max-w-xs">
-            <Button variant="outline" className="flex-1 text-white border-white/30 bg-transparent" onClick={retake}>
+            <Button variant="outline" className="flex-1 text-white border-white/30 bg-transparent" onClick={retakePhoto}>
               <RefreshCw className="size-4 ml-1" /> إعادة التصوير
             </Button>
             <Button onClick={saveAndNext} disabled={saving} className="flex-1 bg-gold-gradient text-primary-foreground shadow-gold">

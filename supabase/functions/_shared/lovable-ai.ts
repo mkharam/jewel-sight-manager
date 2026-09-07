@@ -890,3 +890,85 @@ export async function analyzeTrayWithFallback(params: {
   }
   throw lastErr ?? Object.assign(new Error("كل المزوّدات مشغولة الآن — أعد المحاولة."), { status: 429 });
 }
+
+// ============================================================
+// قراءة وسم القطعة الورقي (باركود + بيانات مطبوعة: فرع/عيار/نوع/وزن) — يُستخدم في صفحة
+// "الإضافة المباشرة" لقراءة الوجهين الاثنين للوسم بالكاميرا بدل الكتابة اليدوية.
+// يعمل على أي من الوجهين بصورة واحدة: وجه الباركود (يُعيد الرقم المطبوع أسفل الأعمدة
+// كنص احتياطي إن تعذّر على BarcodeDetector في المتصفح قراءته)، أو وجه البيانات
+// (BRANCH/KARAT/TYPE/WEIGHT) — الحقول غير الظاهرة في الصورة تُعاد null.
+// ============================================================
+export type TagInfo = {
+  barcode: string | null;
+  branch_code: string | null;
+  karat_raw: string | null;
+  type_raw: string | null;
+  weight_grams: number | null;
+};
+
+function buildTagSystemPrompt(): string {
+  return (
+    `أنت تقرأ وسماً ورقياً صغيراً ملصقاً على قطعة مجوهرات في محل ذهب. الوسم قد يُصوَّر من أحد وجهين مختلفين:\n` +
+    `- وجه الباركود: خطوط باركود مع رقم مطبوع أسفلها (مثال: 01002717) وربما رمز حروف قصير فوقه (مثال: HPJ 1).\n` +
+    `- وجه البيانات: نص مطبوع بخط نقطي بتنسيق "BRANCH :" و"KARAT :" و"TYPE :" و"WEIGHT :" يليه قيمة كل حقل.\n\n` +
+    `اقرأ ما هو ظاهر فعلياً في هذه الصورة تحديداً فقط وأعد JSON فقط بهذا الشكل بالضبط بدون أي نص إضافي:\n` +
+    `{"barcode":null,"branch_code":null,"karat_raw":null,"type_raw":null,"weight_grams":null}\n\n` +
+    `قواعد:\n` +
+    `- barcode: الرقم المطبوع أسفل خطوط الباركود فقط (أرقام فقط عادة)، أو null إن لم يظهر وجه الباركود في الصورة.\n` +
+    `- branch_code: القيمة بعد "BRANCH :" كما هي (مثال: "01")، أو null إن لم تظهر.\n` +
+    `- karat_raw: القيمة بعد "KARAT :" كما هي بالضبط بدون تعديل (مثال: "18KB")، أو null إن لم تظهر.\n` +
+    `- type_raw: القيمة بعد "TYPE :" كما هي (مثال: "FS")، أو null إن لم تظهر.\n` +
+    `- weight_grams: القيمة الرقمية بعد "WEIGHT :" فقط كرقم عشري (مثال: 94.90)، أو null إن لم تظهر.\n` +
+    `- لا تخمّن أي قيمة غير ظاهرة بوضوح في الصورة — أعدها null بدل التخمين.`
+  );
+}
+
+export async function analyzeTagWithFallback(params: {
+  imageBase64: string;
+  mimeType: string;
+}): Promise<{ tag: TagInfo; provider: string }> {
+  const m = /^data:([^;]+);base64,(.*)$/s.exec(params.imageBase64.trim());
+  let p = params;
+  if (m) p = { ...p, mimeType: m[1], imageBase64: m[2] };
+  p = { ...p, imageBase64: p.imageBase64.replace(/\s/g, "") };
+  if (!p.imageBase64) throw Object.assign(new Error("الصورة فارغة أو غير صالحة"), { status: 400 });
+
+  const promptOverride = buildTagSystemPrompt();
+  const args = { imageBase64: p.imageBase64, mimeType: p.mimeType, categoryNames: [], promptOverride };
+
+  const providers: Array<{ name: string; fn: () => Promise<any> }> = [];
+  if (Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY")) {
+    providers.push({ name: "gemini", fn: () => analyzeJewelryImageGemini(args) });
+  }
+  if (Deno.env.get("GROQ_API_KEY")) {
+    providers.push({ name: "groq", fn: () => analyzeJewelryImageGroq(args) });
+  }
+  if (Deno.env.get("OPENROUTER_API_KEY")) {
+    providers.push({ name: "openrouter", fn: () => analyzeJewelryImageOpenRouter(args) });
+  }
+  if (!providers.length) {
+    throw Object.assign(new Error("لا يوجد مفتاح ذكاء اصطناعي مجاني مُعد في المشروع."), { status: 500 });
+  }
+
+  const markFail = (name: string, e: unknown) => console.warn(`Tag provider ${name} failed [${(e as any)?.status ?? 500}]`);
+
+  let lastErr: unknown = null;
+  for (let pass = 0; pass < 2; pass++) {
+    if (pass > 0) await new Promise((r) => setTimeout(r, 1000));
+    try {
+      const { result, provider } = await hedgedRace(providers, markFail);
+      recordUsage(provider);
+      const tag: TagInfo = {
+        barcode: result?.barcode ? String(result.barcode).trim() : null,
+        branch_code: result?.branch_code ? String(result.branch_code).trim() : null,
+        karat_raw: result?.karat_raw ? String(result.karat_raw).trim() : null,
+        type_raw: result?.type_raw ? String(result.type_raw).trim() : null,
+        weight_grams: typeof result?.weight_grams === "number" ? result.weight_grams : (parseFloat(result?.weight_grams) || null),
+      };
+      return { tag, provider };
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr ?? Object.assign(new Error("كل المزوّدات مشغولة الآن — أعد المحاولة."), { status: 429 });
+}

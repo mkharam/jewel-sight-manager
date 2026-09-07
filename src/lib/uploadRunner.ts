@@ -70,6 +70,8 @@ async function saveUnanalyzedProduct(
   opts: UploadOptions,
   weightGrams?: number | null,
   barcodeValue?: string | null,
+  karat?: string | null,
+  itemType?: string | null,
 ): Promise<string> {
   const name = "قطعة جديدة";
   const { data: prod, error: e1 } = await supabase
@@ -81,6 +83,8 @@ async function saveUnanalyzedProduct(
       created_by: opts.userId,
       weight_grams: weightGrams ?? null,
       barcode_value: barcodeValue || null,
+      karat: karat && KARAT_OPTIONS.includes(karat) ? karat : null,
+      item_type: itemType || null,
     } as any)
     .select("id")
     .single();
@@ -229,6 +233,10 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
   const weights: (number | null)[] = [...weightsForImages, ...pdfPages.map(() => null)];
   const barcodesForImages = images.map((f) => (f as any).barcodeValue ?? null);
   const barcodes: (string | null)[] = [...barcodesForImages, ...pdfPages.map(() => null)];
+  const karatsForImages = images.map((f) => (f as any).karat ?? null);
+  const karats: (string | null)[] = [...karatsForImages, ...pdfPages.map(() => null)];
+  const itemTypesForImages = images.map((f) => (f as any).itemType ?? null);
+  const itemTypes: (string | null)[] = [...itemTypesForImages, ...pdfPages.map(() => null)];
 
   const picked = [...images, ...pdfPages];
   if (!picked.length) {
@@ -251,6 +259,8 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
     previewUrl: URL.createObjectURL(file),
     weightGrams: weights[idx] ?? null,
     barcodeValue: barcodes[idx] ?? null,
+    karat: karats[idx] ?? null,
+    itemType: itemTypes[idx] ?? null,
   }));
 
   entries.forEach((e) =>
@@ -274,7 +284,7 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
         const n = await saveTrayPieces(entry.file, path, opts, categories);
         uploadQueue.update(entry.id, { status: "done", label: `تم حفظ ${n} قطعة` });
       } else {
-        const name = await saveUnanalyzedProduct(path, opts, entry.weightGrams, entry.barcodeValue);
+        const name = await saveUnanalyzedProduct(path, opts, entry.weightGrams, entry.barcodeValue, entry.karat, entry.itemType);
         const weightLabel = entry.weightGrams ? ` (${entry.weightGrams} جم)` : "";
         const barcodeLabel = entry.barcodeValue ? ` — باركود ${entry.barcodeValue}` : "";
         uploadQueue.update(entry.id, { status: "done", label: `تم الحفظ: ${name}${weightLabel}${barcodeLabel} — سيُحلّل تلقائياً قريباً` });
