@@ -38,8 +38,7 @@ export default function LiveAdd() {
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const barcodeFileRef = useRef<HTMLInputElement>(null);
-  const tagFileRef = useRef<HTMLInputElement>(null);
+  const tagFilesRef = useRef<HTMLInputElement>(null);
 
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +55,7 @@ export default function LiveAdd() {
   const [karat, setKarat] = useState<string | null>(null);
   const [itemType, setItemType] = useState<string | null>(null);
 
-  const [barcodeUploadLoading, setBarcodeUploadLoading] = useState(false);
+  const [tagUploadLoading, setTagUploadLoading] = useState(false);
   const [tagLoading, setTagLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<SavedItem[]>([]);
@@ -116,56 +115,30 @@ export default function LiveAdd() {
 
   const clearBarcode = () => { setBarcode(null); setBarcodeSkipped(false); };
 
-  // رفع صورة وجه الباركود من المعرض بدل المسح الحي — يجرّب كل الزوايا تلقائياً.
-  const handleBarcodeFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setBarcodeUploadLoading(true);
-    try {
-      const text = await decodeBarcodeFromFile(file);
-      if (text) {
-        setBarcode(text);
-        setBarcodeSkipped(false);
-        toast.success("تم قراءة الباركود من الصورة");
-      } else {
-        toast.error("تعذّرت قراءة الباركود من هذه الصورة — جرّب صورة أوضح أو أدخله يدوياً");
-      }
-    } finally {
-      setBarcodeUploadLoading(false);
-    }
+  const fileToDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+  // يستدعي قراءة وسم الذكاء الاصطناعي فقط، بلا تحديث حالة ولا toast — يُستخدم من كل من
+  // اللقطة الحية (تحديث فوري + toast خاص بها) ورفع الملفات المتعددة (تجميع النتائج
+  // وtoast واحد في النهاية).
+  const fetchTagInfo = async (dataUrl: string): Promise<{ weight_grams: number | null; karat_raw: string | null; type_raw: string | null; barcode: string | null } | null> => {
+    const base64 = dataUrl.split(",")[1] ?? "";
+    const { data, error: fnError } = await supabase.functions.invoke("analyze-tag", {
+      body: { imageBase64: base64, mimeType: "image/jpeg" },
+    });
+    if (fnError) throw fnError;
+    if ((data as any)?.error) throw new Error((data as any).error);
+    return (data as any)?.tag ?? null;
   };
 
-  // قراءة وجه بيانات الوسم (BRANCH/KARAT/TYPE/WEIGHT) عبر الذكاء الاصطناعي — تملأ الوزن
-  // والعيار تلقائياً بدل الكتابة اليدوية. تعمل من صورة مباشرة (dataURL) بغض النظر عن
-  // مصدرها (كاميرا أو ملف مرفوع).
-  const analyzeTagImage = async (dataUrl: string) => {
-    setTagLoading(true);
-    try {
-      const base64 = dataUrl.split(",")[1] ?? "";
-      const { data, error: fnError } = await supabase.functions.invoke("analyze-tag", {
-        body: { imageBase64: base64, mimeType: "image/jpeg" },
-      });
-      if (fnError) throw fnError;
-      if ((data as any)?.error) throw new Error((data as any).error);
-      const tag = (data as any)?.tag ?? {};
-      if (tag.weight_grams != null) setWeight(String(tag.weight_grams));
-      const normalizedKarat = normalizeKarat(tag.karat_raw ?? null);
-      if (normalizedKarat) setKarat(normalizedKarat);
-      if (tag.type_raw) setItemType(tag.type_raw);
-      if (!barcode && tag.barcode) { setBarcode(tag.barcode); setBarcodeSkipped(false); }
-      const gotSomething = tag.weight_grams != null || normalizedKarat || tag.type_raw;
-      toast[gotSomething ? "success" : "error"](
-        gotSomething ? "تم قراءة بيانات الوسم" : "لم يتّضح شيء في الصورة — اكتب الوزن يدوياً",
-      );
-    } catch (e: any) {
-      toast.error(e?.message ?? "تعذّرت قراءة الوسم — اكتب الوزن يدوياً");
-    } finally {
-      setTagLoading(false);
-    }
-  };
-
-  const captureTagFromCamera = () => {
+  // قراءة وجه بيانات الوسم (BRANCH/KARAT/TYPE/WEIGHT) من الكاميرا الحية — تملأ الوزن
+  // والعيار تلقائياً بدل الكتابة اليدوية.
+  const captureTagFromCamera = async () => {
     const video = videoRef.current;
     if (!video || !ready) return;
     const canvas = document.createElement("canvas");
@@ -177,16 +150,66 @@ export default function LiveAdd() {
     setFlash(true);
     setTimeout(() => setFlash(false), 120);
     if (navigator.vibrate) navigator.vibrate(15);
-    void analyzeTagImage(canvas.toDataURL("image/jpeg", 0.85));
+
+    setTagLoading(true);
+    try {
+      const tag = await fetchTagInfo(canvas.toDataURL("image/jpeg", 0.85));
+      const normalizedKarat = normalizeKarat(tag?.karat_raw ?? null);
+      if (tag?.weight_grams != null) setWeight(String(tag.weight_grams));
+      if (normalizedKarat) setKarat(normalizedKarat);
+      if (tag?.type_raw) setItemType(tag.type_raw);
+      if (!barcode && tag?.barcode) { setBarcode(tag.barcode); setBarcodeSkipped(false); }
+      const gotSomething = tag?.weight_grams != null || normalizedKarat || tag?.type_raw;
+      toast[gotSomething ? "success" : "error"](
+        gotSomething ? "تم قراءة بيانات الوسم" : "لم يتّضح شيء في الصورة — اكتب الوزن يدوياً",
+      );
+    } catch (e: any) {
+      toast.error(e?.message ?? "تعذّرت قراءة الوسم — اكتب الوزن يدوياً");
+    } finally {
+      setTagLoading(false);
+    }
   };
 
-  const handleTagFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  // رفع صورة واحدة أو الاثنتين معاً (وجه الباركود ووجه البيانات) من المعرض دفعة واحدة —
+  // كل صورة تُفحص بالطريقتين معاً بلا حاجة لتحديد أيّ وجه هي: فك تشفير الباركود الدقيق
+  // (ZXing) إن كانت صورة الباركود، وقراءة الذكاء الاصطناعي (وزن/عيار/باركود احتياطي) إن
+  // كانت صورة البيانات أو حتى الباركود نفسه (يقرأ الرقم المطبوع كنص احتياطي).
+  const handleTagFilesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
     e.target.value = "";
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => void analyzeTagImage(String(reader.result));
-    reader.readAsDataURL(file);
+    if (!files.length) return;
+    setTagUploadLoading(true);
+    let gotBarcode = false;
+    let gotInfo = false;
+    try {
+      for (const file of files) {
+        try {
+          const zxingText = await decodeBarcodeFromFile(file);
+          if (zxingText && !barcode) {
+            setBarcode(zxingText);
+            setBarcodeSkipped(false);
+            gotBarcode = true;
+          }
+        } catch { /* هذه الصورة على الأرجح ليست وجه الباركود — نكمل لقراءة الوسم */ }
+
+        try {
+          const dataUrl = await fileToDataUrl(file);
+          const tag = await fetchTagInfo(dataUrl);
+          if (tag?.weight_grams != null) { setWeight(String(tag.weight_grams)); gotInfo = true; }
+          const normalizedKarat = normalizeKarat(tag?.karat_raw ?? null);
+          if (normalizedKarat) { setKarat(normalizedKarat); gotInfo = true; }
+          if (tag?.type_raw) setItemType(tag.type_raw);
+          if (!barcode && !gotBarcode && tag?.barcode) { setBarcode(tag.barcode); setBarcodeSkipped(false); gotBarcode = true; }
+        } catch { /* فشل قراءة هذه الصورة بالذكاء الاصطناعي — نكمل للصورة التالية */ }
+      }
+
+      if (gotBarcode && gotInfo) toast.success("تم قراءة الباركود وبيانات الوسم من الصور");
+      else if (gotBarcode) toast.success("تم قراءة الباركود من الصورة");
+      else if (gotInfo) toast.success("تم قراءة بيانات الوسم من الصورة");
+      else toast.error("تعذّرت قراءة أي شيء من الصور — جرّب صوراً أوضح أو أدخل البيانات يدوياً");
+    } finally {
+      setTagUploadLoading(false);
+    }
   };
 
   const capturePhoto = () => {
@@ -307,10 +330,10 @@ export default function LiveAdd() {
         )}
         {flash && <div className="absolute inset-0 bg-white/80 animate-pulse" />}
 
-        {(tagLoading || barcodeUploadLoading) && (
+        {(tagLoading || tagUploadLoading) && (
           <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-2 text-white">
             <Loader2 className="size-8 animate-spin" />
-            <p className="text-sm">{barcodeUploadLoading ? "جارٍ قراءة الباركود من الصورة…" : "جارٍ قراءة الوسم…"}</p>
+            <p className="text-sm">{tagUploadLoading ? "جارٍ قراءة الصور المرفوعة…" : "جارٍ قراءة الوسم…"}</p>
           </div>
         )}
 
@@ -329,8 +352,7 @@ export default function LiveAdd() {
       </div>
 
       {/* شريط الحقول الثلاثة — دائماً ظاهر، تُملأ بأي ترتيب */}
-      <input ref={barcodeFileRef} type="file" accept="image/*" className="hidden" onChange={handleBarcodeFileChange} />
-      <input ref={tagFileRef} type="file" accept="image/*" className="hidden" onChange={handleTagFileChange} />
+      <input ref={tagFilesRef} type="file" accept="image/*" multiple className="hidden" onChange={handleTagFilesChange} />
 
       <div className="bg-black/70 safe-area-pb">
         {/* حالة الباركود */}
@@ -352,9 +374,6 @@ export default function LiveAdd() {
                 <ScanLine className="size-4 shrink-0 animate-pulse" />
                 <span className="text-xs">وجّه الكاميرا نحو الباركود…</span>
               </div>
-              <button onClick={() => barcodeFileRef.current?.click()} className="shrink-0 p-2 bg-white/10 rounded-lg text-white" aria-label="رفع صورة الباركود">
-                <FolderUp className="size-4" />
-              </button>
               <button onClick={() => setBarcodeSkipped(true)} className="shrink-0 text-[11px] text-white/50 underline underline-offset-2 px-1">
                 تخطّي
               </button>
@@ -362,7 +381,18 @@ export default function LiveAdd() {
           )}
         </div>
 
-        {/* الوزن + قراءة تلقائية من الوسم */}
+        {/* رفع صورة/صورتين للوسم (أي وجه أو الوجهين معاً) بدل المسح الحي */}
+        <div className="px-4 pt-1.5">
+          <button
+            onClick={() => tagFilesRef.current?.click()}
+            disabled={tagUploadLoading}
+            className="w-full flex items-center justify-center gap-1.5 text-xs text-white/70 underline underline-offset-2 disabled:opacity-50 py-0.5"
+          >
+            <FolderUp className="size-3.5" /> أو ارفع صورة الوسم (وجه واحد أو الوجهين معاً)
+          </button>
+        </div>
+
+        {/* الوزن + قراءة تلقائية من الوسم بالكاميرا */}
         <div className="flex items-center gap-2 px-4 pt-2">
           <input
             type="number"
@@ -381,11 +411,8 @@ export default function LiveAdd() {
             dir="ltr"
             className="w-20 h-11 rounded-lg bg-white/10 border border-white/25 text-white text-center placeholder:text-white/40 focus:bg-white/20 focus:outline-none focus:ring-1 focus:ring-primary"
           />
-          <button onClick={captureTagFromCamera} disabled={!ready} className="shrink-0 h-11 w-11 flex items-center justify-center bg-white/10 rounded-lg text-white disabled:opacity-40" aria-label="قراءة الوزن من صورة الوسم">
+          <button onClick={() => void captureTagFromCamera()} disabled={!ready} className="shrink-0 h-11 w-11 flex items-center justify-center bg-white/10 rounded-lg text-white disabled:opacity-40" aria-label="قراءة الوزن من صورة الوسم">
             <ScanText className="size-5" />
-          </button>
-          <button onClick={() => tagFileRef.current?.click()} className="shrink-0 h-11 w-11 flex items-center justify-center bg-white/10 rounded-lg text-white" aria-label="رفع صورة الوسم">
-            <FolderUp className="size-4" />
           </button>
         </div>
 
