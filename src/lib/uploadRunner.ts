@@ -1,13 +1,15 @@
 // المنطق الفعلي لرفع/حفظ القطع — يعمل بشكل مستقل عن أي مكوّن React، فلا يتوقف عند
 // التنقّل بين صفحات التطبيق (فقط إغلاق التبويب نفسه يوقفه).
 //
-// الوضع العادي (غير الصينية) يرفع الصورة ويحفظ القطعة فوراً باسم مؤقت "قطعة جديدة" بدون
-// انتظار الذكاء الاصطناعي إطلاقاً — التحليل يتم لاحقاً في الخلفية عبر طابور معالجة على
-// الخادم. بعد اكتمال الرفع نستدعي الطابور فوراً (best-effort) بدل الانتظار للجدولة
-// الاحتياطية (كل دقيقة عبر pg_cron) — هذا أبسط وأكثر أماناً من محاولة توازي/تهئة
-// الطلبات من المتصفح: الرفع لا يعتمد على حصص الذكاء الاصطناعي إطلاقاً فلا يتأثر
-// برفض 429 مهما كان حجم الدفعة، والتحليل يمشي بمعدّل ثابت وآمن بغضّ النظر عمّا
-// يفعله المتصفح. راجع صفحة "مراجعة الصور غير المسمّاة" للنتيجة.
+// التسلسل: رفع الصورة ← حفظ القطعة باسم مؤقت ← تحليل فوري بالذكاء الاصطناعي مع إظهار
+// مؤشر "جارٍ التحليل…" للموظف ← تحديث القطعة باسمها وفئتها الحقيقية. الموظف يرى النتيجة
+// أثناء وقوفه أمام الشاشة بدل رسالة "سيُحلّل قريباً" ثم انتظار مجهول.
+//
+// شبكة الأمان: إن تعذّر التحليل الفوري (ازدحام المزوّدات المجانية أو نفاد حصة لحظية)
+// لا نُظهر خطأ ولا نفقد شيئاً — تبقى القطعة محفوظة باسمها المؤقت ويُستدعى طابور التحليل
+// الخلفي (process-analysis-queue) لالتقاطها لاحقاً، وهو ما كان السلوك الوحيد سابقاً.
+// لهذا يبقى الرفع نفسه غير معتمد إطلاقاً على حصص الذكاء الاصطناعي.
+// راجع صفحة "مراجعة الصور غير المسمّاة" لما لم يُحلَّل بعد.
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { KARAT_OPTIONS } from "@/lib/constants";
@@ -20,6 +22,8 @@ export type UploadOptions = {
   branchId: string | null;
   trayMode: boolean;
 };
+
+const PLACEHOLDER_NAME = "قطعة جديدة";
 
 // كلما كبر ملف الـ PDF نضغط أكثر — يحافظ هذا على حجم صور معقول للرفع والتحليل
 // حتى مع كتالوجات ضخمة (حتى 300MB)، بدون أي حد أقصى لعدد الصفحات.
@@ -72,12 +76,11 @@ async function saveUnanalyzedProduct(
   barcodeValue?: string | null,
   karat?: string | null,
   itemType?: string | null,
-): Promise<string> {
-  const name = "قطعة جديدة";
+): Promise<{ productId: string; imageId: string }> {
   const { data: prod, error: e1 } = await supabase
     .from("products")
     .insert({
-      name,
+      name: PLACEHOLDER_NAME,
       branch_id: opts.branchId,
       status: "available",
       created_by: opts.userId,
@@ -90,17 +93,69 @@ async function saveUnanalyzedProduct(
     .single();
   if (e1 || !prod) throw e1 ?? new Error("فشل إنشاء المنتج");
 
-  const { error: e2 } = await supabase
+  const { data: img, error: e2 } = await supabase
     .from("product_images")
     .insert({
       product_id: prod.id,
       storage_path: storagePath,
       is_primary: true,
       uploaded_by: opts.userId,
-    } as any);
-  if (e2) throw e2 ?? new Error("فشل حفظ الصورة");
+    } as any)
+    .select("id")
+    .single();
+  if (e2 || !img) throw e2 ?? new Error("فشل حفظ الصورة");
 
-  return name;
+  return { productId: prod.id, imageId: img.id };
+}
+
+/**
+ * تحليل فوري للقطعة مباشرة بعد رفعها (بدل انتظار الطابور الخلفي) — يُظهر للموظف نتيجة
+ * التحليل فوراً مع مؤشر تحميل أثناء العمل. يُعيد اسم القطعة عند النجاح، أو null عند
+ * الفشل/انشغال المزوّدات (429) لتبقى القطعة في الطابور الخلفي كما كان سابقاً — لا شيء
+ * يضيع، فقط يتأخر تحليله.
+ *
+ * لا نكتب فوق أي حقل عبّأه الموظف فعلاً من وسم القطعة (العيار/النوع)؛ بيانات الوسم
+ * المطبوعة أوثق من استنتاج الذكاء الاصطناعي من الصورة.
+ */
+async function analyzeAndApply(
+  file: File,
+  saved: { productId: string; imageId: string },
+  categories: { id: string; name: string }[],
+  alreadySet: { karat: boolean; itemType: boolean },
+): Promise<string | null> {
+  try {
+    const { base64, mimeType } = await prepareForAIBase64(file);
+    const { data, error } = await supabase.functions.invoke("analyze-product-image", {
+      body: { imageBase64: base64, mimeType, categories, imageId: saved.imageId },
+    });
+    if (error) throw error;
+
+    const a = data as any;
+    // AI_BUSY أو أي خطأ مُعاد داخل الجسم — نتركها للطابور الخلفي بدل إظهار خطأ للموظف.
+    if (!a || a.error) return null;
+
+    const patch: Record<string, unknown> = {};
+    if (a.name_ar) patch.name = a.name_ar;
+    if (a.category_id) patch.category_id = a.category_id;
+    if (!alreadySet.karat && KARAT_OPTIONS.includes(a.karat)) patch.karat = a.karat;
+    if (!alreadySet.itemType && a.item_type) patch.item_type = a.item_type;
+    const description = describeWithExtras(a);
+    if (description) patch.description = description;
+    if (!Object.keys(patch).length) return null;
+
+    // شرط الاسم الافتراضي: لا نكتب فوق اسم عدّله الموظف يدوياً أثناء التحليل.
+    const { error: upErr } = await supabase
+      .from("products")
+      .update(patch as any)
+      .eq("id", saved.productId)
+      .eq("name", PLACEHOLDER_NAME);
+    if (upErr) throw upErr;
+
+    return (a.name_ar as string) || null;
+  } catch (e) {
+    console.warn("inline analysis failed — falling back to background queue", e);
+    return null;
+  }
 }
 
 /** وضع الصينية: التحليل معروف مسبقاً (لازم لمعرفة عدد القطع) فنحفظه كاملاً فوراً. */
@@ -269,12 +324,13 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
 
   let ok = 0;
   let failed = 0;
+  let deferred = 0; // نجح رفعها لكن تعذّر تحليلها فوراً — تبقى للطابور الخلفي
 
-  // وضع الصينية لا يزال يستدعي الذكاء الاصطناعي مباشرة (يحتاج معرفة عدد القطع فوراً)
-  // فيبقى محدوداً ومتباعداً لتفادي حدود المعدّل. الوضع العادي لا يستدعي الذكاء الاصطناعي
-  // إطلاقاً هنا (يُحفظ فوراً والتحليل يجري لاحقاً في الخلفية) فلا داعي لأي تحديد أو تباعد.
-  const concurrency = opts.trayMode ? 3 : 6;
-  const stagger = opts.trayMode ? 400 : 0;
+  // كلا الوضعين يستدعيان الذكاء الاصطناعي مباشرة الآن (التحليل الفوري مع مؤشر تحميل بدل
+  // "سيُحلّل قريباً")، لذا نُبقي التوازي محدوداً والبدايات متباعدة حتى لا نصطدم بحد
+  // الطلبات في الدقيقة عند المزوّدات المجانية عند رفع دفعة كبيرة.
+  const concurrency = 3;
+  const stagger = 350;
   await pool(entries, concurrency, async (entry, k) => {
     try {
       const path = await uploadFile(entry.file, opts.userId, k);
@@ -284,10 +340,26 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
         const n = await saveTrayPieces(entry.file, path, opts, categories);
         uploadQueue.update(entry.id, { status: "done", label: `تم حفظ ${n} قطعة` });
       } else {
-        const name = await saveUnanalyzedProduct(path, opts, entry.weightGrams, entry.barcodeValue, entry.karat, entry.itemType);
+        const saved = await saveUnanalyzedProduct(path, opts, entry.weightGrams, entry.barcodeValue, entry.karat, entry.itemType);
+
+        // مؤشر التحليل يظهر فوراً بعد نجاح الرفع والحفظ — الموظف يرى أن العمل جارٍ.
+        uploadQueue.update(entry.id, { status: "analyzing", label: "جارٍ التحليل…" });
+        const analyzedName = await analyzeAndApply(entry.file, saved, categories, {
+          karat: !!entry.karat,
+          itemType: !!entry.itemType,
+        });
+
         const weightLabel = entry.weightGrams ? ` (${entry.weightGrams} جم)` : "";
         const barcodeLabel = entry.barcodeValue ? ` — باركود ${entry.barcodeValue}` : "";
-        uploadQueue.update(entry.id, { status: "done", label: `تم الحفظ: ${name}${weightLabel}${barcodeLabel} — سيُحلّل تلقائياً قريباً` });
+        if (analyzedName) {
+          uploadQueue.update(entry.id, { status: "done", label: `${analyzedName}${weightLabel}${barcodeLabel}` });
+        } else {
+          deferred++;
+          uploadQueue.update(entry.id, {
+            status: "done",
+            label: `تم الحفظ${weightLabel}${barcodeLabel} — المزوّدات مشغولة، سيُحلّل تلقائياً قريباً`,
+          });
+        }
       }
       ok++;
     } catch (e: any) {
@@ -298,12 +370,11 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
 
   toast.success(`اكتمل رفع ${ok} صورة` + (failed ? ` (${failed} فشل)` : ""), { duration: 6000 });
 
-  // نستدعي طابور التحليل الخلفي فوراً بدل انتظار الجدولة الاحتياطية (كل دقيقة) — استدعاء
-  // واحد يعالج دفعة واحدة فقط (4 صور) فنكرره بعدد كافٍ من المرات لتغطية أغلب الدفعات
-  // العملية دون انتظار الرفع نفسه (best-effort: فشله لا يؤثر على نجاح الرفع).
-  if (ok > 0 && !opts.trayMode) {
+  // الطابور الخلفي صار شبكة أمان فقط: يُستدعى حين يتعذّر التحليل الفوري لبعض القطع
+  // (ازدحام/نفاد حصة لحظية)، بدل استدعائه دائماً كما كان.
+  if (deferred > 0 && !opts.trayMode) {
     const QUEUE_SECRET = "555b188d91d392e574d5b939db23f50d39e4a9c68c425350";
-    const rounds = Math.min(6, Math.ceil(ok / 4));
+    const rounds = Math.min(6, Math.ceil(deferred / 4));
     (async () => {
       for (let i = 0; i < rounds; i++) {
         await supabase.functions
