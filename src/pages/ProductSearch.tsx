@@ -10,7 +10,7 @@ import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store, Chec
 import ProductCard from "@/components/ProductCard";
 import ImageSearchButton from "@/components/ImageSearchButton";
 import { PRODUCT_STATUS, KARAT_OPTIONS, ProductStatus } from "@/lib/constants";
-import { GOLD_COLORS } from "@/lib/luxury";
+import { GOLD_COLORS, STONE_COLORS } from "@/lib/luxury";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
@@ -21,6 +21,7 @@ interface Filters {
   q: string;
   karat: string;
   goldColor: string;
+  stoneColor: string;
   branchId: string;
   categoryId: string;
   status: string;
@@ -33,7 +34,7 @@ interface Filters {
 }
 
 const initialFilters: Filters = {
-  q: "", karat: "all", goldColor: "all", branchId: "all", categoryId: "all", status: "all", minWeight: "", maxWeight: "", tag: "", sortDir: "desc",
+  q: "", karat: "all", goldColor: "all", stoneColor: "all", branchId: "all", categoryId: "all", status: "all", minWeight: "", maxWeight: "", tag: "", sortDir: "desc",
 };
 
 const SAVED_FILTERS_KEY = "lamaa.lastSearch.v1";
@@ -253,10 +254,23 @@ export default function ProductSearch() {
         "id,name,sku,barcode_value,karat,gold_color,weight_grams,ring_size,sale_price,promo_price,status,branch_id,search_tags,description,category_id,created_at,branch:branches(name),category:categories(name),images:product_images(storage_path,is_primary)";
       const sortAsc = debounced.sortDir === "asc";
 
+      // لون الحجر مُخزَّن في جدول product_stones منفصل (لا عمود مباشر على products) —
+      // نجلب مسبقاً معرّفات القطع المطابقة مرة واحدة ثم نستخدمها كفلتر .in() عادي.
+      let stoneProductIds: string[] | null = null;
+      if (debounced.stoneColor !== "all") {
+        const { data: stoneRows } = await supabase
+          .from("product_stones")
+          .select("product_id")
+          .eq("color", debounced.stoneColor);
+        stoneProductIds = Array.from(new Set((stoneRows ?? []).map((r: any) => r.product_id)));
+        if (!stoneProductIds.length) return [];
+      }
+
       const applyFilters = (q: any) => {
         if (debounced.tag) q = q.contains("search_tags", [debounced.tag]);
         if (debounced.karat !== "all") q = q.eq("karat", debounced.karat);
         if (debounced.goldColor !== "all") q = q.eq("gold_color", debounced.goldColor);
+        if (stoneProductIds) q = q.in("id", stoneProductIds);
         if (debounced.branchId === UNASSIGNED_BRANCH) q = q.is("branch_id", null);
         else if (debounced.branchId !== "all") q = q.eq("branch_id", debounced.branchId);
         if (debounced.categoryId !== "all") q = q.eq("category_id", debounced.categoryId);
@@ -286,7 +300,15 @@ export default function ProductSearch() {
         const tagArray = `{${terms.filter((t) => t.length >= 2).map((t) => `"${t}"`).join(",")}}`;
         if (terms.length) orParts.push(`search_tags.ov.${tagArray}`);
 
-        const [hitRes, poolRes] = await Promise.all([
+        // بحث دلالي (معنوي) عبر Gemini بالتوازي مع البحث النصي — يمسك عبارات لا توجد
+        // حرفياً في قائمة المرادفات (مثلاً "أحجار موفيا") لأنه يقارن المعنى لا الكلمة.
+        // best-effort تماماً: فشله أو بطؤه لا يُبطئ ولا يُفشل البحث النصي العادي إطلاقاً.
+        const semanticPromise = supabase.functions
+          .invoke("text-search", { body: { query: raw, matchCount: 40 } })
+          .then((r) => (r.data as any)?.results as { product_id: string; similarity: number }[] | undefined)
+          .catch(() => undefined);
+
+        const [hitRes, poolRes, semanticResults] = await Promise.all([
           applyFilters(supabase.from("products").select(SELECT))
             .or(orParts.join(","))
             .order("created_at", { ascending: sortAsc })
@@ -295,6 +317,7 @@ export default function ProductSearch() {
           applyFilters(supabase.from("products").select(SELECT))
             .order("created_at", { ascending: sortAsc })
             .limit(800),
+          semanticPromise,
         ]);
         if (hitRes.error) throw hitRes.error;
 
@@ -302,9 +325,24 @@ export default function ProductSearch() {
         for (const p of (hitRes.data ?? []) as any[]) byId.set(p.id, p);
         for (const p of ((poolRes.data ?? []) as any[])) if (!byId.has(p.id)) byId.set(p.id, p);
 
-        // الترتيب الأساسي حسب دقة المطابقة، وعند تساوي الدقة نرجّح حسب اتجاه التاريخ المختار.
+        const semanticScore = new Map<string, number>();
+        for (const r of semanticResults ?? []) semanticScore.set(r.product_id, r.similarity);
+
+        // قطع وُجدت دلالياً فقط (لم يلتقطها البحث النصي/المرادفات إطلاقاً) — نجلبها لنعرضها أيضاً.
+        const missingIds = Array.from(semanticScore.keys()).filter((id) => !byId.has(id));
+        if (missingIds.length) {
+          const { data: extra } = await applyFilters(supabase.from("products").select(SELECT)).in("id", missingIds);
+          for (const p of (extra ?? []) as any[]) byId.set(p.id, p);
+        }
+
+        // الترتيب الأساسي حسب دقة المطابقة (نصي أو دلالي، أيهما أعلى)، وعند تساوي الدقة
+        // نرجّح حسب اتجاه التاريخ المختار.
         const scored = Array.from(byId.values())
-          .map((p) => ({ p, s: matchScore(p, raw) }))
+          .map((p) => {
+            const textScore = matchScore(p, raw);
+            const semScore = (semanticScore.get(p.id) ?? 0) * 0.9; // خصم بسيط: المطابقة النصية الصريحة أوثق
+            return { p, s: Math.max(textScore, semScore) };
+          })
           .filter((x) => x.s > 0)
           .sort((a, b) => {
             if (b.s !== a.s) return b.s - a.s;
@@ -358,6 +396,7 @@ export default function ProductSearch() {
     let n = 0;
     if (filters.karat !== "all") n++;
     if (filters.goldColor !== "all") n++;
+    if (filters.stoneColor !== "all") n++;
     if (filters.branchId !== "all") n++;
     if (filters.categoryId !== "all") n++;
     if (filters.status !== "all") n++;
@@ -486,6 +525,15 @@ export default function ProductSearch() {
                     </SelectContent>
                   </Select>
                 </FilterField>
+                <FilterField label="لون الحجر">
+                  <Select value={filters.stoneColor} onValueChange={(v) => setFilters((f) => ({ ...f, stoneColor: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">كل ألوان الأحجار</SelectItem>
+                      {STONE_COLORS.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </FilterField>
                 <FilterField label="الفرع">
                   <Select value={filters.branchId} onValueChange={(v) => setFilters((f) => ({ ...f, branchId: v }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
@@ -542,7 +590,7 @@ export default function ProductSearch() {
             onClick={() => setFilters((f) => ({ ...f, categoryId: f.categoryId === c.id ? "all" : c.id }))}
           >{c.name}</Chip>
         ))}
-        {(filters.karat !== "all" || filters.goldColor !== "all" || filters.categoryId !== "all" || filters.branchId !== "all" || filters.status !== "all" || filters.minWeight || filters.maxWeight || filters.tag) && (
+        {(filters.karat !== "all" || filters.goldColor !== "all" || filters.stoneColor !== "all" || filters.categoryId !== "all" || filters.branchId !== "all" || filters.status !== "all" || filters.minWeight || filters.maxWeight || filters.tag) && (
           <Chip onClick={() => setFilters(initialFilters)} active={false}>
             <X className="size-3 inline" /> مسح
           </Chip>
