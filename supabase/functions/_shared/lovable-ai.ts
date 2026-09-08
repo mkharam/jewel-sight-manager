@@ -275,9 +275,72 @@ export async function analyzeJewelryImageGroq(params: {
   }
 }
 
+// ============================================================
+// مهم جداً — سبب أخطاء "تجاوزت الحصة" المتكرّرة سابقاً: كنا نستدعي الاسم المستعار
+// "gemini-flash-latest" الذي يشير دائماً لأحدث موديل (كان وقتها gemini-3.8-flash)، وجوجل
+// تمنح أحدث الموديلات حصة مجانية ضئيلة جداً — 20 طلباً/يوم فقط لا 1500 كما هو شائع عن
+// موديلات flash المستقرّة. تأكّدنا من ذلك من سجلات الدالة نفسها:
+//   "Quota exceeded ... limit: 20, model: gemini-3.8-flash"
+//   quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier
+// الحل: تثبيت موديلات محدّدة مستقرّة والتنقّل بينها بالترتيب عند نفاد حصة كل واحد — الأدق
+// أولاً ثم الأوفر حصةً، بدل الفشل كلياً بمجرد نفاد حصة موديل واحد. الحصص لكل موديل على
+// حدة (per-model quota) فالتنقّل يضاعف الطاقة اليومية المتاحة فعلياً.
+const GEMINI_VISION_MODELS = [
+  "gemini-2.5-flash", // دقة عالية للنصوص الصغيرة والوسوم — الخيار الأول
+  "gemini-2.5-flash-lite", // حصة يومية أوفر، دقة أقل قليلاً — عند نفاد الأول
+  "gemini-3.1-flash-lite", // بديل حديث بحصة معقولة
+  "gemini-flash-latest", // أحدث موديل (حصة ضئيلة 20/يوم) — ملاذ أخير فقط
+];
+
+async function geminiGenerate(params: {
+  key: string;
+  model: string;
+  systemPrompt: string;
+  parts: unknown[];
+  maxOutputTokens?: number;
+}): Promise<string> {
+  const { key, model, systemPrompt, parts, maxOutputTokens } = params;
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-goog-api-key": key },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ role: "user", parts }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.2,
+          ...(maxOutputTokens ? { maxOutputTokens } : {}),
+        },
+      }),
+    },
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error("Gemini error", model, res.status, text.slice(0, 400));
+    throw Object.assign(new Error(text || `Gemini ${res.status}`), { status: res.status });
+  }
+
+  const data = await res.json();
+  return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+}
+
+function parseGeminiJson(rawText: string): any {
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    const m = rawText.match(/\{[\s\S]*\}/);
+    if (m) return JSON.parse(m[0]);
+    throw new Error("Gemini returned invalid JSON");
+  }
+}
+
 /**
  * Direct Gemini vision call (uses GOOGLE_API_KEY or GEMINI_API_KEY).
- * 1500 requests/day free tier, 15 RPM.
+ * يجرّب موديلات GEMINI_VISION_MODELS بالترتيب: ينتقل للتالي فوراً عند 429 (نفاد حصة هذا
+ * الموديل تحديداً)، ويعيد المحاولة على نفس الموديل عند أخطاء 5xx العابرة فقط.
  */
 export async function analyzeJewelryImageGemini(params: {
   imageBase64: string;
@@ -294,55 +357,27 @@ export async function analyzeJewelryImageGemini(params: {
     ? categoryNames.join("، ")
     : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
   const systemPrompt = params.promptOverride ?? buildSystemPrompt(catList);
+  const parts = [
+    { text: "حلّل هذه القطعة وأعد JSON فقط." },
+    { inlineData: { mimeType, data: imageBase64 } },
+  ];
 
-  // Gemini هو المزوّد الأدق (أول من نجرّب) — نضيف محاولتين إضافيتين عند 429/5xx العابرة
-  // بدل الانتقال فوراً لمزوّد أضعف؛ يرفع نسبة نجاح أفضل مزوّد بدل التنازل عن الدقة بسرعة.
   let lastErr: unknown = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const res = await fetch(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-goog-api-key": key },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: systemPrompt }] },
-            contents: [{
-              role: "user",
-              parts: [
-                { text: "حلّل هذه القطعة وأعد JSON فقط." },
-                { inlineData: { mimeType, data: imageBase64 } },
-              ],
-            }],
-            generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
-          }),
-        },
-      );
-
-      if (!res.ok) {
-        const text = await res.text();
-        const retryable = res.status === 429 || res.status >= 500;
-        if (retryable && attempt < 2) {
-          lastErr = Object.assign(new Error(text || `Gemini ${res.status}`), { status: res.status });
-          await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
-          continue;
-        }
-        console.error("Gemini error", res.status, text);
-        throw Object.assign(new Error(text || `Gemini ${res.status}`), { status: res.status });
-      }
-
-      const data = await res.json();
-      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+  for (const model of GEMINI_VISION_MODELS) {
+    for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        return JSON.parse(rawText) as JewelryAnalysis;
-      } catch {
-        const m = rawText.match(/\{[\s\S]*\}/);
-        if (m) return JSON.parse(m[0]);
-        throw new Error("Gemini returned invalid JSON");
+        const rawText = await geminiGenerate({ key, model, systemPrompt, parts });
+        console.log("Gemini used model:", model);
+        return parseGeminiJson(rawText);
+      } catch (e) {
+        lastErr = e;
+        const status = (e as any)?.status ?? 500;
+        // 429 = حصة هذا الموديل نفدت: لا فائدة من إعادة المحاولة عليه، ننتقل للتالي فوراً.
+        if (status === 429) break;
+        // مفتاح غير صالح: لا فائدة من أي موديل آخر.
+        if (status === 401 || status === 403) throw e;
+        if (attempt === 0) await new Promise((r) => setTimeout(r, 500));
       }
-    } catch (e) {
-      if (attempt === 2) throw e;
-      lastErr = e;
     }
   }
   throw lastErr ?? new Error("Gemini unavailable");
@@ -481,7 +516,7 @@ export async function analyzeWithFallback(params: {
   throw Object.assign(
     new Error(
       (lastErr as any)?.daily
-        ? "انتهت الحصة المجانية اليومية للتحليل (50 صورة/يوم على OpenRouter). تُعاد تلقائياً بعد منتصف الليل بتوقيت غرينتش، أو أضف رصيداً صغيراً في OpenRouter لرفعها إلى 1000 صورة/يوم."
+        ? "انتهت الحصة المجانية اليومية لكل مزوّدات التحليل (Gemini بموديلاته المتعددة، Groq، OpenRouter). تُعاد الحصص تلقائياً بعد منتصف الليل بتوقيت غرينتش."
         : status === 429
         ? "كل مزودات الذكاء الاصطناعي المجانية مشغولة الآن (OpenRouter/Groq/Gemini) — أعد المحاولة بعد قليل."
         : `فشل تحليل الصورة: ${(lastErr as Error)?.message ?? "خطأ غير معروف"}`,
@@ -567,7 +602,7 @@ export function friendlyError(e: unknown): { status: number; message: string } {
       return {
         status: 429,
         message:
-          "انتهت الحصة المجانية اليومية للتحليل (50 صورة/يوم). تُعاد تلقائياً بعد منتصف الليل بتوقيت غرينتش — أو أضف رصيداً صغيراً في OpenRouter لرفعها إلى 1000 صورة/يوم.",
+          "انتهت الحصة المجانية اليومية لكل مزوّدات التحليل. تُعاد الحصص تلقائياً بعد منتصف الليل بتوقيت غرينتش.",
       };
     }
     return { status: 429, message: "حد الاستخدام المجاني ممتلئ الآن (OpenRouter/Groq/Gemini)، حاول بعد قليل." };
@@ -646,37 +681,22 @@ async function analyzeBatchGemini(images: BatchImage[], systemPrompt: string): P
     parts.push({ inlineData: { mimeType: img.mimeType, data: img.base64 } });
   });
 
+  // نفس منطق التنقّل بين الموديلات المستخدم في التحليل المفرد — الحصة المجانية لكل موديل
+  // على حدة، فنفاد حصة موديل لا يعني نفاد Gemini كلها.
   let lastErr: unknown = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const res = await fetch(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-goog-api-key": key },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: systemPrompt }] },
-            contents: [{ role: "user", parts }],
-            generationConfig: { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 4000 },
-          }),
-        },
-      );
-      if (!res.ok) {
-        const text = await res.text();
-        const retryable = res.status === 429 || res.status >= 500;
-        if (retryable && attempt < 2) {
-          lastErr = Object.assign(new Error(text || `Gemini ${res.status}`), { status: res.status });
-          await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
-          continue;
-        }
-        throw Object.assign(new Error(text || `Gemini ${res.status}`), { status: res.status });
+  for (const model of GEMINI_VISION_MODELS) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const rawText = await geminiGenerate({ key, model, systemPrompt, parts, maxOutputTokens: 4000 });
+        console.log("Gemini batch used model:", model);
+        return parseBatchResponse(rawText, images);
+      } catch (e) {
+        lastErr = e;
+        const status = (e as any)?.status ?? 500;
+        if (status === 429) break; // حصة هذا الموديل نفدت — انتقل للتالي
+        if (status === 401 || status === 403) throw e;
+        if (attempt === 0) await new Promise((r) => setTimeout(r, 500));
       }
-      const data = await res.json();
-      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
-      return parseBatchResponse(rawText, images);
-    } catch (e) {
-      if (attempt === 2) throw e;
-      lastErr = e;
     }
   }
   throw lastErr ?? new Error("Gemini unavailable");
