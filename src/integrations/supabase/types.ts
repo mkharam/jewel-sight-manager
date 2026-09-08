@@ -1259,13 +1259,6 @@ export type Database = {
             referencedRelation: "customers"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "wishlist_items_product_id_fkey"
-            columns: ["product_id"]
-            isOneToOne: false
-            referencedRelation: "products"
-            referencedColumns: ["id"]
-          },
         ]
       }
     }
@@ -1311,6 +1304,16 @@ export type Database = {
       }
       return_sale: {
         Args: { _reason: string; _sale_id: string }
+        Returns: undefined
+      }
+      send_push_notification: {
+        Args: {
+          p_body: string
+          p_branch_id: string
+          p_extra_user_ids: string[]
+          p_title: string
+          p_url: string
+        }
         Returns: undefined
       }
       sku_type_letter: { Args: { _item_type: string }; Returns: string }

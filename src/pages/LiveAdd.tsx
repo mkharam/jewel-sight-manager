@@ -63,7 +63,7 @@ export default function LiveAdd() {
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
-    queryFn: async () => (await supabase.from("branches").select("id,name").eq("is_active", true)).data ?? [],
+    queryFn: async () => (await supabase.from("branches").select("id,name,code").eq("is_active", true)).data ?? [],
   });
 
   // فتح الكاميرا مرة واحدة وإبقاؤها مفتوحة طوال الجلسة
@@ -116,6 +116,15 @@ export default function LiveAdd() {
 
   const clearBarcode = () => { setBarcode(null); setBarcodeSkipped(false); };
 
+  // يطابق رمز الفرع المقروء من الوسم (BRANCH: 01...) مع قائمة الفروع عبر عمود code —
+  // ويختار الفرع تلقائياً بدل اختياره يدوياً في كل مرة. لا يفعل شيئاً إن كان الرمز غير
+  // معروف (لا فرع بهذا الكود بعد) فيبقى الاختيار اليدوي كما هو دائماً كخيار آمن.
+  const applyBranchCode = (code: string | null | undefined) => {
+    if (!code) return;
+    const match = (branches ?? []).find((b: any) => b.code === code);
+    if (match) setBranchId(match.id);
+  };
+
   const fileToDataUrl = (file: File) =>
     new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
@@ -130,7 +139,7 @@ export default function LiveAdd() {
   // محاولتان قبل الاستسلام — الفشل العابر (ازدحام مؤقت لمزوّدات الذكاء الاصطناعي) شائع
   // ولا يجب أن يُفسَّر خطأً بأن الصورة "لا تحتوي بيانات وسم" (كان هذا سبب تصنيف وجه
   // البيانات خطأً كصورة قطعة عند فشل النداء الأول فقط).
-  const fetchTagInfo = async (dataUrl: string): Promise<{ weight_grams: number | null; karat_raw: string | null; type_raw: string | null; barcode: string | null } | null> => {
+  const fetchTagInfo = async (dataUrl: string): Promise<{ weight_grams: number | null; karat_raw: string | null; type_raw: string | null; barcode: string | null; branch_code?: string | null } | null> => {
     const base64 = dataUrl.split(",")[1] ?? "";
     let lastErr: unknown;
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -157,7 +166,7 @@ export default function LiveAdd() {
   const resolveInfoTag = async (
     source: Blob,
     dataUrl: string,
-  ): Promise<{ weight_grams: number | null; karat_raw: string | null; type_raw: string | null; barcode: string | null } | null> => {
+  ): Promise<{ weight_grams: number | null; karat_raw: string | null; type_raw: string | null; barcode: string | null; branch_code?: string | null } | null> => {
     const localPromise = readInfoTagLocally(source).catch(() => null);
     const aiPromise = fetchTagInfo(dataUrl);
     const local = await localPromise;
@@ -189,6 +198,7 @@ export default function LiveAdd() {
       if (tag?.weight_grams != null) setWeight(String(tag.weight_grams));
       if (normalizedKarat) setKarat(normalizedKarat);
       if (tag?.type_raw) setItemType(tag.type_raw);
+      applyBranchCode(tag?.branch_code);
       if (!barcode && tag?.barcode) { setBarcode(tag.barcode); setBarcodeSkipped(false); }
       const gotSomething = tag?.weight_grams != null || normalizedKarat || tag?.type_raw;
       toast[gotSomething ? "success" : "error"](
@@ -238,6 +248,7 @@ export default function LiveAdd() {
           if (tag?.weight_grams != null) { setWeight(String(tag.weight_grams)); gotInfo = true; }
           if (normalizedKarat) { setKarat(normalizedKarat); gotInfo = true; }
           if (tag?.type_raw) setItemType(tag.type_raw);
+          applyBranchCode(tag?.branch_code);
           if (!barcode && !gotBarcode && tag?.barcode) { setBarcode(tag.barcode); setBarcodeSkipped(false); gotBarcode = true; isBarcodeFace = true; }
         } catch {
           // فشل نداء الذكاء الاصطناعي فعلياً (شبكة/ازدحام) — هذا لا يعني إطلاقاً أن
