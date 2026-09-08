@@ -19,6 +19,7 @@ import QuickQuoteSheet from "@/components/QuickQuoteSheet";
 import SellDialog from "@/components/SellDialog";
 import ReserveDialog from "@/components/ReserveDialog";
 import ReorderRequestDialog from "@/components/ReorderRequestDialog";
+import ImageLightbox from "@/components/ImageLightbox";
 
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
@@ -29,6 +30,7 @@ export default function ProductDetail() {
   const isAdmin = roles.includes("admin");
   const isManager = roles.includes("manager");
   const [activeImage, setActiveImage] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
 
   const { data: product, isLoading } = useQuery({
@@ -158,9 +160,16 @@ export default function ProductDetail() {
       <div className="grid md:grid-cols-2 gap-4">
         {/* Images */}
         <Card className="overflow-hidden">
-          <div className="aspect-square bg-gold-soft">
-            {sortedImages[0] ? (
-              <img src={getImageUrl(sortedImages[0].storage_path)!} alt={product.name} className="w-full h-full object-cover" />
+          <div
+            className="aspect-square bg-gold-soft cursor-pointer"
+            onClick={() => sortedImages.length && setLightboxOpen(true)}
+          >
+            {sortedImages[activeImage] ?? sortedImages[0] ? (
+              <img
+                src={getImageUrl((sortedImages[activeImage] ?? sortedImages[0]).storage_path)!}
+                alt={product.name}
+                className="w-full h-full object-cover"
+              />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-muted-foreground">
                 <ImageIcon className="size-16 opacity-30" />
@@ -169,14 +178,27 @@ export default function ProductDetail() {
           </div>
           {sortedImages.length > 1 && (
             <div className="grid grid-cols-4 gap-1 p-2">
-              {sortedImages.slice(1).map((img) => (
-                <div key={img.id} className="aspect-square bg-muted rounded overflow-hidden">
+              {sortedImages.map((img, i) => (
+                <button
+                  key={img.id}
+                  onClick={() => setActiveImage(i)}
+                  className={`aspect-square bg-muted rounded overflow-hidden border-2 ${i === activeImage ? "border-primary" : "border-transparent"}`}
+                >
                   <img src={getImageUrl(img.storage_path)!} alt="" className="w-full h-full object-cover" />
-                </div>
+                </button>
               ))}
             </div>
           )}
         </Card>
+
+        {lightboxOpen && (
+          <ImageLightbox
+            images={sortedImages.map((img) => getImageUrl(img.storage_path)!)}
+            index={activeImage}
+            onClose={() => setLightboxOpen(false)}
+            onIndexChange={setActiveImage}
+          />
+        )}
 
         {/* Info */}
         <div className="space-y-3">

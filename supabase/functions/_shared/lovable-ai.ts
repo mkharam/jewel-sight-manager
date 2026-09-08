@@ -2,6 +2,25 @@
 // Vision: OpenRouter → Groq → Gemini.  Embeddings: Google gemini-embedding-001.
 // Lovable AI Gateway is intentionally NOT used anywhere here (no credits).
 
+import { createClient } from "npm:@supabase/supabase-js@2";
+
+// عميل إداري خفيف لتسجيل استهلاك الذكاء الاصطناعي في قاعدة البيانات — ملاحظة مهمة: كل
+// Edge Function نسخة معزولة تماماً حتى لو استوردت هذا الملف المشترك نفسه، فعدّاد في
+// ذاكرة الدالة (كما كان سابقاً) لا تراه دالة أخرى إطلاقاً (مثلاً analyze-product-image
+// التي تُجري التحليل الفعلي، وai-usage التي تعرض النتيجة للموظف). التخزين في قاعدة
+// البيانات هو الحل الوحيد الصحيح لمشاركة هذا العدّاد بين كل الدوال. فشل التسجيل نفسه
+// غير حرج أبداً (best-effort) — لا يجب أن يُفشل أي تحليل بسببه.
+let adminClient: ReturnType<typeof createClient> | null = null;
+function getAdminClient() {
+  if (!adminClient) {
+    adminClient = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+  }
+  return adminClient;
+}
+
 
 export type JewelryAnalysis = {
   name_ar: string;
@@ -320,11 +339,66 @@ async function geminiGenerate(params: {
   if (!res.ok) {
     const text = await res.text();
     console.error("Gemini error", model, res.status, text.slice(0, 400));
+    // عند 429 تُرفق جوجل الحصة الفعلية للموديل نفسه في الجسم (quotaValue) — نلتقطها
+    // ونحفظها كحصة معروفة بدل تخمينها، بعد أن أخطأنا سابقاً بافتراض 1500/يوم للجميع
+    // بينما كانت 20/يوم فقط لموديل معيّن. راجع getGeminiModelUsageSnapshot أدناه.
+    if (res.status === 429) {
+      const m = text.match(/"quotaValue"\s*:\s*"(\d+)"/);
+      if (m) await learnGeminiModelLimit(model, parseInt(m[1], 10));
+    }
     throw Object.assign(new Error(text || `Gemini ${res.status}`), { status: res.status });
   }
 
+  await recordGeminiModelUsage(model);
   const data = await res.json();
   return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+}
+
+// تتبّع استهلاك كل موديل Gemini على حدة (بدل عدّاد واحد مضلِّل باسم "gemini") في قاعدة
+// البيانات مباشرة — الحصة المجانية تختلف جذرياً بين الموديلات (اكتشفنا هذا مباشرة من
+// خطأ 429 حقيقي: 20 طلباً/يوم لموديل جديد مقابل مئات لموديل مستقر). الحد الأقصى المعروض
+// هنا مُتعلَّم من استجابة جوجل الفعلية عند أول 429 نمرّ به لكل موديل، لا رقم مُخمَّن —
+// يبقى null حتى نصطدم بالحد فعلياً. best-effort دائماً: فشل التسجيل لا يُفشل التحليل.
+async function recordGeminiModelUsage(model: string) {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    await getAdminClient().rpc("increment_ai_usage", { p_model: model, p_day: today });
+  } catch (e) {
+    console.warn("usage record failed (non-fatal)", e);
+  }
+}
+
+async function learnGeminiModelLimit(model: string, quotaValue: number) {
+  try {
+    await getAdminClient()
+      .from("ai_model_limits")
+      .upsert({ model, limit_value: quotaValue, updated_at: new Date().toISOString() } as any, { onConflict: "model" });
+  } catch (e) {
+    console.warn("limit record failed (non-fatal)", e);
+  }
+}
+
+export async function getGeminiModelUsageSnapshot(): Promise<Record<string, { used: number; limit: number | null }>> {
+  const today = new Date().toISOString().slice(0, 10);
+  const out: Record<string, { used: number; limit: number | null }> = {};
+  for (const model of GEMINI_VISION_MODELS) out[model] = { used: 0, limit: null };
+
+  try {
+    const admin = getAdminClient();
+    const [{ data: usageRows }, { data: limitRows }] = await Promise.all([
+      admin.from("ai_usage_daily").select("model, used").eq("day", today),
+      admin.from("ai_model_limits").select("model, limit_value"),
+    ]);
+    for (const row of (usageRows ?? []) as any[]) {
+      if (out[row.model]) out[row.model].used = row.used;
+    }
+    for (const row of (limitRows ?? []) as any[]) {
+      if (out[row.model]) out[row.model].limit = row.limit_value;
+    }
+  } catch (e) {
+    console.warn("usage snapshot read failed (non-fatal)", e);
+  }
+  return out;
 }
 
 function parseGeminiJson(rawText: string): any {

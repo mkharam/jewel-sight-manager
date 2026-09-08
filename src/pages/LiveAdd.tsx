@@ -530,7 +530,7 @@ export default function LiveAdd() {
         <div className="flex gap-2 overflow-x-auto px-3 pb-3 bg-black/70">
           {saved.map((s) => (
             <div key={s.id} className="relative shrink-0">
-              <img src={s.url} alt="" className="size-12 rounded-lg object-cover border border-status-available/60" />
+              <img src={s.url} alt="" className="size-12 rounded-lg object-contain bg-black border border-status-available/60" />
               <CheckCircle2 className="absolute -top-1.5 -left-1.5 size-4 text-status-available bg-black rounded-full" />
             </div>
           ))}

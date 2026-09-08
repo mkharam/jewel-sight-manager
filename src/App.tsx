@@ -43,7 +43,12 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
-      <Sonner position="top-center" dir="rtl" richColors />
+      <Sonner
+        position="top-center"
+        dir="rtl"
+        richColors
+        offset="max(1rem, calc(env(safe-area-inset-top) + 0.75rem))"
+      />
       <BrowserRouter basename={import.meta.env.BASE_URL}>
         <AuthProvider>
           <Suspense fallback={<PageLoader />}>

@@ -201,7 +201,7 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
           {shots.map((s) => (
             <div key={s.id} className="relative shrink-0 flex flex-col items-center gap-1">
               <div className="relative">
-                <img src={s.url} alt="" className="size-14 rounded-lg object-cover border border-white/20" />
+                <img src={s.url} alt="" className="size-14 rounded-lg object-contain bg-black border border-white/20" />
                 <button
                   onClick={() => removeShot(s.id)}
                   className="absolute -top-1.5 -left-1.5 size-5 rounded-full bg-destructive flex items-center justify-center"
