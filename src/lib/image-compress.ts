@@ -106,9 +106,15 @@ export type NormalizedBbox = { x: number; y: number; w: number; h: number };
  * وتقصّ حافة القطعة. عند أي فشل أو مستطيل غير منطقي تُعيد null فيسقط المستدعي لصورة
  * الصينية الكاملة بدل كسر الحفظ.
  */
-export async function cropImageToBbox(file: File, bbox: NormalizedBbox, opts: CompressOptions = {}): Promise<File | null> {
+export async function cropImageToBbox(file: File, rawBbox: NormalizedBbox, opts: CompressOptions = {}): Promise<File | null> {
   const { maxDimension, quality, mimeType } = { ...DEFAULTS, ...opts };
-  if (!bbox || [bbox.x, bbox.y, bbox.w, bbox.h].some((n) => typeof n !== "number" || !isFinite(n))) return null;
+  if (!rawBbox || [rawBbox.x, rawBbox.y, rawBbox.w, rawBbox.h].some((n) => typeof n !== "number" || !isFinite(n))) return null;
+
+  // نماذج الرؤية (خصوصاً Gemini) غالباً تتجاهل طلب "0 إلى 1" وتُرجع مقياسها الأصلي
+  // المُدرَّب عليه للكشف عن الأجسام (0 إلى 1000) رغم طلب العكس صراحة في الطلب — نتعامل
+  // مع كِلا الاحتمالين هنا بدل رفض كل مستطيل بصمت والسقوط دائماً لصورة الصينية كاملة.
+  const scale = [rawBbox.x, rawBbox.y, rawBbox.w, rawBbox.h].some((n) => n > 1) ? 1000 : 1;
+  const bbox = { x: rawBbox.x / scale, y: rawBbox.y / scale, w: rawBbox.w / scale, h: rawBbox.h / scale };
   if (bbox.w <= 0.01 || bbox.h <= 0.01 || bbox.w > 1 || bbox.h > 1) return null;
 
   let handle: Awaited<ReturnType<typeof loadImage>> | null = null;
@@ -116,7 +122,7 @@ export async function cropImageToBbox(file: File, bbox: NormalizedBbox, opts: Co
     handle = await loadImage(file);
     const { width, height } = handle;
 
-    const margin = 0.05;
+    const margin = 0.02;
     const x0 = Math.max(0, bbox.x - bbox.w * margin);
     const y0 = Math.max(0, bbox.y - bbox.h * margin);
     const x1 = Math.min(1, bbox.x + bbox.w * (1 + margin));
