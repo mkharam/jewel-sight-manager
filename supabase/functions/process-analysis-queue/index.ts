@@ -14,6 +14,43 @@ const QUEUE_SECRET = Deno.env.get("QUEUE_SECRET") ?? "";
 const BATCH_SIZE = 4;
 const PLACEHOLDER_NAME = "قطعة جديدة";
 
+// نفس منطق استنتاج لون ونوع الحجر القياسيَّين الموجود في src/lib/uploadRunner.ts (مسار الرفع
+// الفوري) — بدونه يبقى جدول product_stones فارغاً لهذا المسار الاحتياطي، ففلتر "لون الحجر" لا
+// يُطابق القطع التي حُلّلت عبر الطابور الخلفي بدل التحليل الفوري. stone_type عمود إلزامي في
+// الجدول فنُعيد "أخرى" حين لا نستطيع تحديد النوع بثقة.
+const STONE_COLOR_KEYWORDS: [string, string, string][] = [
+  ["ابيض", "white", "زركون"], ["شفاف", "white", "زركون"],
+  ["احمر", "red", "ياقوت"], ["روبي", "red", "ياقوت"],
+  ["اخضر", "green", "زمرد"], ["زمرد", "green", "زمرد"],
+  ["ازرق", "blue", "سفير"], ["سفير", "blue", "سفير"], ["صفير", "blue", "سفير"],
+  ["اصفر", "yellow", "سيترين"], ["سيترين", "yellow", "سيترين"],
+  ["وردي", "pink", "أخرى"], ["زهري", "pink", "أخرى"], ["روز", "pink", "أخرى"],
+  ["جمشت", "purple", "جمشت"], ["بنفسجي", "purple", "جمشت"], ["موف", "purple", "جمشت"], ["ارجواني", "purple", "جمشت"],
+  ["اسود", "black", "أخرى"],
+];
+
+function normalizeArLite(input: string): string {
+  return (input || "")
+    .toLowerCase()
+    .replace(/[ً-ْٰۖ-ۭ]/g, "")
+    .replace(/ـ/g, "")
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/[ىئي]/g, "ي")
+    .replace(/[ؤ]/g, "و")
+    .replace(/ة/g, "ه");
+}
+
+function detectStoneColors(gemstones: string[] | undefined): { color: string; stoneType: string }[] {
+  const found = new Map<string, string>();
+  for (const g of gemstones ?? []) {
+    const norm = normalizeArLite(g);
+    for (const [kw, color, stoneType] of STONE_COLOR_KEYWORDS) {
+      if (norm.includes(kw) && !found.has(color)) found.set(color, stoneType);
+    }
+  }
+  return Array.from(found, ([color, stoneType]) => ({ color, stoneType }));
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -110,6 +147,13 @@ Deno.serve(async (req) => {
         })
         .eq("id", l.productId)
         .eq("name", PLACEHOLDER_NAME); // لا نكتب فوق اسم غيّره الموظف يدوياً أثناء الانتظار
+
+      const stoneColors = detectStoneColors(gemstones);
+      if (stoneColors.length) {
+        await admin
+          .from("product_stones")
+          .insert(stoneColors.map((s) => ({ product_id: l.productId, color: s.color, stone_type: s.stoneType, quantity: 1 })));
+      }
 
       processed++;
     }

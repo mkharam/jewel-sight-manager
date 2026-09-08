@@ -16,6 +16,7 @@ import { KARAT_OPTIONS } from "@/lib/constants";
 import { compressMany, prepareForAIBase64 } from "@/lib/image-compress";
 import { isPdf, pdfToImageFiles } from "@/lib/pdf-to-images";
 import { uploadQueue } from "@/lib/uploadQueue";
+import { normalizeAr } from "@/lib/arabic-search";
 
 export type UploadOptions = {
   userId: string;
@@ -47,6 +48,40 @@ function describeWithExtras(a: any): string | null {
   if (gemstones.length) out += `\nألوان الأحجار: ${gemstones.join("، ")}`;
   if (extras) out += `\n(${extras})`;
   return out.trim() || null;
+}
+
+// خرائط الكلمات المفتاحية لاستنتاج لون ونوع الحجر القياسيَّين (يطابقان STONE_COLORS/STONE_TYPES
+// في luxury.ts) من نص gemstones الحر الذي يكتبه الذكاء الاصطناعي — بدون هذا، فلتر "لون الحجر"
+// في صفحة البحث يبقى فارغاً دائماً لأن جدول product_stones لا يُملأ إلا يدوياً من نموذج التعديل.
+// stone_type عمود إلزامي في الجدول فنُعيد "أخرى" حين لا نستطيع تحديد النوع بثقة.
+const STONE_COLOR_KEYWORDS: [string, string, string][] = [
+  ["ابيض", "white", "زركون"], ["شفاف", "white", "زركون"],
+  ["احمر", "red", "ياقوت"], ["روبي", "red", "ياقوت"],
+  ["اخضر", "green", "زمرد"], ["زمرد", "green", "زمرد"],
+  ["ازرق", "blue", "سفير"], ["سفير", "blue", "سفير"], ["صفير", "blue", "سفير"],
+  ["اصفر", "yellow", "سيترين"], ["سيترين", "yellow", "سيترين"],
+  ["وردي", "pink", "أخرى"], ["زهري", "pink", "أخرى"], ["روز", "pink", "أخرى"],
+  ["جمشت", "purple", "جمشت"], ["بنفسجي", "purple", "جمشت"], ["موف", "purple", "جمشت"], ["ارجواني", "purple", "جمشت"],
+  ["اسود", "black", "أخرى"],
+];
+
+function detectStoneColors(gemstones: string[] | undefined): { color: string; stoneType: string }[] {
+  const found = new Map<string, string>();
+  for (const g of gemstones ?? []) {
+    const norm = normalizeAr(g);
+    for (const [kw, color, stoneType] of STONE_COLOR_KEYWORDS) {
+      if (norm.includes(kw) && !found.has(color)) found.set(color, stoneType);
+    }
+  }
+  return Array.from(found, ([color, stoneType]) => ({ color, stoneType }));
+}
+
+async function saveStoneColors(productId: string, gemstones: string[] | undefined) {
+  const stones = detectStoneColors(gemstones);
+  if (!stones.length) return;
+  await supabase
+    .from("product_stones")
+    .insert(stones.map((s) => ({ product_id: productId, color: s.color, stone_type: s.stoneType, quantity: 1 })) as any);
 }
 
 async function uploadFile(file: File, userId: string, k: number): Promise<string> {
@@ -158,6 +193,8 @@ async function analyzeAndApply(
       .eq("name", PLACEHOLDER_NAME);
     if (upErr) throw upErr;
 
+    await saveStoneColors(saved.productId, a.gemstones);
+
     return (a.name_ar as string) || null;
   } catch (e) {
     console.warn("inline analysis failed — falling back to background queue", e);
@@ -221,6 +258,8 @@ async function saveTrayPieces(
       uploaded_by: opts.userId,
       ai_labels: { ...p, category_id: categoryId, provider },
     } as any);
+
+    await saveStoneColors(prod.id, p.gemstones);
   }
 
   return pieces.length;
