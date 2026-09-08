@@ -28,6 +28,8 @@ export const STONE_COLORS = [
   { value: "yellow", label: "أصفر" },
   { value: "pink", label: "وردي" },
   { value: "purple", label: "بنفسجي" },
+  { value: "turquoise", label: "فيروزي" },
+  { value: "pearl", label: "لؤلؤي" },
   { value: "black", label: "أسود" },
   { value: "multi", label: "ألوان متعددة" },
 ];
