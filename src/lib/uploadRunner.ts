@@ -224,13 +224,42 @@ async function saveTrayPieces(
   let pieceIndex = 0;
   for (const p of pieces) {
     pieceIndex++;
-    const categoryId = matchCategoryId(p.category_name, categories);
+
+    // نقصّ صورة القطعة وحدها من صورة الصينية أولاً — تحليل صورة مقصوصة مقرّبة لقطعة واحدة
+    // أدق بكثير من تحليل قطعة صغيرة وسط صينية مزدحمة بعدة قطع دفعة واحدة (تشابك ألوان
+    // وأحجار القطع المجاورة كان يُربك تقدير العيار/الأحجار). عند فشل القص أو غياب مستطيل
+    // صالح نسقط لصورة الصينية الكاملة وبيانات التحليل الجماعي الأصلية بدل فقدان القطعة.
+    let piecePath = storagePath;
+    let croppedFile: File | null = null;
+    if (p.bbox) {
+      try {
+        croppedFile = await cropImageToBbox(file, p.bbox);
+        if (croppedFile) piecePath = await uploadFile(croppedFile, opts.userId, 1000 + pieceIndex);
+      } catch { /* نسقط للصينية الكاملة */ }
+    }
+
+    // إعادة تحليل الصورة المقصوصة وحدها لكل قطعة — بنفس محلّل الصورة المنفردة العادي —
+    // فتحصل كل قطعة على تحليل دقيق كما لو صُوّرت بمفردها، بدل الاكتفاء بتخمين واحد لكل
+    // القطع من صورة الصينية العامة. عند فشل هذا التحليل الإضافي (ازدحام مؤقت) نستخدم
+    // بيانات تحليل الصينية الأصلية بدل فقدان القطعة بالكامل.
+    let a: any = p;
+    if (croppedFile) {
+      try {
+        const { base64: cropBase64, mimeType: cropMime } = await prepareForAIBase64(croppedFile);
+        const { data: reAnalyzed, error: reErr } = await supabase.functions.invoke("analyze-product-image", {
+          body: { imageBase64: cropBase64, mimeType: cropMime, categories },
+        });
+        if (!reErr && reAnalyzed && !(reAnalyzed as any).error) a = reAnalyzed;
+      } catch { /* نستخدم تحليل الصينية الأصلي */ }
+    }
+
+    const categoryId = a.category_id ?? matchCategoryId(a.category_name, categories);
     let sku: string | null = null;
     if (opts.branchId) {
       try {
         const { data: skuData } = await supabase.rpc("next_sku", {
           _branch_id: opts.branchId,
-          _item_type: p.item_type || p.category_name || null,
+          _item_type: a.item_type || a.category_name || null,
         });
         sku = (skuData as unknown as string) ?? null;
       } catch { /* SKU اختياري */ }
@@ -239,12 +268,12 @@ async function saveTrayPieces(
     const { data: prod, error: e1 } = await supabase
       .from("products")
       .insert({
-        name: p.name_ar || "قطعة جديدة",
+        name: a.name_ar || "قطعة جديدة",
         sku,
         category_id: categoryId,
-        karat: KARAT_OPTIONS.includes(p.karat) ? p.karat : null,
-        item_type: p.item_type || p.category_name || null,
-        description: describeWithExtras(p),
+        karat: KARAT_OPTIONS.includes(a.karat) ? a.karat : null,
+        item_type: a.item_type || a.category_name || null,
+        description: describeWithExtras(a),
         branch_id: opts.branchId,
         status: "available",
         created_by: opts.userId,
@@ -253,26 +282,15 @@ async function saveTrayPieces(
       .single();
     if (e1 || !prod) continue;
 
-    // نقصّ صورة القطعة وحدها من صورة الصينية بدل استخدام الصينية كاملة كصورة للمنتج —
-    // يعطي كل قطعة صورتها الخاصة الواضحة كما لو صُوّرت منفردة. عند فشل القص أو غياب
-    // مستطيل صالح نسقط لصورة الصينية الكاملة بدل فقدان الصورة تماماً.
-    let piecePath = storagePath;
-    if (p.bbox) {
-      try {
-        const cropped = await cropImageToBbox(file, p.bbox);
-        if (cropped) piecePath = await uploadFile(cropped, opts.userId, 1000 + pieceIndex);
-      } catch { /* نسقط للصينية الكاملة */ }
-    }
-
     await supabase.from("product_images").insert({
       product_id: prod.id,
       storage_path: piecePath,
       is_primary: true,
       uploaded_by: opts.userId,
-      ai_labels: { ...p, category_id: categoryId, provider },
+      ai_labels: { ...a, position: p.position, category_id: categoryId, provider },
     } as any);
 
-    await saveStoneColors(prod.id, p.gemstones);
+    await saveStoneColors(prod.id, a.gemstones);
   }
 
   return pieces.length;
