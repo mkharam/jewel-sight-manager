@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Search, MessageCircle, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, Truck } from "lucide-react";
+import { Search, MessageCircle, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -28,7 +28,7 @@ const adminExtras: NavItem[] = [
   { to: "/gold-price", label: "سعر الذهب", icon: Coins },
   { to: "/stock-take", label: "جرد ميداني", icon: ClipboardCheck },
   { to: "/reorders", label: "طلبات إعادة الطلب", icon: PackagePlus, badgeKey: "reorders" },
-  { to: "/suppliers", label: "الموردون", icon: Truck },
+  { to: "/admin/products", label: "إدارة القطع", icon: ListChecks },
 ];
 
 export default function AppLayout() {
@@ -110,7 +110,7 @@ export default function AppLayout() {
     { to: "/stock-take", label: "جرد ميداني", icon: ClipboardCheck },
     { to: "/reorders", label: "طلبات إعادة الطلب", icon: PackagePlus, badgeKey: "reorders" },
     ...(isAdmin || isManager ? [{ to: "/reports", label: "التقارير", icon: BarChart3 }, { to: "/sales", label: "المبيعات", icon: Receipt }] : []),
-    ...(isAdmin ? [{ to: "/staff", label: "موظفون", icon: Users }, { to: "/suppliers", label: "الموردون", icon: Truck }] : []),
+    ...(isAdmin ? [{ to: "/staff", label: "موظفون", icon: Users }, { to: "/admin/products", label: "إدارة القطع", icon: ListChecks }] : []),
   ];
 
   const desktopNav: NavItem[] = isAdmin

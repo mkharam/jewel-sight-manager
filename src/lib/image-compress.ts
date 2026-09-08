@@ -97,6 +97,61 @@ export async function prepareForAIBase64(
   return { base64, mimeType: small.type || file.type || "image/jpeg" };
 }
 
+export type NormalizedBbox = { x: number; y: number; w: number; h: number };
+
+/**
+ * يقصّ منطقة من صورة الصينية (نسبة 0..1 من الأبعاد) وتُعيد صورة القطعة وحدها بدل
+ * صورة الصينية كاملة — تُستخدم لوضع "الصينية" بعد أن يُرجع الذكاء الاصطناعي مستطيل
+ * كل قطعة. تُضيف هامشاً بسيطاً (5%) لأن مستطيلات الذكاء الاصطناعي أحياناً محكمة جداً
+ * وتقصّ حافة القطعة. عند أي فشل أو مستطيل غير منطقي تُعيد null فيسقط المستدعي لصورة
+ * الصينية الكاملة بدل كسر الحفظ.
+ */
+export async function cropImageToBbox(file: File, bbox: NormalizedBbox, opts: CompressOptions = {}): Promise<File | null> {
+  const { maxDimension, quality, mimeType } = { ...DEFAULTS, ...opts };
+  if (!bbox || [bbox.x, bbox.y, bbox.w, bbox.h].some((n) => typeof n !== "number" || !isFinite(n))) return null;
+  if (bbox.w <= 0.01 || bbox.h <= 0.01 || bbox.w > 1 || bbox.h > 1) return null;
+
+  let handle: Awaited<ReturnType<typeof loadImage>> | null = null;
+  try {
+    handle = await loadImage(file);
+    const { width, height } = handle;
+
+    const margin = 0.05;
+    const x0 = Math.max(0, bbox.x - bbox.w * margin);
+    const y0 = Math.max(0, bbox.y - bbox.h * margin);
+    const x1 = Math.min(1, bbox.x + bbox.w * (1 + margin));
+    const y1 = Math.min(1, bbox.y + bbox.h * (1 + margin));
+
+    const sx = Math.round(x0 * width);
+    const sy = Math.round(y0 * height);
+    const sw = Math.max(1, Math.round((x1 - x0) * width));
+    const sh = Math.max(1, Math.round((y1 - y0) * height));
+
+    const scale = Math.min(1, maxDimension / Math.max(sw, sh));
+    const dw = Math.max(1, Math.round(sw * scale));
+    const dh = Math.max(1, Math.round(sh * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = dw;
+    canvas.height = dh;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(handle.draw, sx, sy, sw, sh, 0, 0, dw, dh);
+
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, mimeType, quality));
+    if (!blob) return null;
+
+    const ext = mimeType === "image/webp" ? "webp" : "jpg";
+    const base = file.name.replace(/\.[^.]+$/, "") || "photo";
+    return new File([blob], `${base}-crop.${ext}`, { type: mimeType, lastModified: Date.now() });
+  } catch {
+    return null;
+  } finally {
+    handle?.close?.();
+  }
+}
+
 /** يضغط عدة صور بالتوازي المحدود حتى لا يتجمّد الهاتف. */
 export async function compressMany(
   files: File[],

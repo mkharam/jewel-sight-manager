@@ -13,7 +13,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { KARAT_OPTIONS } from "@/lib/constants";
-import { compressMany, prepareForAIBase64 } from "@/lib/image-compress";
+import { compressMany, cropImageToBbox, prepareForAIBase64 } from "@/lib/image-compress";
 import { isPdf, pdfToImageFiles } from "@/lib/pdf-to-images";
 import { uploadQueue } from "@/lib/uploadQueue";
 import { normalizeAr } from "@/lib/arabic-search";
@@ -221,7 +221,9 @@ async function saveTrayPieces(
   if (!pieces.length) throw new Error("لم يتم التعرّف على أي قطعة في الصورة");
   const provider = (data as any)?.provider;
 
+  let pieceIndex = 0;
   for (const p of pieces) {
+    pieceIndex++;
     const categoryId = matchCategoryId(p.category_name, categories);
     let sku: string | null = null;
     if (opts.branchId) {
@@ -251,9 +253,20 @@ async function saveTrayPieces(
       .single();
     if (e1 || !prod) continue;
 
+    // نقصّ صورة القطعة وحدها من صورة الصينية بدل استخدام الصينية كاملة كصورة للمنتج —
+    // يعطي كل قطعة صورتها الخاصة الواضحة كما لو صُوّرت منفردة. عند فشل القص أو غياب
+    // مستطيل صالح نسقط لصورة الصينية الكاملة بدل فقدان الصورة تماماً.
+    let piecePath = storagePath;
+    if (p.bbox) {
+      try {
+        const cropped = await cropImageToBbox(file, p.bbox);
+        if (cropped) piecePath = await uploadFile(cropped, opts.userId, 1000 + pieceIndex);
+      } catch { /* نسقط للصينية الكاملة */ }
+    }
+
     await supabase.from("product_images").insert({
       product_id: prod.id,
-      storage_path: storagePath,
+      storage_path: piecePath,
       is_primary: true,
       uploaded_by: opts.userId,
       ai_labels: { ...p, category_id: categoryId, provider },
