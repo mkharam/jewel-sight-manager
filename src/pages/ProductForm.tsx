@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowRight, Upload, X, Star, Sparkles, Loader2 } from "lucide-react";
-import { PRODUCT_STATUS, KARAT_OPTIONS, getImageUrl } from "@/lib/constants";
+import { PRODUCT_STATUS, KARAT_OPTIONS, getImageUrl, normalizeDecimalInput } from "@/lib/constants";
 import { GOLD_COLORS, STONE_TYPES, STONE_COLORS } from "@/lib/luxury";
 import { prepareForAIBase64 } from "@/lib/image-compress";
 import { toast } from "sonner";
@@ -375,7 +375,13 @@ export default function ProductForm() {
               </Select>
             </Field>
             <Field label="الوزن (غ)">
-              <Input type="number" step="0.001" inputMode="decimal" value={form.weight_grams} onChange={(e) => setForm({ ...form, weight_grams: e.target.value })} dir="ltr" />
+              <Input
+                type="text"
+                inputMode="decimal"
+                value={form.weight_grams}
+                onChange={(e) => setForm({ ...form, weight_grams: normalizeDecimalInput(e.target.value) })}
+                dir="ltr"
+              />
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-3">

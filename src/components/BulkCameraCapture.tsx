@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Camera, X, Check, Trash2, RotateCcw, ImageOff, Scale, ScanLine } from "lucide-react";
 import { useBoxedBarcodeScanner } from "@/lib/useBoxedBarcodeScanner";
 import ScanBoxOverlay from "@/components/ScanBoxOverlay";
+import { normalizeDecimalInput } from "@/lib/constants";
 
 type Shot = { id: string; url: string; blob: Blob; weight: string; barcode: string };
 
@@ -217,12 +218,11 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
               </div>
               <input
                 ref={(el) => { weightInputRefs.current[s.id] = el; }}
-                type="number"
+                type="text"
                 inputMode="decimal"
-                step="0.01"
                 placeholder="وزن (جم)"
                 value={s.weight}
-                onChange={(e) => setWeight(s.id, e.target.value)}
+                onChange={(e) => setWeight(s.id, normalizeDecimalInput(e.target.value))}
                 className="w-16 h-7 rounded-md bg-white/10 border border-white/25 text-white text-[10px] text-center placeholder:text-white/40 focus:bg-white/20 focus:outline-none focus:ring-1 focus:ring-primary"
               />
               <input

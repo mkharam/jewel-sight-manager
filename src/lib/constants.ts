@@ -1,3 +1,22 @@
+// لوحات المفاتيح العربية على أغلب الهواتف (خصوصاً iOS حين تكون لغة النظام عربية) تكتب
+// أرقاماً هندية شرقية (٠١٢٣٤٥٦٧٨٩) بدل الأرقام اللاتينية حتى داخل حقول type="number" —
+// والمتصفح يرفضها بصمت هناك (input.value يصبح "" فوراً)، فيبدو للموظف أن الحقل "ما يخدمش"
+// رغم أنه يكتب فيه فعلياً. نستخدم type="text" لحقول كهذه ونمرّر القيمة عبر هذه الدالة أولاً.
+const EASTERN_ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
+const PERSIAN_DIGITS = "۰۱۲۳۴۵۶۷۸۹";
+export function normalizeDecimalInput(raw: string): string {
+  let out = "";
+  for (const ch of raw) {
+    const eastern = EASTERN_ARABIC_DIGITS.indexOf(ch);
+    const persian = eastern === -1 ? PERSIAN_DIGITS.indexOf(ch) : -1;
+    if (eastern !== -1) out += String(eastern);
+    else if (persian !== -1) out += String(persian);
+    else if (/[0-9]/.test(ch)) out += ch;
+    else if ((ch === "." || ch === "٫" || ch === "،" || ch === ",") && !out.includes(".")) out += ".";
+  }
+  return out;
+}
+
 export const PRODUCT_STATUS = {
   available: { label: "متوفر", color: "bg-status-available text-white" },
   reserved: { label: "محجوز", color: "bg-status-reserved text-white" },

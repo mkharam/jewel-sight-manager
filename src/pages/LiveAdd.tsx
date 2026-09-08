@@ -18,6 +18,7 @@ import { useBoxedBarcodeScanner } from "@/lib/useBoxedBarcodeScanner";
 import { decodeBarcodeFromFile } from "@/lib/decodeBarcodeFromImage";
 import { readInfoTagLocally } from "@/lib/readInfoTag";
 import ScanBoxOverlay from "@/components/ScanBoxOverlay";
+import { normalizeDecimalInput } from "@/lib/constants";
 import type { CapturedFile } from "@/components/BulkCameraCapture";
 
 const NO_BRANCH = "__none__";
@@ -476,12 +477,11 @@ export default function LiveAdd() {
         {/* الوزن + قراءة تلقائية من الوسم بالكاميرا */}
         <div className="flex items-center gap-2 px-4 pt-2">
           <input
-            type="number"
+            type="text"
             inputMode="decimal"
-            step="0.01"
             placeholder="الوزن (جم) *"
             value={weight}
-            onChange={(e) => setWeight(e.target.value)}
+            onChange={(e) => setWeight(normalizeDecimalInput(e.target.value))}
             className="flex-1 h-11 rounded-lg bg-white/10 border border-white/25 text-white text-center placeholder:text-white/40 focus:bg-white/20 focus:outline-none focus:ring-1 focus:ring-primary"
           />
           <input
