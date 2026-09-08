@@ -35,11 +35,18 @@ function pdfCompressionFor(sizeBytes: number): { maxDimension: number; quality: 
   return { maxDimension: 1600, quality: 0.82 };
 }
 
+// نُلحق ألوان الأحجار كسطر منفصل صريح بدل الاعتماد فقط على أن الذكاء الاصطناعي ذكرها
+// طبيعياً داخل نص الوصف الحر — هذا يضمن وجود كلمة اللون القياسية (بنفسجي/أخضر/أزرق...)
+// في description بشكل موثوق دائماً، فيلتقطها البحث الذكي (بما فيه مرادفات مثل "موفيا")
+// بثقة تامة بدل الاعتماد على صياغة الذكاء الاصطناعي الحرة كل مرة.
 function describeWithExtras(a: any): string | null {
   const base = a?.description_ar || "";
+  const gemstones: string[] = Array.isArray(a?.gemstones) ? a.gemstones.filter(Boolean) : [];
   const extras = [a?.stone_count, a?.condition].filter(Boolean).join(" — ");
-  const out = extras ? `${base}\n(${extras})` : base;
-  return out || null;
+  let out = base;
+  if (gemstones.length) out += `\nألوان الأحجار: ${gemstones.join("، ")}`;
+  if (extras) out += `\n(${extras})`;
+  return out.trim() || null;
 }
 
 async function uploadFile(file: File, userId: string, k: number): Promise<string> {

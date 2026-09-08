@@ -93,8 +93,12 @@ Deno.serve(async (req) => {
         })
         .eq("id", l.id);
 
+      const gemstones = Array.isArray(analysis.gemstones) ? analysis.gemstones.filter(Boolean) : [];
       const extras = [analysis.stone_count, analysis.condition].filter(Boolean).join(" — ");
-      const description = extras ? `${analysis.description_ar || ""}\n(${extras})` : analysis.description_ar || null;
+      let descriptionText = analysis.description_ar || "";
+      if (gemstones.length) descriptionText += `\nألوان الأحجار: ${gemstones.join("، ")}`;
+      if (extras) descriptionText += `\n(${extras})`;
+      const description = descriptionText.trim() || null;
       await admin
         .from("products")
         .update({
