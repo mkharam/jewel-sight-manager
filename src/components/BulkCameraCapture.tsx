@@ -248,11 +248,10 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId }: P
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex flex-col">
-      {/* شريط علوي */}
+      {/* شريط علوي — بدون زر إغلاق/رجوع منفصل عمداً: "تم" هي الطريقة الوحيدة للخروج،
+          حتى لا يخرج الموظف بالخطأ من الجلسة أثناء التصوير المتتالي. */}
       <div className="flex items-center justify-between px-4 py-3 safe-area-pt text-white bg-black/60">
-        <button onClick={onClose} className="p-2 -m-2" aria-label="إغلاق">
-          <X className="size-6" />
-        </button>
+        <span className="size-9" aria-hidden="true" />
         <p className="text-sm font-semibold">{shots.length > 0 ? `${shots.length} صورة مُلتقطة` : "صوّر القطع واحدة تلو الأخرى"}</p>
         <button onClick={() => setFacing((f) => (f === "environment" ? "user" : "environment"))} className="p-2 -m-2" aria-label="تبديل الكاميرا">
           <RotateCcw className="size-5" />
@@ -352,7 +351,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId }: P
         >
           <div className="size-12 rounded-full bg-white" />
         </button>
-        <Button onClick={finish} className="bg-gold-gradient text-primary-foreground shadow-gold" disabled={!shots.length}>
+        <Button onClick={finish} className="bg-gold-gradient text-primary-foreground shadow-gold">
           <Check className="size-4 ml-1" /> تم ({shots.length})
         </Button>
       </div>

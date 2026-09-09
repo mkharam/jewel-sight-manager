@@ -7,20 +7,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { formatDate } from "@/lib/constants";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { pushSupported, enablePush, disablePush } from "@/lib/push";
+import { enablePush, disablePush, currentPushStatus, type PushStatus } from "@/lib/push";
 import { toast } from "sonner";
-
-async function currentPushStatus(): Promise<"unsupported" | "denied" | "subscribed" | "unsubscribed"> {
-  if (!pushSupported()) return "unsupported";
-  if (typeof Notification !== "undefined" && Notification.permission === "denied") return "denied";
-  try {
-    const reg = await navigator.serviceWorker.ready;
-    const sub = await reg.pushManager.getSubscription();
-    return sub ? "subscribed" : "unsubscribed";
-  } catch {
-    return "unsubscribed";
-  }
-}
 
 interface ActivityItem {
   id: string;
@@ -94,7 +82,7 @@ export default function NotificationsBell() {
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [open, setOpen] = useState(false);
   const [lastSeen, setLastSeen] = useState<string>(() => localStorage.getItem(LS_KEY) ?? "1970-01-01");
-  const [pushStatus, setPushStatus] = useState<"unsupported" | "denied" | "subscribed" | "unsubscribed">("unsubscribed");
+  const [pushStatus, setPushStatus] = useState<PushStatus>("unsubscribed");
   const [pushBusy, setPushBusy] = useState(false);
 
   useEffect(() => {

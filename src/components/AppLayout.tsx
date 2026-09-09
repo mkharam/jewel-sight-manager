@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import NotificationsBell from "@/components/NotificationsBell";
 import InstallPrompt from "@/components/InstallPrompt";
 import { useUploadQueuePendingCount } from "@/lib/uploadQueue";
+import { ensurePushEnabled } from "@/lib/push";
 
 type NavItem = { to: string; label: string; icon: any; end?: boolean; badgeKey?: "transfers" | "uploads" | "reorders" };
 
@@ -38,6 +39,15 @@ export default function AppLayout() {
   const isManager = roles.includes("manager");
   const qc = useQueryClient();
   const branchId = profile?.branch_id ?? null;
+
+  // نتأكد من تفعيل إشعارات الجهاز عند كل فتح للتطبيق بدل انتظار أن يتذكّر الموظف
+  // فتح الجرس والضغط على "تفعيل" يدوياً — إن كان الإذن ممنوحاً فعلاً لكن الاشتراك ضاع
+  // تُعاد صامتة، وإن لم يُطلب الإذن من قبل تظهر نافذة الإذن الأصلية تلقائياً. راجع
+  // ensurePushEnabled في src/lib/push.ts.
+  useEffect(() => {
+    if (!user) return;
+    void ensurePushEnabled();
+  }, [user]);
 
   // عدد طلبات إعادة الطلب التي بانتظار قرار المدير
   const { data: pendingReorders = 0 } = useQuery({

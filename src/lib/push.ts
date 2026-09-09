@@ -9,6 +9,40 @@ export function pushSupported() {
   return typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window;
 }
 
+export type PushStatus = "unsupported" | "denied" | "subscribed" | "unsubscribed";
+
+/** الحالة الفعلية الحالية — لا تُحدَّث تلقائياً، تُقرأ عند الحاجة فقط. */
+export async function currentPushStatus(): Promise<PushStatus> {
+  if (!pushSupported()) return "unsupported";
+  if (typeof Notification !== "undefined" && Notification.permission === "denied") return "denied";
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    return sub ? "subscribed" : "unsubscribed";
+  } catch {
+    return "unsubscribed";
+  }
+}
+
+/**
+ * تُستدعى مرة عند فتح التطبيق (بعد تسجيل الدخول). إن كان الإذن ممنوحاً فعلاً لكن
+ * الاشتراك ضاع لسبب ما (تحديث service worker، مسح بيانات الموقع…) تُعيد الاشتراك
+ * بصمت دون أي نافذة إذن جديدة. إن لم يُطلب الإذن من قبل («default») تُظهر نافذة
+ * الإذن الأصلية من المتصفح تلقائياً بدل انتظار أن يتذكّر الموظف فتح الجرس والضغط
+ * على "تفعيل" يدوياً — وهذا يضمن أن الإشعارات "لا تبقى مطفأة" دون أن يلاحظ أحد.
+ * لا تفعل شيئاً إن كان الإذن مرفوضاً صراحة («denied») — المتصفح يتجاهل أي طلب جديد
+ * في هذه الحالة على أي حال، ولا نملك سوى توجيه الموظف لتفعيله يدوياً من إعدادات الجهاز.
+ */
+export async function ensurePushEnabled(): Promise<void> {
+  const status = await currentPushStatus();
+  if (status !== "unsubscribed") return;
+  try {
+    await enablePush();
+  } catch {
+    /* أفضل محاولة فقط — لا نُزعج الموظف برسالة خطأ عند فتح التطبيق */
+  }
+}
+
 function urlBase64ToUint8Array(base64: string) {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
   const raw = atob((base64 + padding).replace(/-/g, "+").replace(/_/g, "/"));
