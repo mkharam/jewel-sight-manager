@@ -48,6 +48,10 @@ const App = () => (
         dir="rtl"
         richColors
         offset="max(1rem, calc(env(safe-area-inset-top) + 0.75rem))"
+        // sonner يستخدم mobileOffset بدل offset على شاشات الجوال تحديداً (حيث النوتش/الجزيرة
+        // الديناميكية فعلياً موجودة) — ضبط offset وحده كان يُطبَّق على الديسكتوب فقط، فتبقى
+        // إشعارات الهاتف ملتصقة بأعلى الشاشة خلف الساعة/الإشارة دائماً بدون هذا السطر تحديداً.
+        mobileOffset="max(1rem, calc(env(safe-area-inset-top) + 0.75rem))"
       />
       <BrowserRouter basename={import.meta.env.BASE_URL}>
         <AuthProvider>
