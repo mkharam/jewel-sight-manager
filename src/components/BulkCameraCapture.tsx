@@ -1,31 +1,39 @@
 // كاميرا مستمرة داخل التطبيق: تفتح مرة واحدة وتبقى مفتوحة، فيلتقط الموظف عشرات القطع
 // بضغطة زر متتالية دون إغلاق/فتح تطبيق الكاميرا في كل مرة (وهو ما يجعل رفع فرع كامل
 // بطيئاً جداً مع <input capture>). بعد كل صورة يظهر حقل وزن صغير يُركَّز عليه تلقائياً
-// (الميزان أمام الموظف عادة) لتسجيل الوزن فوراً قبل الانتقال للقطعة التالية. وبينما
-// الكاميرا مفتوحة، تُفحص كل إطارات الفيديو تلقائياً بحثاً عن باركود/QR عبر واجهة
-// BarcodeDetector المدمجة في المتصفح (بدون مكتبة خارجية) — بمجرد اكتشاف باركود يظهر
-// شريط أخضر أعلى الشاشة، ويُرفق تلقائياً بالصورة القادمة التي تُلتقط. كل الصور (مع
-// أوزانها وباركوداتها) تُرسَل دفعة واحدة لنفس خط الرفع والتحليل الخلفي الحالي
-// (runUploadBatch) عند الضغط على "تم" — يبقى تحليل الذكاء الاصطناعي فقط لتحديد
-// الاسم/الفئة/العيار والوصف.
+// (الميزان أمام الموظف عادة) لتسجيل الوزن فوراً قبل الانتقال للقطعة التالية.
+//
+// كل صورة تُرفع وتُحفظ فوراً لحظة التقاطها (وليس دفعة واحدة عند الضغط على "تم") — إن
+// أُغلق التبويب أو قُفل الهاتف أثناء التصوير، كل ما التُقط فعلاً يبقى محفوظاً على الخادم.
+// الوزن/الباركود يُزامَنان مع الخادم بعد كتابتهما بقليل (وفوراً إن أُغلق التركيز عن
+// الحقل). "تراجع" يحذف آخر قطعة محفوظة فعلاً بدل مجرد إخفائها محلياً.
+//
+// الباركود التلقائي (قراءة الكاميرا المباشرة) مُعطَّل مؤقتاً (BARCODE_SCAN_ENABLED)
+// بطلب صريح — يبقى الكود جاهزاً لإعادة التفعيل بتغيير قيمة واحدة.
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Camera, X, Check, Trash2, RotateCcw, ImageOff, Scale, ScanLine } from "lucide-react";
+import { Camera, X, Check, Trash2, RotateCcw, ImageOff, Scale, ScanLine, Loader2, AlertCircle } from "lucide-react";
 import { useBoxedBarcodeScanner } from "@/lib/useBoxedBarcodeScanner";
 import ScanBoxOverlay from "@/components/ScanBoxOverlay";
 import { normalizeDecimalInput } from "@/lib/constants";
+import { saveCapturedPiece, updateCapturedPiece, deleteCapturedPiece } from "@/lib/uploadRunner";
+import { toast } from "sonner";
 
-type Shot = { id: string; url: string; blob: Blob; weight: string; barcode: string };
+const BARCODE_SCAN_ENABLED = false;
+
+type SaveState = "saving" | "saved" | "error";
+type Shot = { id: string; url: string; weight: string; barcode: string; saveState: SaveState };
 
 export type CapturedFile = File & { weightGrams?: number; barcodeValue?: string };
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  onDone: (files: CapturedFile[]) => void;
+  userId: string;
+  branchId: string | null;
 }
 
-export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
+export default function BulkCameraCapture({ open, onClose, userId, branchId }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [shots, setShots] = useState<Shot[]>([]);
@@ -36,6 +44,15 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
   const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
   const weightInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const lastShotId = useRef<string | null>(null);
+
+  // مراجع مرآة لقيم الوزن/الباركود ومعرّف القطعة المحفوظة — تُقرأ من مؤقّتات التزامن
+  // المؤجّلة بدون الاعتماد على state قد يكون قديماً داخل closure وقت تنفيذ المؤقّت.
+  const weightsRef = useRef<Record<string, string>>({});
+  const barcodesRef = useRef<Record<string, string>>({});
+  const productIdsRef = useRef<Record<string, string>>({});
+  const pendingDeleteRef = useRef<Set<string>>(new Set());
+  const weightTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const barcodeTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(() => {
     if (!open) return;
@@ -71,18 +88,23 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
     };
   }, [open, facing]);
 
-  // فحص مستمر للباركود/QR — محصور بمنطقة إطار التصويب الظاهر على الشاشة فقط (وليس
-  // الصورة كاملة)، فيقرأ تحديداً الباركود الذي يُحوَّم فوقه الموظف بدل أي باركود آخر
-  // ظاهر بالخطأ في زاوية الصورة (شائع في خزائن العرض المزدحمة). يبقى "بانتظار" حتى
-  // يُرفق تلقائياً بالصورة القادمة.
-  useBoxedBarcodeScanner(videoRef, open && ready, (text) => setPendingBarcode(text));
+  // فحص مستمر للباركود/QR — معطَّل مؤقتاً (BARCODE_SCAN_ENABLED)، راجع التعليق أعلى الملف.
+  useBoxedBarcodeScanner(videoRef, open && ready && BARCODE_SCAN_ENABLED, (text) => setPendingBarcode(text));
 
   // تحرير روابط الصور الملتقطة عند إغلاق المكوّن نهائياً لتفادي تسرّب الذاكرة
   useEffect(() => {
     if (!open) {
       shots.forEach((s) => URL.revokeObjectURL(s.url));
+      Object.values(weightTimers.current).forEach(clearTimeout);
+      Object.values(barcodeTimers.current).forEach(clearTimeout);
       setShots([]);
       weightInputRefs.current = {};
+      weightsRef.current = {};
+      barcodesRef.current = {};
+      productIdsRef.current = {};
+      pendingDeleteRef.current = new Set();
+      weightTimers.current = {};
+      barcodeTimers.current = {};
       lastShotId.current = null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -97,6 +119,19 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
       el.select();
     }
   }, [shots.length]);
+
+  const syncWeight = (id: string, weight: string) => {
+    const productId = productIdsRef.current[id];
+    if (!productId) return; // سيُطبَّق تلقائياً فور اكتمال الحفظ (راجع capture)
+    const w = parseFloat(weight);
+    void updateCapturedPiece(productId, { weight_grams: !isNaN(w) && w > 0 ? w : null });
+  };
+
+  const syncBarcode = (id: string, barcode: string) => {
+    const productId = productIdsRef.current[id];
+    if (!productId) return;
+    void updateCapturedPiece(productId, { barcode_value: barcode.trim() || null });
+  };
 
   const capture = () => {
     const video = videoRef.current;
@@ -114,7 +149,38 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
         if (!blob) return;
         const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         lastShotId.current = id;
-        setShots((prev) => [...prev, { id, url: URL.createObjectURL(blob), blob, weight: "", barcode: barcodeForShot }]);
+        const url = URL.createObjectURL(blob);
+        weightsRef.current[id] = "";
+        barcodesRef.current[id] = barcodeForShot;
+        setShots((prev) => [...prev, { id, url, weight: "", barcode: barcodeForShot, saveState: "saving" }]);
+
+        // نرفع ونحفظ فوراً — لا ننتظر ضغط "تم"، حتى لا يُفقد التقاط سابق عند إغلاق التبويب
+        // أو قفل الهاتف قبل إنهاء الجلسة.
+        const file = new File([blob], `capture-${id}.jpg`, { type: "image/jpeg" });
+        saveCapturedPiece(file, { userId, branchId, trayMode: false }, null, barcodeForShot || null)
+          .then(({ productId }) => {
+            if (pendingDeleteRef.current.has(id)) {
+              pendingDeleteRef.current.delete(id);
+              void deleteCapturedPiece(productId);
+              return;
+            }
+            productIdsRef.current[id] = productId;
+            setShots((prev) => prev.map((s) => (s.id === id ? { ...s, saveState: "saved" } : s)));
+            // إن كتب الموظف وزناً/باركوداً بينما كانت الصورة لا تزال تُرفع، نُطبّقه الآن فوراً
+            const w = weightsRef.current[id];
+            const b = barcodesRef.current[id];
+            if (w || b) {
+              const wNum = parseFloat(w || "");
+              void updateCapturedPiece(productId, {
+                weight_grams: !isNaN(wNum) && wNum > 0 ? wNum : null,
+                barcode_value: (b || "").trim() || null,
+              });
+            }
+          })
+          .catch(() => {
+            setShots((prev) => prev.map((s) => (s.id === id ? { ...s, saveState: "error" } : s)));
+            toast.error("تعذّر حفظ إحدى الصور — تحقق من الاتصال وأعد المحاولة");
+          });
       },
       "image/jpeg",
       0.9,
@@ -125,31 +191,56 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
   };
 
   const setWeight = (id: string, weight: string) => {
+    weightsRef.current[id] = weight;
     setShots((prev) => prev.map((s) => (s.id === id ? { ...s, weight } : s)));
+    if (weightTimers.current[id]) clearTimeout(weightTimers.current[id]);
+    weightTimers.current[id] = setTimeout(() => syncWeight(id, weight), 500);
+  };
+
+  const flushWeight = (id: string) => {
+    if (weightTimers.current[id]) clearTimeout(weightTimers.current[id]);
+    syncWeight(id, weightsRef.current[id] ?? "");
   };
 
   const setBarcode = (id: string, barcode: string) => {
+    barcodesRef.current[id] = barcode;
     setShots((prev) => prev.map((s) => (s.id === id ? { ...s, barcode } : s)));
+    if (barcodeTimers.current[id]) clearTimeout(barcodeTimers.current[id]);
+    barcodeTimers.current[id] = setTimeout(() => syncBarcode(id, barcode), 500);
   };
 
+  const flushBarcode = (id: string) => {
+    if (barcodeTimers.current[id]) clearTimeout(barcodeTimers.current[id]);
+    syncBarcode(id, barcodesRef.current[id] ?? "");
+  };
+
+  /** يحذف قطعة — إن كانت محفوظة فعلاً على الخادم يحذفها هناك أيضاً، وإن كانت لا تزال قيد
+   * الرفع يُعلّمها لتُحذف فور اكتمال حفظها بدل أن تبقى يتيمة. */
   const removeShot = (id: string) => {
     setShots((prev) => {
       const target = prev.find((s) => s.id === id);
       if (target) URL.revokeObjectURL(target.url);
       return prev.filter((s) => s.id !== id);
     });
+    if (weightTimers.current[id]) clearTimeout(weightTimers.current[id]);
+    if (barcodeTimers.current[id]) clearTimeout(barcodeTimers.current[id]);
+    delete weightTimers.current[id];
+    delete barcodeTimers.current[id];
+    delete weightsRef.current[id];
+    delete barcodesRef.current[id];
+    const productId = productIdsRef.current[id];
+    delete productIdsRef.current[id];
+    if (productId) void deleteCapturedPiece(productId);
+    else pendingDeleteRef.current.add(id);
+  };
+
+  const undoLast = () => {
+    if (!shots.length) return;
+    removeShot(shots[shots.length - 1].id);
   };
 
   const finish = () => {
-    if (!shots.length) return onClose();
-    const files: CapturedFile[] = shots.map((s, i) => {
-      const file = new File([s.blob], `capture-${Date.now()}-${i}.jpg`, { type: "image/jpeg" }) as CapturedFile;
-      const w = parseFloat(s.weight);
-      if (!isNaN(w) && w > 0) file.weightGrams = w;
-      if (s.barcode.trim()) file.barcodeValue = s.barcode.trim();
-      return file;
-    });
-    onDone(files);
+    if (shots.length) toast.success(`تم حفظ ${shots.length} قطعة`);
     onClose();
   };
 
@@ -180,23 +271,27 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
         )}
         {flash && <div className="absolute inset-0 bg-white/80 animate-pulse" />}
 
-        {/* إطار تصويب يحدّد بدقة المنطقة التي يُقرأ منها الباركود فقط */}
-        <ScanBoxOverlay active={!!pendingBarcode} />
+        {BARCODE_SCAN_ENABLED && (
+          <>
+            {/* إطار تصويب يحدّد بدقة المنطقة التي يُقرأ منها الباركود فقط */}
+            <ScanBoxOverlay active={!!pendingBarcode} />
 
-        {/* شريط الباركود المكتشَف — سيُرفق تلقائياً بالصورة القادمة */}
-        {pendingBarcode && (
-          <div className="absolute top-3 inset-x-3 flex items-center gap-2 bg-status-available/90 text-white rounded-xl px-3 py-2 shadow-lg">
-            <ScanLine className="size-4 shrink-0" />
-            <span className="text-xs font-mono truncate flex-1" dir="ltr">{pendingBarcode}</span>
-            <span className="text-[10px] shrink-0">سيُرفق بالصورة القادمة</span>
-            <button onClick={() => setPendingBarcode(null)} className="shrink-0 p-1 -m-1" aria-label="تجاهل الباركود">
-              <X className="size-3.5" />
-            </button>
-          </div>
+            {/* شريط الباركود المكتشَف — سيُرفق تلقائياً بالصورة القادمة */}
+            {pendingBarcode && (
+              <div className="absolute top-3 inset-x-3 flex items-center gap-2 bg-status-available/90 text-white rounded-xl px-3 py-2 shadow-lg">
+                <ScanLine className="size-4 shrink-0" />
+                <span className="text-xs font-mono truncate flex-1" dir="ltr">{pendingBarcode}</span>
+                <span className="text-[10px] shrink-0">سيُرفق بالصورة القادمة</span>
+                <button onClick={() => setPendingBarcode(null)} className="shrink-0 p-1 -m-1" aria-label="تجاهل الباركود">
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      {/* شريط مصغّرات الصور الملتقطة مع حقلي وزن وباركود لكل صورة */}
+      {/* شريط مصغّرات الصور الملتقطة مع حقل الوزن لكل صورة */}
       {shots.length > 0 && (
         <div className="flex gap-2 overflow-x-auto px-3 py-2 bg-black/60">
           {shots.map((s) => (
@@ -210,11 +305,12 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
                 >
                   <Trash2 className="size-3 text-white" />
                 </button>
-                {s.barcode && (
-                  <span className="absolute -bottom-1 -left-1 -right-1 flex justify-center">
-                    <ScanLine className="size-3 text-status-available bg-black/70 rounded-full p-0.5" />
-                  </span>
-                )}
+                {/* مؤشر حالة الحفظ — يطمئن الموظف أن الصورة فعلاً وصلت الخادم */}
+                <span className="absolute -bottom-1 -left-1 -right-1 flex justify-center">
+                  {s.saveState === "saving" && <Loader2 className="size-3 text-white animate-spin bg-black/70 rounded-full p-0.5" />}
+                  {s.saveState === "saved" && <Check className="size-3 text-status-available bg-black/70 rounded-full p-0.5" />}
+                  {s.saveState === "error" && <AlertCircle className="size-3 text-destructive bg-black/70 rounded-full p-0.5" />}
+                </span>
               </div>
               <input
                 ref={(el) => { weightInputRefs.current[s.id] = el; }}
@@ -223,17 +319,21 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
                 placeholder="وزن (جم)"
                 value={s.weight}
                 onChange={(e) => setWeight(s.id, normalizeDecimalInput(e.target.value))}
+                onBlur={() => flushWeight(s.id)}
                 className="w-16 h-7 rounded-md bg-white/10 border border-white/25 text-white text-[10px] text-center placeholder:text-white/40 focus:bg-white/20 focus:outline-none focus:ring-1 focus:ring-primary"
               />
-              <input
-                type="text"
-                inputMode="text"
-                placeholder="باركود"
-                value={s.barcode}
-                onChange={(e) => setBarcode(s.id, e.target.value)}
-                dir="ltr"
-                className="w-16 h-6 rounded-md bg-white/10 border border-white/25 text-white text-[9px] text-center font-mono placeholder:text-white/40 focus:bg-white/20 focus:outline-none focus:ring-1 focus:ring-primary"
-              />
+              {BARCODE_SCAN_ENABLED && (
+                <input
+                  type="text"
+                  inputMode="text"
+                  placeholder="باركود"
+                  value={s.barcode}
+                  onChange={(e) => setBarcode(s.id, e.target.value)}
+                  onBlur={() => flushBarcode(s.id)}
+                  dir="ltr"
+                  className="w-16 h-6 rounded-md bg-white/10 border border-white/25 text-white text-[9px] text-center font-mono placeholder:text-white/40 focus:bg-white/20 focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              )}
             </div>
           ))}
         </div>
@@ -241,12 +341,7 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
 
       {/* أزرار التحكم */}
       <div className="flex items-center justify-center gap-8 py-6 safe-area-pb bg-black/60">
-        <Button
-          variant="ghost"
-          className="text-white"
-          onClick={() => shots.length && setShots((prev) => { const [last, ...rest] = [...prev].reverse(); if (last) URL.revokeObjectURL(last.url); return rest.reverse(); })}
-          disabled={!shots.length}
-        >
+        <Button variant="ghost" className="text-white" onClick={undoLast} disabled={!shots.length}>
           تراجع
         </Button>
         <button
@@ -264,7 +359,7 @@ export default function BulkCameraCapture({ open, onClose, onDone }: Props) {
 
       {shots.length > 0 && (
         <p className="flex items-center justify-center gap-1 text-[11px] text-white/50 pb-2 -mt-3">
-          <Scale className="size-3" /> الوزن والباركود اختياريان ويُحفظان مباشرة مع القطعة
+          <Scale className="size-3" /> كل صورة تُحفظ فوراً لحظة التقاطها — الوزن اختياري ويُحفظ تلقائياً أثناء الكتابة
         </p>
       )}
     </div>

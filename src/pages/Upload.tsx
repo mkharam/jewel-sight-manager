@@ -13,25 +13,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Camera, FolderUp, Loader2, Sparkles, X, CheckCircle2, AlertCircle, Layers, ImageOff, ScanLine, Gauge, RefreshCw } from "lucide-react";
+import { Camera, FolderUp, Loader2, Sparkles, X, CheckCircle2, AlertCircle, Layers, ImageOff, ScanLine } from "lucide-react";
 import { toast } from "sonner";
 import { runUploadBatch } from "@/lib/uploadRunner";
 import { useUploadQueue, uploadQueue } from "@/lib/uploadQueue";
 import BulkCameraCapture from "@/components/BulkCameraCapture";
-
-// أسماء موديلات Gemini المعروضة بالترتيب نفسه الذي يجرّبها الخادم به (الأدق أولاً) —
-// راجع GEMINI_VISION_MODELS في supabase/functions/_shared/lovable-ai.ts.
-const GEMINI_MODEL_LABELS: Record<string, string> = {
-  "gemini-2.5-flash": "Gemini 2.5 Flash",
-  "gemini-2.5-flash-lite": "Gemini 2.5 Flash-Lite",
-  "gemini-3.1-flash-lite": "Gemini 3.1 Flash-Lite",
-  "gemini-flash-latest": "Gemini (أحدث إصدار)",
-};
-
-type AiUsage = {
-  providers: Record<string, { used: number; limit: number }>;
-  geminiModels: Record<string, { used: number; limit: number | null }>;
-};
 
 const supportsInAppCamera = () =>
   typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
@@ -65,20 +51,6 @@ export default function Upload() {
     refetchInterval: 15_000,
   });
 
-  // استهلاك اليوم التقريبي لمزوّدات التحليل المجانية — يُقرأ من نسخة دالة Edge الحالية
-  // فقط (يتصفّر عند إعادة تشغيل باردة)، فهو مؤشر تقريبي لهذه الجلسة لا رقم رسمي دقيق
-  // من جوجل/Groq. يتحدّث تلقائياً كلما تغيّر طول طابور الرفع (أي تحليل جديد اكتمل).
-  const { data: aiUsage, refetch: refetchUsage } = useQuery<AiUsage>({
-    queryKey: ["ai-usage"],
-    queryFn: async () => {
-      const { data, error } = await supabase.functions.invoke("ai-usage");
-      if (error) throw error;
-      return data as AiUsage;
-    },
-    refetchOnWindowFocus: false,
-    staleTime: 10_000,
-  });
-
   const handleFiles = (files: FileList | File[] | null) => {
     if (!files || !files.length) return;
     if (!user) return toast.error("سجّل الدخول أولاً");
@@ -86,10 +58,11 @@ export default function Upload() {
       userId: user.id,
       branchId: branchId === NO_BRANCH ? null : branchId,
       trayMode,
-    }).then(() => refetchUsage());
+    });
   };
 
   const openCamera = () => {
+    if (!user) return toast.error("سجّل الدخول أولاً");
     if (supportsInAppCamera()) setBulkCameraOpen(true);
     else cameraRef.current?.click();
   };
@@ -145,7 +118,7 @@ export default function Upload() {
         </div>
         {supportsInAppCamera() && (
           <p className="text-xs text-muted-foreground -mt-2">
-            تفتح الكاميرا وتبقى مفتوحة — صوّر كل قطعة بضغطة ثم اضغط "تم" في النهاية لرفعها كلها دفعة واحدة.
+            تفتح الكاميرا وتبقى مفتوحة — صوّر كل قطعة بضغطة، تُحفظ فوراً لحظة التقاطها، ثم اضغط "تم" عند الانتهاء.
           </p>
         )}
 
@@ -172,40 +145,6 @@ export default function Upload() {
           </Select>
         </div>
       </Card>
-
-      {aiUsage && (
-        <Card className="p-4 space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Gauge className="size-4 text-primary shrink-0" />
-              <p className="text-sm font-semibold">استهلاك التحليل اليوم (تقريبي)</p>
-            </div>
-            <button
-              onClick={() => refetchUsage()}
-              className="p-1.5 -m-1.5 text-muted-foreground hover:text-foreground"
-              aria-label="تحديث"
-            >
-              <RefreshCw className="size-3.5" />
-            </button>
-          </div>
-          <div className="space-y-1.5">
-            {Object.entries(aiUsage.geminiModels)
-              .filter(([, u]) => u.used > 0 || u.limit != null)
-              .map(([model, u]) => (
-                <UsageRow key={model} label={GEMINI_MODEL_LABELS[model] ?? model} used={u.used} limit={u.limit} />
-              ))}
-            {Object.entries(aiUsage.providers)
-              .filter(([name]) => name !== "gemini")
-              .map(([name, u]) => (
-                <UsageRow key={name} label={name === "groq" ? "Groq" : "OpenRouter"} used={u.used} limit={u.limit} />
-              ))}
-          </div>
-          <p className="text-[11px] text-muted-foreground pt-1">
-            تقديري لهذه الجلسة فقط (يتصفّر عند إعادة تشغيل الخادم) — وحدود Gemini تُكتشف فعلياً من أول رفض 429 لكل
-            موديل، فتبقى "؟" حتى تُصادف الحد لأول مرة.
-          </p>
-        </Card>
-      )}
 
       {queue.length > 0 && (
         <div className="flex items-center justify-between">
@@ -259,31 +198,9 @@ export default function Upload() {
       <BulkCameraCapture
         open={bulkCameraOpen}
         onClose={() => setBulkCameraOpen(false)}
-        onDone={(files) => handleFiles(files)}
+        userId={user?.id ?? ""}
+        branchId={branchId === NO_BRANCH ? null : branchId}
       />
-    </div>
-  );
-}
-
-function UsageRow({ label, used, limit }: { label: string; used: number; limit: number | null }) {
-  const pct = limit ? Math.min(100, Math.round((used / limit) * 100)) : 0;
-  const danger = limit != null && used >= limit;
-  return (
-    <div>
-      <div className="flex items-center justify-between text-xs mb-0.5">
-        <span className={danger ? "text-destructive font-medium" : "text-foreground"}>{label}</span>
-        <span className="text-muted-foreground font-mono" dir="ltr">
-          {used} / {limit ?? "؟"}
-        </span>
-      </div>
-      {limit != null && (
-        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-          <div
-            className={`h-full rounded-full ${danger ? "bg-destructive" : "bg-primary"}`}
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-      )}
     </div>
   );
 }

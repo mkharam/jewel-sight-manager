@@ -159,6 +159,35 @@ async function saveUnanalyzedProduct(
 }
 
 /**
+ * كاميرا التصوير المتتالي: ترفع وتحفظ كل صورة فور التقاطها بدل انتظار ضغط "تم" في
+ * النهاية — إن أُغلق التبويب أو قُفل الهاتف قبل ذلك، ما التُقط فعلاً يبقى محفوظاً على
+ * الخادم بدل ضياعه بالكامل مع ما كان محفوظاً فقط في ذاكرة المتصفح. التحليل بالذكاء
+ * الاصطناعي يبقى للطابور الخلفي كالوضع العادي تماماً.
+ */
+export async function saveCapturedPiece(
+  file: File,
+  opts: UploadOptions,
+  weightGrams?: number | null,
+  barcodeValue?: string | null,
+): Promise<{ productId: string; imageId: string }> {
+  const path = await uploadFile(file, opts.userId, Math.floor(Math.random() * 1_000_000));
+  return saveUnanalyzedProduct(path, opts, weightGrams, barcodeValue, null, null);
+}
+
+/** تحديث الوزن/الباركود بعد أن حُفظت القطعة فعلاً — الموظف يكتبهما بعد رؤية الصورة عادة. */
+export async function updateCapturedPiece(
+  productId: string,
+  patch: { weight_grams?: number | null; barcode_value?: string | null },
+): Promise<void> {
+  await supabase.from("products").update(patch as any).eq("id", productId);
+}
+
+/** تراجع عن قطعة سبق حفظها فعلاً (خطأ تصوير) — يحذفها نهائياً مع صورتها. */
+export async function deleteCapturedPiece(productId: string): Promise<void> {
+  await supabase.from("products").delete().eq("id", productId);
+}
+
+/**
  * تحليل فوري للقطعة مباشرة بعد رفعها (بدل انتظار الطابور الخلفي) — يُظهر للموظف نتيجة
  * التحليل فوراً مع مؤشر تحميل أثناء العمل. يُعيد اسم القطعة عند النجاح، أو null عند
  * الفشل/انشغال المزوّدات (429) لتبقى القطعة في الطابور الخلفي كما كان سابقاً — لا شيء
