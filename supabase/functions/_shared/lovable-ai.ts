@@ -43,7 +43,7 @@ export type JewelryAnalysis = {
 // ============================================================
 // PROMPT مشترك — دقيق وغير افتراضي (لا "ألماس" ولا "21K" كافتراضي)
 // ============================================================
-function buildSystemPrompt(catList: string): string {
+function buildSystemPrompt(catList: string, calibration = ""): string {
   return (
     `أنت خبير مجوهرات عربي دقيق الملاحظة تعمل في محل ذهب محلي. أعد JSON فقط بهذا الشكل بالضبط بدون أي نص إضافي:\n` +
     `{"name_ar":"...","category_name":"...","item_type":"...","karat":null,"metal_color":"yellow","style":[],"gemstones":[],"stone_count":null,"condition":null,"description_ar":"..."}\n\n` +
@@ -56,8 +56,11 @@ function buildSystemPrompt(catList: string): string {
     `- condition: جديدة (لا خدوش أو تلف ظاهر)، مستعملة بحالة جيدة (خدوش بسيطة)، بها خدوش/تلف ظاهر (خدوش واضحة أو أجزاء مفقودة)، أو null إن لم تتضح من الصورة\n\n` +
     `قواعد صارمة جداً حول العيار (karat) — هذا أهم جزء ويُخطئ فيه كثيراً:\n` +
     `- karat هو عيار الذهب (نقاؤه) فقط، وليس نوع الحجر أو المعدن. "ألماس" أو "فضة" ليستا قيماً مسموحة لـ karat إطلاقاً — إن كانت القطعة مرصعة بأحجار بيضاء لامعة، هذا لا علاقة له بالعيار؛ اذكر الأحجار في gemstones وضع karat كعيار الذهب الفعلي (18K أو 21K) بغض النظر عن وجود الأحجار من عدمه.\n` +
-    `- أغلب مخزون المحل إما 18K أو 21K — لا يوجد 22K أو 24K أو فضة عملياً. لا تتردد كثيراً بين الاثنين: 21K عادة لون أصفر ذهبي غامق ومشبّع (الأصفر التقليدي المعروف محلياً)، بينما 18K عادة لون أفتح وأقل تشبعاً، أو يُستخدم غالباً للذهب الأبيض والروز غولد. استخدم لون المعدن ودرجته لتحدد 18K أو 21K بثقة معقولة بدل إرجاع null مباشرة.\n` +
-    `- أعد karat كـ null فقط في حالات نادرة: القطعة ليست ذهباً أصلاً (فضة أو معدن غير ثمين واضح)، أو الصورة غير واضحة كفاية لتمييز أي لون معدن حقيقي.\n\n` +
+    `- أغلب مخزون المحل إما 18K أو 21K — لا يوجد 22K أو 24K أو فضة عملياً. استخدم كل الإشارات المتاحة معاً بدل الاعتماد على لون المعدن وحده (وهو أضعف إشارة فردية، يتأثر بالإضاءة والتصوير كثيراً):\n` +
+    `  · اللون: 21K عادة أصفر ذهبي غامق ومشبّع (الأصفر التقليدي المعروف محلياً)، بينما 18K عادة أفتح وأقل تشبعاً، أو يُستخدم غالباً للذهب الأبيض والروز غولد.\n` +
+    `  · الطراز: القطع التراثية/الفلكلورية الثقيلة (تصميم مشجّر، عملات، مشغولات يدوية معقدة، أطقم عرايس تقليدية ثقيلة) غالباً 21K في هذا السوق. القطع الخفيفة العصرية بتصميم بسيط أو مرصّعة بأحجار كثيرة صغيرة غالباً 18K.\n` +
+    `  · إن تعارضت الإشارات ولم تصل لثقة معقولة من مجموعها، أعد null بدل التخمين العشوائي — null صريح أفضل من قيمة خاطئة بثقة زائفة.\n` +
+    `- أعد karat كـ null في حالتين: (أ) القطعة ليست ذهباً أصلاً (فضة أو معدن غير ثمين واضح)، أو (ب) الصورة غير واضحة كفاية أو الإشارات متعارضة فعلاً لدرجة تمنع الوصول لثقة معقولة.\n\n` +
     `قواعد صارمة أخرى — لا تخمّن، صف ما تراه فقط:\n` +
     `- لا تفترض "ألماس" أبداً في gemstones لأي حجر أبيض لامع. أي حجر أبيض/شفاف هو على الأرجح زركون مكعب (CZ) أو حجر صناعي — ` +
     `اذكره في description_ar وgemstones بأنه "أحجار بيضاء لامعة"، وليس "ألماس"، إلا إذا رأيت حجراً واحداً كبيراً بارزاً بوضوح بقطع سوليتير احترافي يوحي فعلاً بألماس حقيقي. لمعان المعدن نفسه (الذهب الأبيض اللامع) ليس دليلاً على وجود أحجار كريمة إطلاقاً — عدم وجود أي حجر ظاهر يعني stone_count: "بدون أحجار" وgemstones: [] حتى لو كانت القطعة لامعة جداً.\n` +
@@ -66,10 +69,50 @@ function buildSystemPrompt(catList: string): string {
     `- item_type يجب أن يكون النوع المحدد الفعلي (مثلاً "حلق" وليس "مجوهرات")، استنتجه من شكل القطعة نفسها لا من الفئة العامة فقط.\n` +
     `- stone_count وcondition: قيّمهما فقط من الظاهر فعلياً في الصورة، وأعد null عند عدم التأكد بدل التخمين.\n` +
     `- metal_color بحسب اللون الحقيقي الظاهر فعلياً في الصورة: أبيض/روديوم لامع، أصفر ذهبي، أو وردي (روز غولد) — لا تخمّن بناءً على نوع القطعة.\n` +
-    `- description_ar يجب أن يذكر الألوان الفعلية للأحجار وتفاصيل التصميم الحقيقية الظاهرة في هذه الصورة تحديداً ` +
-    `(مثال جيد: "أقراط متدلية بحجر أخضر زمردي شكل كمثرى وأحجار بنفسجية، محاطة بأحجار بيضاء لامعة على تصميم أوراق فضية")، ` +
-    `وليس وصفاً عاماً نمطياً مثل "أقراط ألماس فاخرة".`
+    `- description_ar: اكتب فقرة غنية بالتفاصيل والكلمات المفتاحية القابلة للبحث لاحقاً — الهدف أن يجد الموظف هذه القطعة بالبحث النصي عن أي من تفاصيلها لاحقاً، وأن تلتقطها خوارزمية "قطع مشابهة" بدقة. اذكر بالترتيب: (1) نوع القطعة وطرازها العام، ` +
+    `(2) ألوان الأحجار وأشكالها وترتيبها (مثال: "حجر أخضر زمردي شكل كمثرى في المنتصف محاطاً بأحجار بيضاء لامعة صغيرة")، (3) تفاصيل التصميم المميّزة (مشجّر، هندسي، مجدول، مرصّع، مطفي/لامع، حواف منقوشة…)، ` +
+    `(4) أي طابع أو مناسبة واضحة من التصميم نفسه إن وُجدت (عرايسي/تراثي/يومي/رسمي) بدون تخمين إن لم يتضح. مثال جيد: "طقم عرايسي تراثي ثقيل بتصميم مشجّر مطفي، مرصّع بأحجار خضراء زمردية بيضاوية الشكل وأحجار بيضاء لامعة صغيرة محيطة، حواف مذهّبة منقوشة يدوياً" — ` +
+    `وليس وصفاً عاماً نمطياً مثل "أقراط ألماس فاخرة".` +
+    calibration
   );
+}
+
+// ============================================================
+// معايرة العيار من مخزون حقيقي — "دع الذكاء الاصطناعي يتعلّم" مما رُفع فعلاً بلا أي بنية
+// تدريب/fine-tuning (غير متاحة على الخطة المجانية): نجلب عيّنة من آخر قطع حقيقية (وزنها
+// معروف فعلياً، لا صور تجريبية) وأعيدها كأمثلة نصية داخل الـ prompt نفسه (few-shot من بيانات
+// المحل الفعلية) — كل تحليل جديد "يرى" أحدث ما أدخله الموظفون فعلياً بدل الاعتماد على
+// افتراضات عامة عن السوق فقط. تُخزَّن مؤقتاً 5 دقائق لتفادي استعلام قاعدة بيانات على كل صورة.
+// ============================================================
+let karatCalibrationCache: { text: string; expires: number } | null = null;
+const KARAT_CALIBRATION_TTL_MS = 5 * 60 * 1000;
+
+async function buildKaratCalibrationBlock(): Promise<string> {
+  if (karatCalibrationCache && karatCalibrationCache.expires > Date.now()) return karatCalibrationCache.text;
+  try {
+    const admin = getAdminClient();
+    const { data } = await admin
+      .from("products")
+      .select("name, karat, weight_grams, item_type")
+      .not("karat", "is", null)
+      .not("weight_grams", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    const rows = (data ?? []) as { name: string; karat: string; weight_grams: number; item_type: string | null }[];
+    let text = "";
+    if (rows.length) {
+      const lines = rows
+        .map((r) => `  · ${r.item_type ?? "قطعة"} "${r.name}" — الوزن الفعلي ${r.weight_grams}غ — العيار الفعلي المؤكد: ${r.karat}`)
+        .join("\n");
+      text =
+        `\n\nأمثلة حقيقية مؤكدة من مخزون هذا المحل تحديداً (وزن وعيار فعليَّين وليسا تخميناً)، استخدمها كمرجع تعرّف على أسلوب هذا المحل تحديداً في ربط الوزن/الطراز بالعيار — ليست قاعدة مطلقة تنطبق حرفياً على كل قطعة، بل مؤشر على النمط الغالب في هذا المخزون بالذات:\n${lines}`;
+    }
+    karatCalibrationCache = { text, expires: Date.now() + KARAT_CALIBRATION_TTL_MS };
+    return text;
+  } catch (e) {
+    console.warn("karat calibration fetch failed (non-fatal)", e);
+    return "";
+  }
 }
 
 /**
@@ -313,14 +356,120 @@ const GEMINI_VISION_MODELS = [
   "gemini-flash-latest", // أحدث موديل (حصة ضئيلة 20/يوم) — ملاذ أخير فقط
 ];
 
+// ============================================================
+// Gemini structured output (responseSchema) — بدل الاعتماد فقط على وصف شكل الـJSON
+// نصياً داخل الـ prompt. جوجل توصي صراحةً بهذا: تقييد الحقول المصنَّفة (karat, metal_color…)
+// بـ enum يمنع النموذج تركيبياً من إرجاع قيمة خارج القائمة المسموحة — وهذا فعلياً منع خطأً
+// حقيقياً رصدناه في الإنتاج: النموذج أرجع karat:"ألماس" لقطعة واحدة رغم تحذير نصّي صريح في
+// الـ prompt بعدم فعل ذلك (نص وحده لم يمنعه، الالتزام التركيبي بـenum يمنعه فعلياً).
+// راجع: https://ai.google.dev/gemini-api/docs/structured-output
+// ============================================================
+const KARAT_ENUM = ["18K", "21K"];
+const METAL_COLOR_ENUM = ["yellow", "white", "rose", "mixed"];
+const STONE_COUNT_ENUM = ["بدون أحجار", "حجر واحد", "عدة أحجار"];
+const CONDITION_ENUM = ["جديدة", "مستعملة بحالة جيدة", "بها خدوش/تلف ظاهر"];
+
+/** الحقول المشتركة لكل تحليل قطعة مفردة — تُستخدم في تحليل المفرد وداخل عناصر الصينية/الدفعة. */
+function itemSchemaProperties(): Record<string, unknown> {
+  return {
+    name_ar: { type: "STRING" },
+    category_name: { type: "STRING", nullable: true },
+    item_type: { type: "STRING", nullable: true },
+    metal_color: { type: "STRING", enum: METAL_COLOR_ENUM, nullable: true },
+    karat: { type: "STRING", enum: KARAT_ENUM, nullable: true },
+    style: { type: "ARRAY", items: { type: "STRING" } },
+    gemstones: { type: "ARRAY", items: { type: "STRING" } },
+    stone_count: { type: "STRING", enum: STONE_COUNT_ENUM, nullable: true },
+    condition: { type: "STRING", enum: CONDITION_ENUM, nullable: true },
+    description_ar: { type: "STRING" },
+  };
+}
+const ITEM_PROPERTY_ORDER = [
+  "name_ar", "category_name", "item_type", "metal_color", "karat",
+  "style", "gemstones", "stone_count", "condition", "description_ar",
+];
+
+// كل الحقول إلزامية عمداً (لا فقط name_ar/description_ar) — لاحظنا في اختبار مباشر أن
+// جوجل تُسقط الحقول غير الإلزامية كلياً من الاستجابة (لا حتى null/[]) عندما لا تكون واثقة
+// منها، فيغيب gemstones/style/stone_count/condition/metal_color بالكامل من الرد. جعلها
+// إلزامية يجبر النموذج على إرجاعها دائماً (null أو [] عند عدم الوضوح)، مطابقاً للسلوك
+// الأصلي القائم على النص فقط قبل إضافة responseSchema.
+const SINGLE_ITEM_SCHEMA = {
+  type: "OBJECT",
+  properties: itemSchemaProperties(),
+  required: ITEM_PROPERTY_ORDER,
+  propertyOrdering: ITEM_PROPERTY_ORDER,
+};
+
+const TRAY_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    pieces: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          position: { type: "STRING" },
+          bbox: {
+            type: "OBJECT",
+            properties: {
+              x: { type: "NUMBER" },
+              y: { type: "NUMBER" },
+              w: { type: "NUMBER" },
+              h: { type: "NUMBER" },
+            },
+            required: ["x", "y", "w", "h"],
+          },
+          ...itemSchemaProperties(),
+        },
+        required: ["position", "bbox", ...ITEM_PROPERTY_ORDER],
+        propertyOrdering: ["position", "bbox", ...ITEM_PROPERTY_ORDER],
+      },
+    },
+  },
+  required: ["pieces"],
+};
+
+const TAG_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    barcode: { type: "STRING", nullable: true },
+    branch_code: { type: "STRING", nullable: true },
+    karat_raw: { type: "STRING", nullable: true },
+    type_raw: { type: "STRING", nullable: true },
+    weight_grams: { type: "NUMBER", nullable: true },
+  },
+  propertyOrdering: ["barcode", "branch_code", "karat_raw", "type_raw", "weight_grams"],
+};
+
+const BATCH_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    results: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          index: { type: "INTEGER" },
+          ...itemSchemaProperties(),
+        },
+        required: ["index", ...ITEM_PROPERTY_ORDER],
+        propertyOrdering: ["index", ...ITEM_PROPERTY_ORDER],
+      },
+    },
+  },
+  required: ["results"],
+};
+
 async function geminiGenerate(params: {
   key: string;
   model: string;
   systemPrompt: string;
   parts: unknown[];
   maxOutputTokens?: number;
+  responseSchema?: unknown;
 }): Promise<string> {
-  const { key, model, systemPrompt, parts, maxOutputTokens } = params;
+  const { key, model, systemPrompt, parts, maxOutputTokens, responseSchema } = params;
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
@@ -331,6 +480,7 @@ async function geminiGenerate(params: {
         contents: [{ role: "user", parts }],
         generationConfig: {
           responseMimeType: "application/json",
+          ...(responseSchema ? { responseSchema } : {}),
           temperature: 0.2,
           ...(maxOutputTokens ? { maxOutputTokens } : {}),
         },
@@ -423,6 +573,7 @@ export async function analyzeJewelryImageGemini(params: {
   mimeType: string;
   categoryNames: string[];
   promptOverride?: string;
+  responseSchema?: unknown;
 }): Promise<any> {
   const raw = Deno.env.get("GOOGLE_API_KEY") ?? Deno.env.get("GEMINI_API_KEY") ?? "";
   const key = raw.trim().replace(/^["']|["']$/g, "");
@@ -433,6 +584,7 @@ export async function analyzeJewelryImageGemini(params: {
     ? categoryNames.join("، ")
     : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
   const systemPrompt = params.promptOverride ?? buildSystemPrompt(catList);
+  const responseSchema = params.responseSchema ?? SINGLE_ITEM_SCHEMA;
   const parts = [
     { text: "حلّل هذه القطعة وأعد JSON فقط." },
     { inlineData: { mimeType, data: imageBase64 } },
@@ -442,7 +594,7 @@ export async function analyzeJewelryImageGemini(params: {
   for (const model of GEMINI_VISION_MODELS) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const rawText = await geminiGenerate({ key, model, systemPrompt, parts });
+        const rawText = await geminiGenerate({ key, model, systemPrompt, parts, responseSchema });
         console.log("Gemini used model:", model);
         return parseGeminiJson(rawText);
       } catch (e) {
@@ -534,12 +686,24 @@ export async function analyzeWithFallback(params: {
   imageBase64: string;
   mimeType: string;
   categoryNames: string[];
+  promptOverride?: string;
 }): Promise<{ analysis: JewelryAnalysis; provider: string; usage: Record<string, { used: number; limit: number }> }> {
   const m = /^data:([^;]+);base64,(.*)$/s.exec(params.imageBase64.trim());
   if (m) params = { ...params, mimeType: m[1], imageBase64: m[2] };
   params = { ...params, imageBase64: params.imageBase64.replace(/\s/g, "") };
   if (!params.imageBase64) {
     throw Object.assign(new Error("الصورة فارغة أو غير صالحة"), { status: 400 });
+  }
+
+  // نبني الـ prompt مرة واحدة هنا (بدل أن يبنيه كل مزوّد بمفرده) فنضمن اتساقاً بين
+  // Gemini/Groq/OpenRouter ونجلب أمثلة المعايرة الحقيقية من الاستعلام مرة واحدة فقط،
+  // لا مرة لكل مزوّد. راجع buildKaratCalibrationBlock أدناه.
+  if (!params.promptOverride) {
+    const catList = params.categoryNames.length
+      ? params.categoryNames.join("، ")
+      : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
+    const calibration = await buildKaratCalibrationBlock();
+    params = { ...params, promptOverride: buildSystemPrompt(catList, calibration) };
   }
 
   const all: Array<{ name: string; fn: () => Promise<JewelryAnalysis> }> = [];
@@ -693,7 +857,7 @@ export function friendlyError(e: unknown): { status: number; message: string } {
 // تحليل «صينية»: صورة واحدة تحتوي عدة قطع → مصفوفة قطع
 // يوفر وقت التصوير: تصوّر 5–10 قطع مرة واحدة والنظام يفصلها.
 // ============================================================
-function buildTraySystemPrompt(catList: string): string {
+function buildTraySystemPrompt(catList: string, calibration = ""): string {
   return (
     `أنت خبير مجوهرات عربي دقيق الملاحظة. الصورة تحتوي عدة قطع مجوهرات معروضة معاً (صينية/علبة عرض).\n` +
     `افصل كل قطعة مستقلة وأعد JSON فقط بهذا الشكل بالضبط بدون أي نص إضافي:\n` +
@@ -712,7 +876,8 @@ function buildTraySystemPrompt(catList: string): string {
     `- condition: جديدة، مستعملة بحالة جيدة، بها خدوش/تلف ظاهر، أو null إن لم يتضح من الصورة.\n` +
     `- category_name يطابق واحدة من: ${catList} أو null.\n` +
     `- لا تفترض "ألماس" لأي حجر أبيض لامع — اذكره "أحجار بيضاء لامعة" إلا إذا كان حجراً كبيراً بقطع سوليتير واضح. لمعان المعدن نفسه ليس دليل وجود أحجار.\n` +
-    `- description_ar يذكر ألوان الأحجار الفعلية وتفاصيل التصميم الظاهرة في هذه القطعة تحديداً، لا وصفاً عاماً.`
+    `- description_ar يذكر ألوان الأحجار الفعلية وتفاصيل التصميم الظاهرة في هذه القطعة تحديداً، لا وصفاً عاماً.` +
+    calibration
   );
 }
 
@@ -722,7 +887,7 @@ function buildTraySystemPrompt(catList: string): string {
 // يقلّل عدد الطلبات بمقدار حجم الدفعة (مثلاً 4 صور = طلب واحد بدل 4)، فيريح
 // حصة الدقيقة عند Gemini/Groq بشكل مباشر دون الحاجة لتعدد مزوّدين أكثر.
 // ============================================================
-function buildBatchSystemPrompt(catList: string, count: number): string {
+function buildBatchSystemPrompt(catList: string, count: number, calibration = ""): string {
   return (
     `أنت خبير مجوهرات عربي دقيق الملاحظة. ستستلم ${count} صورة، كل صورة تخص قطعة مجوهرات ` +
     `منفصلة تماماً عن البقية (وليست عدة قطع في نفس الصورة). حلّل كل صورة بشكل مستقل تماماً ` +
@@ -734,7 +899,8 @@ function buildBatchSystemPrompt(catList: string, count: number): string {
     `category_name يطابق واحدة من: ${catList} أو null.\n` +
     `- أغلب المخزون 18K أو 21K: 21K عادة أصفر ذهبي غامق ومشبّع، و18K أفتح أو أبيض/روز غولد — حدد أحدهما من لون المعدن بدل إرجاع null مباشرة. لا تضع "ألماس" أو "فضة" في karat أبداً حتى لو كانت القطعة مرصعة بأحجار.\n` +
     `- لا تفترض "ألماس" لأي حجر أبيض لامع — اذكره "أحجار بيضاء لامعة" إلا إذا كان حجراً كبيراً بقطع سوليتير واضح. لمعان المعدن نفسه ليس دليل وجود أحجار.\n` +
-    `- description_ar يذكر الألوان الفعلية وتفاصيل التصميم الظاهرة في هذه الدفعة تحديداً بدون خلطها بقطعة أخرى في الدفعة.`
+    `- description_ar يذكر الألوان الفعلية وتفاصيل التصميم الظاهرة في هذه الدفعة تحديداً بدون خلطها بقطعة أخرى في الدفعة.` +
+    calibration
   );
 }
 
@@ -766,7 +932,7 @@ async function analyzeBatchGemini(images: BatchImage[], systemPrompt: string): P
   for (const model of GEMINI_VISION_MODELS) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const rawText = await geminiGenerate({ key, model, systemPrompt, parts, maxOutputTokens: 4000 });
+        const rawText = await geminiGenerate({ key, model, systemPrompt, parts, maxOutputTokens: 4000, responseSchema: BATCH_SCHEMA });
         console.log("Gemini batch used model:", model);
         return parseBatchResponse(rawText, images);
       } catch (e) {
@@ -902,7 +1068,8 @@ export async function analyzeBatchWithFallback(params: {
   const catList = params.categoryNames.length
     ? params.categoryNames.join("، ")
     : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
-  const systemPrompt = buildBatchSystemPrompt(catList, images.length);
+  const calibration = await buildKaratCalibrationBlock();
+  const systemPrompt = buildBatchSystemPrompt(catList, images.length, calibration);
 
   const providers: Array<{ name: string; fn: () => Promise<BatchResult[]> }> = [];
   if (Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY")) {
@@ -947,8 +1114,9 @@ export async function analyzeTrayWithFallback(params: {
   const catList = params.categoryNames.length
     ? params.categoryNames.join("، ")
     : "خاتم، سلسلة، أسوارة، حلق، طقم، تعليقة، خلخال، دبلة";
-  const promptOverride = buildTraySystemPrompt(catList);
-  const args = { ...params, promptOverride };
+  const calibration = await buildKaratCalibrationBlock();
+  const promptOverride = buildTraySystemPrompt(catList, calibration);
+  const args = { ...params, promptOverride, responseSchema: TRAY_SCHEMA };
 
   const providers: Array<{ name: string; fn: () => Promise<any> }> = [];
   if (Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY")) {
@@ -1033,7 +1201,7 @@ export async function analyzeTagWithFallback(params: {
   if (!p.imageBase64) throw Object.assign(new Error("الصورة فارغة أو غير صالحة"), { status: 400 });
 
   const promptOverride = buildTagSystemPrompt();
-  const args = { imageBase64: p.imageBase64, mimeType: p.mimeType, categoryNames: [], promptOverride };
+  const args = { imageBase64: p.imageBase64, mimeType: p.mimeType, categoryNames: [], promptOverride, responseSchema: TAG_SCHEMA };
 
   const providers: Array<{ name: string; fn: () => Promise<any> }> = [];
   if (Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY")) {
