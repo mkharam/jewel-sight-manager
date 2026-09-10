@@ -48,9 +48,17 @@ interface Props {
    * "مراجعة غير المسمّاة" العامة حتى تكتمل.
    */
   onFinished?: (savedProductIds: string[]) => void;
+  /**
+   * يُستدعى إن استُنفدت محاولات إعادة الطلب التلقائية عند track.muted بلا أي إطار
+   * حقيقي واحد — دليل ميداني (4 محاولات جديدة فعلياً، لا إعادة استخدام) على أن
+   * getUserMedia داخل هذا التطبيق المثبَّت لا يعمل إطلاقاً على هذا الجهاز تحديداً،
+   * لا عطل عابر. المستدعي يتوقّع أن يفتح كاميرا النظام (<input capture>) بدلاً منها،
+   * وهي مسار مختلف تماماً لا يمرّ عبر getUserMedia فيتجاوز المشكلة كلياً.
+   */
+  onGiveUp?: () => void;
 }
 
-export default function BulkCameraCapture({ open, onClose, userId, branchId, initialStream, onFinished }: Props) {
+export default function BulkCameraCapture({ open, onClose, userId, branchId, initialStream, onFinished, onGiveUp }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   // نعرض canvas بدل video مباشرة — راجع التعليق المطوَّل عند startFramePump أدناه.
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -223,6 +231,19 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
             startFramePump(video);
           } catch {
             // نُبقي المحاولة التالية تعمل بدل التوقف على أول فشل مؤقت
+          }
+        }
+
+        // 4 طلبات جديدة فعلياً ولا إطار واحد — تأكّدنا ميدانياً أن هذا ليس عطلاً عابراً
+        // يزول بالمحاولة، بل getUserMedia داخل هذا التطبيق المثبَّت لا يعمل إطلاقاً على
+        // هذا الجهاز. الاستمرار في إعادة المحاولة من هنا مضيعة وقت — نُسلِّم الأمر
+        // لكاميرا النظام (مسار مختلف كلياً لا يمرّ عبر getUserMedia) بدل شاشة سوداء دائمة.
+        if (!cancelled && frameCountRef.current === 0) {
+          setError("تعذّر تشغيل الكاميرا داخل التطبيق على هذا الجهاز — سنستخدم كاميرا النظام بدلاً منها");
+          await new Promise((r) => setTimeout(r, 1800));
+          if (!cancelled) {
+            onClose();
+            onGiveUp?.();
           }
         }
       } catch (e: any) {
