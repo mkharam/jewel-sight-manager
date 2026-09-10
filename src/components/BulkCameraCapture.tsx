@@ -11,14 +11,24 @@
 // الباركود التلقائي (قراءة الكاميرا المباشرة) مُعطَّل مؤقتاً (BARCODE_SCAN_ENABLED)
 // بطلب صريح — يبقى الكود جاهزاً لإعادة التفعيل بتغيير قيمة واحدة.
 //
-// ملاحظة مهمة: هذا الملف عمداً بسيط قدر الإمكان في جزء تشغيل الكاميرا (getUserMedia
-// + <video> عادي، بلا canvas ولا إعادة محاولة ولا تشخيص). جُرِّبت إصلاحات متعددة لمشكلة
-// شاشة سوداء على جهاز iOS واحد تحديداً (رسم canvas، إخفاء/تكبير الفيديو، إعادة طلب
-// الجلسة تلقائياً) ولم تحل المشكلة فعلياً — والدليل الفعلي (WebKit bug 273938) يقول إن
-// المشكلة خلل نظام iOS نفسه في مسار getUserMedia داخل تطبيقات الشاشة الرئيسية على بعض
-// الأجهزة، لا شيء يُصلَح من كود الصفحة. أُعيد هذا الملف عمداً لأبسط نسخة تعمل على أغلب
-// الأجهزة بدل إبقاء تعقيد إضافي لم يثبت أنه يحل شيئاً. لا تُضف طبقات "إصلاح" جديدة هنا
-// بدون دليل فعلي جديد من جهاز حقيقي يثبت أنها تُغيّر النتيجة.
+// ⚠️ لا تستدعِ keepAwake() (Screen Wake Lock) داخل هذا المكوّن.
+//
+// هذا سبب مؤكَّد بالتوقيت لعطل "شاشة سوداء داخل التطبيق المثبَّت على iOS":
+//   • 9 سبتمبر 05:17 (aafc748) — بلا Wake Lock.
+//   • 9 سبتمبر 17:59–18:27 — صُوّرت 11 قطعة فعلياً بهذه النسخة (موجودة في قاعدة البيانات).
+//   • 10 سبتمبر 04:24 (076f069) — أُضيف keepAwake() هنا لإبقاء الشاشة صاحية أثناء الرفع.
+//   • 10 سبتمبر 05:16 — أول بلاغ شاشة سوداء، ولم تعمل الكاميرا بعدها إطلاقاً.
+//
+// قفل الشاشة يمرّ عبر نفس طبقة إدارة الطاقة/الوسائط في iOS (mediaserverd) المسؤولة عن
+// جلسة الكاميرا، والتشخيص الحيّ على الجهاز كان يُظهر المسار حيّاً لكن muted:true — أي
+// أن النظام يعامل الجلسة كأنها في الخلفية. إبقاء الشاشة صاحية أثناء التصوير ليس ضرورياً
+// أصلاً (الشاشة تبقى مضاءة ما دام الموظف يضغط زر الالتقاط)، فالمكسب لا يساوي تعطيل
+// الكاميرا بالكامل.
+//
+// ملاحظة ثانية: أُبقي جزء تشغيل الكاميرا هنا أبسط ما يمكن عمداً (getUserMedia + <video>
+// عادي) — جُرِّبت طبقات "إصلاح" كثيرة للعطل نفسه (رسم canvas، إخفاء/تكبير الفيديو، إعادة
+// طلب الجلسة تلقائياً، كاميرا نظام احتياطية) ولم يحل أيٌّ منها شيئاً لأن السبب لم يكن
+// هناك. لا تُضف أي طبقة جديدة بدون دليل فعلي من جهاز حقيقي.
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Camera, X, Check, Trash2, RotateCcw, ImageOff, Scale, ScanLine, Loader2, AlertCircle } from "lucide-react";
@@ -26,7 +36,6 @@ import { useBoxedBarcodeScanner } from "@/lib/useBoxedBarcodeScanner";
 import ScanBoxOverlay from "@/components/ScanBoxOverlay";
 import { normalizeDecimalInput } from "@/lib/constants";
 import { saveCapturedPiece, updateCapturedPiece, deleteCapturedPiece } from "@/lib/uploadRunner";
-import { keepAwake } from "@/lib/keepAwake";
 import { toast } from "sonner";
 
 const BARCODE_SCAN_ENABLED = false;
@@ -92,25 +101,10 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
         });
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
-
-        // عنصر <video> لا يُعرض أثناء وجود خطأ، فقد لا يكون موجوداً بعد لحظة عودة
-        // getUserMedia (مثلاً عند إعادة المحاولة بعد رفض الإذن، أو عند تبديل الكاميرا).
-        // كنا نضع setReady(true) رغم ذلك فتظهر شاشة سوداء بلا صورة وبلا رسالة خطأ —
-        // ننتظر ظهور العنصر بضع دورات بدل الاستسلام الصامت.
-        for (let i = 0; i < 20 && !videoRef.current && !cancelled; i++) {
-          await new Promise((r) => setTimeout(r, 50));
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
         }
-        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
-        if (!videoRef.current) {
-          stream.getTracks().forEach((t) => t.stop());
-          setError("تعذّر عرض الكاميرا — أغلق الشاشة وافتحها من جديد");
-          return;
-        }
-
-        videoRef.current.srcObject = stream;
-        // play() قد يُرفض على iOS إن لم تكن الإيماءة معتبرة — لا نُسقط الجلسة لأجله،
-        // العنصر playsInline/muted يبدأ العرض تلقائياً في أغلب الحالات.
-        try { await videoRef.current.play(); } catch { /* تجاهل */ }
         setReady(true);
       } catch (e: any) {
         setError(e?.name === "NotAllowedError" ? "تم رفض إذن الكاميرا — فعّله من إعدادات المتصفح" : "تعذّر فتح الكاميرا");
@@ -118,13 +112,8 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
     };
     void start();
 
-    // جلسة التصوير المتتالي تطول (عشرات القطع)، وانطفاء الشاشة بين لقطة وأخرى يُجمّد
-    // الرفع الجاري في الخلفية — نُبقي الجهاز مستيقظاً ما دامت الكاميرا مفتوحة.
-    const releaseWakeLock = keepAwake();
-
     return () => {
       cancelled = true;
-      releaseWakeLock();
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
