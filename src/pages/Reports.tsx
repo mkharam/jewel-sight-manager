@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { BarChart3, Download, TrendingUp, ArrowLeftRight, Package, DollarSign, Clock, AlertTriangle, Receipt } from "lucide-react";
+import { BarChart3, Download, TrendingUp, ArrowLeftRight, Package, DollarSign, Clock, AlertTriangle, Receipt, Undo2 } from "lucide-react";
 import ReindexImagesCard from "@/components/ReindexImagesCard";
 
 type Branch = { id: string; name: string; code: string | null };
@@ -120,6 +120,7 @@ export default function Reports() {
       name: string;
       quotes: number;
       salesCount: number;
+      returnsCount: number;
       revenue: number;
       transfersOut: number;
       transfersIn: number;
@@ -132,6 +133,7 @@ export default function Reports() {
         name: b.name,
         quotes: 0,
         salesCount: 0,
+        returnsCount: 0,
         revenue: 0,
         transfersOut: 0,
         transfersIn: 0,
@@ -145,13 +147,19 @@ export default function Reports() {
       if (!row) continue;
       row.quotes += 1;
     }
-    // الإيراد الحقيقي من المبيعات الفعلية المكتملة — نستبعد المُرجعة منه.
+    // المبيعة المُرجعة تُستبعد من الإيراد ومن عدد المبيعات معاً — كان العدّاد يشملها بينما
+    // الإيراد لا، فتظهر الصفحة "عدد المبيعات 1 / الإيراد 0 د.ل" وكأن هناك خللاً في الحساب.
+    // نعرضها في عمود مستقل بدل إسقاطها بصمت، فالمرتجعات معلومة يحتاجها المدير.
     for (const s of sales as any[]) {
       if (!s.branch_id) continue;
       const row = map.get(s.branch_id);
       if (!row) continue;
-      row.salesCount += 1;
-      if (!s.returned_at) row.revenue += Number(s.final_price ?? 0);
+      if (s.returned_at) {
+        row.returnsCount += 1;
+      } else {
+        row.salesCount += 1;
+        row.revenue += Number(s.final_price ?? 0);
+      }
     }
     for (const t of transfers) {
       const from = map.get(t.from_branch_id);
@@ -175,11 +183,12 @@ export default function Reports() {
       (acc, r) => ({
         quotes: acc.quotes + r.quotes,
         salesCount: acc.salesCount + r.salesCount,
+        returnsCount: acc.returnsCount + r.returnsCount,
         revenue: acc.revenue + r.revenue,
         transfersOut: acc.transfersOut + r.transfersOut,
         newProducts: acc.newProducts + r.newProducts,
       }),
-      { quotes: 0, salesCount: 0, revenue: 0, transfersOut: 0, newProducts: 0 },
+      { quotes: 0, salesCount: 0, returnsCount: 0, revenue: 0, transfersOut: 0, newProducts: 0 },
     );
   }, [summary]);
 
@@ -246,10 +255,11 @@ export default function Reports() {
   }, [month, monthOptions]);
 
   const exportCSV = () => {
-    const header = ["الفرع", "عدد المبيعات", "إجمالي الإيراد (د.ل)", "عروض أسعار", "تحويلات صادرة", "تحويلات واردة", "استلمت فعلياً", "قطع جديدة"];
+    const header = ["الفرع", "عدد المبيعات", "مُرجعة", "إجمالي الإيراد (د.ل)", "عروض أسعار", "تحويلات صادرة", "تحويلات واردة", "استلمت فعلياً", "قطع جديدة"];
     const rows = summary.map((r) => [
       r.name,
       r.salesCount,
+      r.returnsCount,
       r.revenue.toFixed(2),
       r.quotes,
       r.transfersOut,
@@ -301,6 +311,9 @@ export default function Reports() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard icon={<DollarSign className="size-4" />} label="إجمالي الإيراد (مبيعات فعلية)" value={`${fmt(totals.revenue)} د.ل`} />
         <StatCard icon={<Receipt className="size-4" />} label="عدد المبيعات" value={fmt(totals.salesCount)} />
+        {totals.returnsCount > 0 && (
+          <StatCard icon={<Undo2 className="size-4" />} label="مبيعات مُرجعة" value={fmt(totals.returnsCount)} />
+        )}
         <StatCard icon={<TrendingUp className="size-4" />} label="عدد عروض الأسعار" value={fmt(totals.quotes)} />
         <StatCard icon={<ArrowLeftRight className="size-4" />} label="تحويلات بين الفروع" value={fmt(totals.transfersOut)} />
         <StatCard icon={<Package className="size-4" />} label="قطع جديدة أُضيفت" value={fmt(totals.newProducts)} />
@@ -402,6 +415,7 @@ export default function Reports() {
               <TableRow>
                 <TableHead>الفرع</TableHead>
                 <TableHead className="text-center">مبيعات</TableHead>
+                <TableHead className="text-center">مُرجعة</TableHead>
                 <TableHead className="text-center">إيراد (د.ل)</TableHead>
                 <TableHead className="text-center">عروض أسعار</TableHead>
                 <TableHead className="text-center">صادر</TableHead>
@@ -415,6 +429,9 @@ export default function Reports() {
                 <TableRow key={r.branch_id}>
                   <TableCell className="font-semibold">{r.name}</TableCell>
                   <TableCell className="text-center">{fmt(r.salesCount)}</TableCell>
+                  <TableCell className={"text-center " + (r.returnsCount > 0 ? "text-destructive font-semibold" : "text-muted-foreground")}>
+                    {fmt(r.returnsCount)}
+                  </TableCell>
                   <TableCell className="text-center font-mono">{fmt(r.revenue)}</TableCell>
                   <TableCell className="text-center">{fmt(r.quotes)}</TableCell>
                   <TableCell className="text-center">{fmt(r.transfersOut)}</TableCell>
