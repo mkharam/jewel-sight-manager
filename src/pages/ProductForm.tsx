@@ -59,7 +59,9 @@ export default function ProductForm() {
 
   const [form, setForm] = useState({
     name: "", sku: "", category_id: "", branch_id: "",
-    karat: "", gold_color: "", item_type: "", weight_grams: "", ring_size: "",
+    // أغلب المخزون 18K — نفس منطق الرفع بالجملة (Upload.tsx/BulkCameraCapture): نبدأ
+    // بالقيمة الغالبة كافتراض بدل حقل فارغ، والموظف يبدّلها يدوياً إن كانت القطعة 21K.
+    karat: "18K", gold_color: "", item_type: "", weight_grams: "", ring_size: "",
     status: "available" as keyof typeof PRODUCT_STATUS,
     cost_price: "", sale_price: "", promo_price: "",
     description: "", internal_notes: "",
