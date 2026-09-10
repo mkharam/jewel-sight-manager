@@ -44,9 +44,12 @@ export type InquiryStatus = keyof typeof INQUIRY_STATUS;
 
 export const KARAT_OPTIONS = ["18K", "21K"];
 
+// اللغة العربية (ar-LY/ar) تستخدم افتراضياً الأرقام الهندية الشرقية (١٢٣) في Intl —
+// نطلب صراحةً "latn" (الأرقام اللاتينية 123) لأن الموظفين يقرؤون ويكتبون بالأرقام
+// العادية، والأرقام الهندية تبطئ القراءة السريعة للأسعار والتواريخ.
 export function formatCurrency(n: number | null | undefined) {
   if (n == null) return "—";
-  return new Intl.NumberFormat("ar-LY", { maximumFractionDigits: 2 }).format(n) + " د.ل";
+  return new Intl.NumberFormat("ar-LY-u-nu-latn", { maximumFractionDigits: 2 }).format(n) + " د.ل";
 }
 
 export function formatWeight(n: number | null | undefined) {
@@ -57,7 +60,7 @@ export function formatWeight(n: number | null | undefined) {
 export function formatDate(d: string | Date | null | undefined) {
   if (!d) return "—";
   const date = typeof d === "string" ? new Date(d) : d;
-  return new Intl.DateTimeFormat("ar", {
+  return new Intl.DateTimeFormat("ar-u-nu-latn", {
     year: "numeric", month: "short", day: "numeric",
     hour: "2-digit", minute: "2-digit",
   }).format(date);

@@ -11,10 +11,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ImageIcon, MapPin, Tag, MoreVertical, Check, Barcode } from "lucide-react";
+import { ImageIcon, MapPin, MoreVertical, Check, Barcode } from "lucide-react";
 import { PRODUCT_STATUS, formatCurrency, formatWeight, getImageUrl, ProductStatus } from "@/lib/constants";
 import { GOLD_COLORS } from "@/lib/luxury";
-import QuickQuoteSheet from "@/components/QuickQuoteSheet";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useState } from "react";
@@ -44,6 +43,8 @@ interface ProductCardProps {
   selected?: boolean;
   onToggleSelect?: (id: string) => void;
   onStatusChanged?: () => void;
+  /** نسبة تشابه البحث بالصورة (0..1) — تُعرض كشارة منفصلة عن شارة العيار لتفادي التراكب. */
+  similarity?: number;
 }
 
 const QUICK_STATUSES: ProductStatus[] = ["available", "reserved", "sold"];
@@ -52,6 +53,7 @@ export default function ProductCard({
   product,
   selectable,
   selected,
+  similarity,
   onToggleSelect,
   onStatusChanged,
 }: ProductCardProps) {
@@ -84,19 +86,34 @@ export default function ProductCard({
     <>
       <div className="aspect-square bg-gold-soft relative overflow-hidden">
         {imgUrl ? (
-          <img src={imgUrl} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
+          <img
+            src={imgUrl}
+            alt={product.name}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            loading="lazy"
+            decoding="async"
+          />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-muted-foreground">
             <ImageIcon className="size-12 opacity-30" />
           </div>
         )}
+        {/* تدرّج خفيف أسفل الصورة يحسّن وضوح الشارات فوق أي صورة فاتحة */}
+        <div className="absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-black/25 to-transparent pointer-events-none" />
         <Badge className={`absolute top-2 right-2 ${status.color} border-0 shadow-md`}>
           {status.label}
         </Badge>
         {(product.karat || product.gold_color) && (
-          <Badge variant="secondary" className="absolute top-2 left-2 bg-card/90 backdrop-blur border-0">
+          <Badge data-karat-badge variant="secondary" className="absolute top-2 left-2 bg-card/90 backdrop-blur border-0 shadow-sm">
             {[product.karat, GOLD_COLORS.find((c) => c.value === product.gold_color)?.label].filter(Boolean).join(" · ")}
           </Badge>
+        )}
+        {/* شارة نسبة تشابه البحث بالصورة — أسفل يمين الصورة تحديداً كي لا تتراكب أبداً
+            مع شارتي الحالة (أعلى يمين) والعيار (أعلى يسار). */}
+        {typeof similarity === "number" && (
+          <span className="absolute bottom-2 right-2 z-10 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/70 text-white backdrop-blur shadow">
+            {Math.round(similarity * 100)}%
+          </span>
         )}
         {selectable && (
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
@@ -119,7 +136,7 @@ export default function ProductCard({
           {product.weight_grams != null && <span>{formatWeight(product.weight_grams)}</span>}
           {product.ring_size && <span>· مقاس {product.ring_size}</span>}
         </div>
-        <div className="flex items-end justify-between pt-1">
+        <div className="flex items-end justify-between pt-1.5 border-t border-border/60 mt-1">
           <div>
             {product.promo_price ? (
               <>
@@ -172,28 +189,7 @@ export default function ProductCard({
       {/* Quick-actions row (hidden in selectable mode to keep interaction simple) */}
       {!selectable && (
         <>
-          {/* زر تسجيل سعر سريع */}
-          <div
-            className="absolute bottom-2 left-2 z-10"
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-          >
-            <QuickQuoteSheet
-              productId={product.id}
-              productName={product.name}
-              branchId={product.branch_id ?? null}
-              trigger={
-                <Button
-                  size="icon"
-                  className="size-9 rounded-full bg-gold-gradient text-primary-foreground shadow-gold"
-                  aria-label="تسجيل سعر سريع"
-                >
-                  <Tag className="size-4" />
-                </Button>
-              }
-            />
-          </div>
-
-          {/* Quick status menu — top-right of body, below badge (المدير/المشرف على فرعه فقط) */}
+          {/* Quick status menu — bottom-right of body (المدير/المشرف على فرعه فقط) */}
           {canEditStatus && (
           <div
             className="absolute bottom-2 right-2 z-10"

@@ -829,13 +829,8 @@ function SimilaritySection({
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
         {products.map((p: any) => (
-          <div key={p.id} className="relative">
-            <ProductCard product={p} />
-            {typeof p._sim === "number" && (
-              <span className="absolute top-1 left-1 z-10 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/60 text-white backdrop-blur">
-                {Math.round(p._sim * 100)}%
-              </span>
-            )}
+          <div key={p.id}>
+            <ProductCard product={p} similarity={typeof p._sim === "number" ? p._sim : undefined} />
           </div>
         ))}
       </div>

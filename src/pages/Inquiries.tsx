@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, MessageCircle, Phone, MapPin, PackagePlus, Tag } from "lucide-react";
 import { Link } from "react-router-dom";
-import { INQUIRY_STATUS, KARAT_OPTIONS, formatCurrency, formatDate, InquiryStatus } from "@/lib/constants";
+import { INQUIRY_STATUS, KARAT_OPTIONS, formatCurrency, formatDate, getImageUrl, InquiryStatus } from "@/lib/constants";
 import ReorderRequestDialog from "@/components/ReorderRequestDialog";
 import { toast } from "sonner";
 
@@ -59,7 +59,7 @@ export default function Inquiries() {
     queryFn: async () => {
       const { data } = await supabase
         .from("product_quotes")
-        .select("*, branch:branches(name), staff:profiles!product_quotes_quoted_by_fkey(full_name), product:products(id,name)")
+        .select("*, branch:branches(name), staff:profiles!product_quotes_quoted_by_fkey(full_name), product:products(id,name,images:product_images(storage_path,is_primary))")
         .order("created_at", { ascending: false })
         .limit(100);
       return data ?? [];
@@ -192,26 +192,44 @@ export default function Inquiries() {
           <p className="text-center text-muted-foreground py-8">جارٍ...</p>
         ) : quotes && quotes.length > 0 ? (
           <div className="space-y-2">
-            {quotes.map((q: any) => (
-              <Link key={q.id} to={q.product?.id ? `/products/${q.product.id}` : "#"}>
-                <Card className="p-4 hover:bg-muted/40 transition-colors">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1">
-                      <h3 className="font-semibold">{q.product?.name ?? "قطعة محذوفة"}</h3>
-                      {q.customer_name && (
-                        <p className="text-xs text-muted-foreground mt-0.5">{q.customer_name}{q.customer_phone ? ` · ${q.customer_phone}` : ""}</p>
-                      )}
+            {quotes.map((q: any) => {
+              const images = (q.product?.images ?? []) as { storage_path: string; is_primary: boolean }[];
+              const primary = images.find((i) => i.is_primary) ?? images[0];
+              const imgUrl = getImageUrl(primary?.storage_path);
+              return (
+                <Link key={q.id} to={q.product?.id ? `/products/${q.product.id}` : "#"}>
+                  <Card className="p-3 hover:bg-muted/40 transition-colors">
+                    <div className="flex gap-3">
+                      <div className="size-16 rounded-lg bg-gold-soft overflow-hidden shrink-0">
+                        {imgUrl ? (
+                          <img src={imgUrl} alt={q.product?.name ?? ""} className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                            <Tag className="size-5 opacity-40" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold truncate">{q.product?.name ?? "قطعة محذوفة"}</h3>
+                            {q.customer_name && (
+                              <p className="text-xs text-muted-foreground mt-0.5 truncate">{q.customer_name}{q.customer_phone ? ` · ${q.customer_phone}` : ""}</p>
+                            )}
+                          </div>
+                          <span className="text-lg font-extrabold text-primary shrink-0">{formatCurrency(q.price)}</span>
+                        </div>
+                        {q.notes && <p className="text-sm mt-1 line-clamp-2">{q.notes}</p>}
+                        <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground pt-1.5 mt-1.5 border-t border-border">
+                          {q.branch?.name && <span className="flex items-center gap-1"><MapPin className="size-3" />{q.branch.name}</span>}
+                          <span className="ms-auto">{q.staff?.full_name} · {formatDate(q.created_at)}</span>
+                        </div>
+                      </div>
                     </div>
-                    <span className="text-lg font-extrabold text-primary shrink-0">{formatCurrency(q.price)}</span>
-                  </div>
-                  {q.notes && <p className="text-sm mt-1.5">{q.notes}</p>}
-                  <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground pt-2 mt-2 border-t border-border">
-                    {q.branch?.name && <span className="flex items-center gap-1"><MapPin className="size-3" />{q.branch.name}</span>}
-                    <span className="ms-auto">{q.staff?.full_name} · {formatDate(q.created_at)}</span>
-                  </div>
-                </Card>
-              </Link>
-            ))}
+                  </Card>
+                </Link>
+              );
+            })}
           </div>
         ) : (
           <div className="text-center py-8 text-muted-foreground">

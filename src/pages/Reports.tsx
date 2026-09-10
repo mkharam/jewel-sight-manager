@@ -271,7 +271,7 @@ export default function Reports() {
   // التقارير أمر إداري/حسابي — للمدير العام فقط الآن (كان متاحاً للمشرف أيضاً).
   if (!isAdmin) return <Navigate to="/" replace />;
 
-  const fmt = (n: number) => new Intl.NumberFormat("ar-LY", { maximumFractionDigits: 2 }).format(n);
+  const fmt = (n: number) => new Intl.NumberFormat("ar-LY-u-nu-latn", { maximumFractionDigits: 2 }).format(n);
 
   return (
     <div className="space-y-4">
