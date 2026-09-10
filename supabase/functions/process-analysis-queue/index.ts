@@ -5,7 +5,7 @@
 // عميل المتصفح (كان هشّاً ومربوطاً بإغلاق التبويب وصعب ضبط سرعته بأمان).
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { analyzeBatchWithFallback, embedImage, type JewelryAnalysis } from "../_shared/lovable-ai.ts";
+import { analysisToEmbeddingText, analyzeBatchWithFallback, embedImage, embedText, type JewelryAnalysis } from "../_shared/lovable-ai.ts";
 
 const BATCH_SIZE = 4;
 const PLACEHOLDER_NAME = "قطعة جديدة";
@@ -148,9 +148,15 @@ Deno.serve(async (req) => {
         categoryId = cat?.id ?? null;
       }
 
+      // بصمتان: الصورة نفسها (تطابق بصري) ووصف الذكاء الاصطناعي (تطابق وصفي) —
+      // راجع migration 20260910120000.
       let embedding: unknown = null;
+      let textEmbedding: unknown = null;
       try {
-        embedding = await embedImage(l.base64, l.mimeType);
+        [embedding, textEmbedding] = await Promise.all([
+          embedImage(l.base64, l.mimeType),
+          embedText(analysisToEmbeddingText(analysis)).catch(() => null),
+        ]);
       } catch (e) {
         console.error("embedding failed (non-fatal)", e);
       }
@@ -160,6 +166,7 @@ Deno.serve(async (req) => {
         .update({
           ai_labels: { ...analysis, category_id: categoryId, provider },
           ...(embedding ? { ai_embedding: embedding as unknown as string } : {}),
+          ...(textEmbedding ? { text_embedding: textEmbedding as unknown as string } : {}),
         })
         .eq("id", l.id);
 

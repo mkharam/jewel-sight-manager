@@ -19,7 +19,14 @@ interface Analysis {
 
 export interface PhotoMatch {
   product_id: string;
+  /** الدرجة المركّبة (بصري + وصفي) — تُستخدم للترتيب. */
   similarity: number;
+  /** تشابه الصورة بالصورة — شكل القطعة نفسها. */
+  visual?: number | null;
+  /** تشابه وصف الذكاء الاصطناعي — لون الحجر ونوع القطعة والشكل. */
+  textual?: number | null;
+  /** تصنيف جاهز من الخادم: مطابق / شبيه / يشترك في الأوصاف. راجع image-search. */
+  kind?: "exact" | "similar" | "same_attributes";
 }
 
 interface Props {
@@ -94,11 +101,21 @@ export default function ImageSearchButton({ categories, onResults }: Props) {
     onResults({ matches, analysis });
     setOpen(false);
     reset();
+    // التصنيف يأتي جاهزاً من الخادم الآن (بصري + وصفي)، ونصف للموظف ما وجدناه فعلاً
+    // بالتفصيل بدل رقم واحد: مطابقة تامة، شبيهة شكلاً، أو تشترك في الأوصاف فقط.
     const n = matches.length;
-    const exact = matches.filter((m) => m.similarity >= 0.92).length;
+    const exact = matches.filter((m) => (m.kind ?? (m.similarity >= 0.92 ? "exact" : "similar")) === "exact").length;
+    const similar = matches.filter((m) => m.kind === "similar").length;
+    const sameAttrs = matches.filter((m) => m.kind === "same_attributes").length;
+    const parts = [
+      similar ? `${similar} شبيهة` : "",
+      sameAttrs ? `${sameAttrs} بنفس الأوصاف` : "",
+    ].filter(Boolean);
     toast({
       title: exact > 0 ? `🎯 ${exact} قطعة مطابقة` : n > 0 ? `${n} قطعة مشابهة` : "لا توجد نتائج",
-      description: exact > 0 ? "تم إيجاد قطعة مطابقة تماماً" : n > 0 ? "أعلى القطع تشابهاً معروضة" : "لم نجد قطعاً مشابهة بالصورة",
+      description: n > 0
+        ? (parts.length ? parts.join(" · ") : "أعلى القطع تشابهاً معروضة")
+        : "لم نجد قطعاً مشابهة بالصورة",
     });
   };
 

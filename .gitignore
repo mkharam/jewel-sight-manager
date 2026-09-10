@@ -25,3 +25,8 @@ dist-ssr
 
 .claude/
 supabase/.temp/
+
+# ملفات اختبار مؤقتة (تحوي رموز جلسات)
+auth.json
+tok.txt
+ids*.txt

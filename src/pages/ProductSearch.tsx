@@ -210,7 +210,9 @@ export default function ProductSearch() {
   });
 
   // Image-search results — when set, overrides normal query with similarity-ranked matches.
-  const [similarMatches, setSimilarMatches] = useState<{ product_id: string; similarity: number }[] | null>(null);
+  const [similarMatches, setSimilarMatches] = useState<
+    { product_id: string; similarity: number; visual?: number | null; textual?: number | null; kind?: string }[] | null
+  >(null);
   const similarIds = useMemo(() => similarMatches?.map((m) => m.product_id) ?? null, [similarMatches]);
 
   // "قطع مشابهة" من صفحة القطعة: /?similar=<productId> — يستخدم البصمة المحفوظة (بدون تحليل جديد)
@@ -384,13 +386,19 @@ export default function ProductSearch() {
   // Group products by similarity bucket when in photo-search mode
   const similarityBuckets = useMemo(() => {
     if (!similarMatches || !products) return null;
-    const simMap = new Map(similarMatches.map((m) => [m.product_id, m.similarity]));
+    // التصنيف يعتمد على تصنيف الخادم (kind) المبني على التشابه البصري تحديداً، لا على
+    // الدرجة المركّبة — وإلا صارت قطعة تشترك في الوصف فقط تظهر تحت "مطابقة تماماً".
+    // نسقط للعتبات القديمة إن غاب kind (استجابة قديمة مخزّنة مثلاً).
+    const byId = new Map(similarMatches.map((m) => [m.product_id, m]));
     const exact: any[] = [], veryHigh: any[] = [], similar: any[] = [];
     for (const p of products as any[]) {
-      const s = simMap.get(p.id) ?? 0;
-      if (s >= 0.92) exact.push({ ...p, _sim: s });
-      else if (s >= 0.80) veryHigh.push({ ...p, _sim: s });
-      else similar.push({ ...p, _sim: s });
+      const m = byId.get(p.id);
+      const s = m?.similarity ?? 0;
+      const kind = m?.kind ?? (s >= 0.92 ? "exact" : s >= 0.8 ? "similar" : "same_attributes");
+      const row = { ...p, _sim: s, _visual: m?.visual ?? null, _textual: m?.textual ?? null };
+      if (kind === "exact") exact.push(row);
+      else if (kind === "similar") veryHigh.push(row);
+      else similar.push(row);
     }
     return { exact, veryHigh, similar };
   }, [similarMatches, products]);
@@ -761,8 +769,8 @@ export default function ProductSearch() {
           )}
           {similarityBuckets.similar.length > 0 && (
             <SimilaritySection
-              title="📌 قطع مقاربة في الشكل"
-              subtitle="بديل محتمل"
+              title="📌 قطع بنفس الأوصاف"
+              subtitle="تشترك في لون الحجر أو النوع أو الشكل — بدائل تُعرض على الزبون"
               tone="muted"
               products={similarityBuckets.similar}
             />

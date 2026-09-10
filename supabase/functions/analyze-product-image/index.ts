@@ -4,8 +4,10 @@
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
+  analysisToEmbeddingText,
   analyzeWithFallback,
   embedImage,
+  embedText,
   friendlyError,
   type JewelryAnalysis,
 } from "../_shared/lovable-ai.ts";
@@ -71,11 +73,15 @@ Deno.serve(async (req) => {
       categoryId = cat?.id ?? null;
     }
 
-    // embedding اختياري — يُستخدم للبحث بالصورة. بصمة الصورة نفسها (لا وصف نصي عنها) —
-    // راجع التعليق أعلى embedContentV2 في lovable-ai.ts لسبب هذا التحديد.
+    // بصمتان لكل صورة (راجع migration 20260910120000): بصمة الصورة نفسها للتطابق
+    // البصري، وبصمة وصف الذكاء الاصطناعي للتطابق الوصفي (لون الحجر، الشكل، النوع).
+    // مقارنة كل عمود مع نظيره من نفس الوسيط هي ما يجعل الترتيب ذا معنى.
     if (imageId && imageBase64) {
       try {
-        const embedding = await embedImage(imageBase64, mimeType);
+        const [embedding, textEmbedding] = await Promise.all([
+          embedImage(imageBase64, mimeType),
+          embedText(analysisToEmbeddingText(analysis)).catch(() => null),
+        ]);
         const supabase = createClient(
           Deno.env.get("SUPABASE_URL")!,
           Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -85,6 +91,7 @@ Deno.serve(async (req) => {
           .update({
             ai_labels: { ...analysis, category_id: categoryId },
             ai_embedding: embedding as unknown as string,
+            ...(textEmbedding ? { text_embedding: textEmbedding as unknown as string } : {}),
           })
           .eq("id", imageId);
       } catch (e) {
@@ -152,8 +159,12 @@ async function analyzeFromRecord(record: { id: string; storage_path: string; ai_
   }
 
   let embedding: unknown = null;
+  let textEmbedding: unknown = null;
   try {
-    embedding = await embedImage(base64, file.type || "image/jpeg");
+    [embedding, textEmbedding] = await Promise.all([
+      embedImage(base64, file.type || "image/jpeg"),
+      embedText(analysisToEmbeddingText(analysis)).catch(() => null),
+    ]);
   } catch (e) {
     console.error("embedding failed (non-fatal)", e);
   }
@@ -163,6 +174,7 @@ async function analyzeFromRecord(record: { id: string; storage_path: string; ai_
     .update({
       ai_labels: { ...analysis, category_id: categoryId },
       ...(embedding ? { ai_embedding: embedding as unknown as string } : {}),
+      ...(textEmbedding ? { text_embedding: textEmbedding as unknown as string } : {}),
     })
     .eq("id", record.id);
 

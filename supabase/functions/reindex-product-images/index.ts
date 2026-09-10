@@ -11,8 +11,10 @@
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
+  analysisToEmbeddingText,
   analyzeWithFallback,
   embedImage,
+  embedText,
   friendlyError,
 } from "../_shared/lovable-ai.ts";
 
@@ -107,13 +109,17 @@ Deno.serve(async (req) => {
             )
           : null;
 
+        // بصمتان: الصورة نفسها (تطابق بصري) ووصف الذكاء الاصطناعي (تطابق وصفي) —
+        // راجع migration 20260910120000.
         const embedding = await withRetry(() => embedImage(imageBase64, mimeType));
+        const textEmbedding = await withRetry(() => embedText(analysisToEmbeddingText(analysis))).catch(() => null);
 
         const { error: upErr } = await admin
           .from("product_images")
           .update({
             ai_labels: { ...analysis, category_id: cat?.id ?? null },
             ai_embedding: embedding as unknown as string,
+            ...(textEmbedding ? { text_embedding: textEmbedding as unknown as string } : {}),
           })
           .eq("id", img.id);
         if (upErr) throw upErr;

@@ -1,9 +1,13 @@
-// بحث دلالي (معنوي) عبر نص حر — يحوّل عبارة البحث إلى بصمة (embedding) بنفس الطريقة
-// التي تُفهرس بها صور القطع (analysisToEmbeddingText + embedText)، ثم يطابقها بأقرب
-// الصور بصمةً عبر match_product_images الموجودة أصلاً (تُستخدم للبحث بالصورة). هذا
-// يمسك تطابقات معنوية لا يمسكها بحث الكلمات المفتاحية/المرادفات — مثلاً "أحجار موفيا"
-// حتى لو لم تكن الكلمة نفسها في قائمة المرادفات، لأن المعنى قريب من "بنفسجي/جمشت"
-// في فضاء البصمات، لا مطابقة نصية حرفية.
+// بحث دلالي (معنوي) عبر نص حر — يقارن بصمة عبارة البحث ببصمة وصف كل قطعة
+// (text_embedding)، أي نص↔نص من نفس الوسيط. هذا يمسك تطابقات معنوية لا يمسكها بحث
+// الكلمات/المرادفات — مثلاً "أحجار موفيا" تُطابق "بنفسجي/جمشت" لأن المعنى قريب في فضاء
+// البصمات، لا مطابقة حرفية.
+//
+// ملاحظة مهمة (سبب وجود عمود مستقل): كان هذا البحث يقارن بصمة النص بعمود ai_embedding
+// الذي صار يحمل بصمة الصورة نفسها — أي مقارنة عبر وسيطين مختلفين. قِسنا نتيجتها فعلياً:
+// كل الدرجات تتجمّع حول 0.32–0.34 بفارق ~0.005 بين الأول والسادس، والترتيب بلا معنى
+// ("أحجار زرقاء" أعطت القطعة الزرقاء في المركز السادس). راجع migration 20260910120000.
+//
 // Body: { query: string, matchCount?: number }
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -26,29 +30,35 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-    const { data, error } = await admin.rpc("match_product_images", {
-      query_embedding: embedding as unknown as string,
+    // بحث نصي بحت: نمرّر بصمة النص فقط، والدالة تُحيّد الجانب البصري تلقائياً.
+    const { data, error } = await admin.rpc("match_product_images_hybrid", {
+      query_image_embedding: null,
+      query_text_embedding: embedding as unknown as string,
       match_count: matchCount,
+      image_weight: 0,
     });
     if (error) throw error;
 
     // قد تظهر عدة صور لنفس القطعة — نأخذ أفضل تشابه لكل قطعة فقط.
     const byProduct = new Map<string, number>();
     for (const row of (data ?? []) as any[]) {
+      const sim = row.text_similarity ?? row.score;
+      if (sim == null) continue;
       const prev = byProduct.get(row.product_id) ?? 0;
-      if (row.similarity > prev) byProduct.set(row.product_id, row.similarity);
+      if (sim > prev) byProduct.set(row.product_id, sim);
     }
-    const results = Array.from(byProduct.entries())
+    const ranked = Array.from(byProduct.entries())
       .map(([product_id, similarity]) => ({ product_id, similarity }))
-      // ⚠️ هذه الطبقة معطّلة عملياً الآن بعتبة لا تتحقق أبداً — مقصود ومؤقّت.
-      // السبب: عمود ai_embedding صار يحمل بصمة الصورة نفسها (للبحث بالصورة)، فمقارنة
-      // بصمة نص البحث به صارت مقارنة عبر وسائط مختلفة (نص↔صورة). قِسنا النتائج فعلياً:
-      // كلها تتجمّع حول 0.32–0.34 والفارق بين الأول والسادس ~0.005، والترتيب بلا معنى
-      // (استعلام "أحجار زرقاء" أعطى القطعة الزرقاء الحقيقية في المركز السادس بعد قطع
-      // لا علاقة لها). خفض العتبة كان سيحقن ~40 نتيجة عشوائية في نتائج البحث ويُفسدها،
-      // فإبقاؤها صامتة أسلم إلى أن يُضاف عمود بصمة نصية مستقل (نص↔نص) تُقارن به.
-      .filter((r) => r.similarity >= 0.5)
       .sort((a, b) => b.similarity - a.similarity);
+
+    // عتبة نسبية لا مطلقة: النطاق المطلق يتغيّر كثيراً حسب العبارة — قِسنا فعلياً 0.59
+    // لـ"خاتم ألماس" مقابل 0.39 لـ"لؤلؤ"، فأي رقم ثابت إمّا يحذف كل نتائج عبارة أو
+    // يُبقي ضجيج أخرى. نأخذ ما يقارب أفضل نتيجة فقط، مع حدّ أدنى مطلق يمنع إرجاع
+    // نتائج عشوائية حين لا يوجد تطابق معنوي أصلاً.
+    const top = ranked[0]?.similarity ?? 0;
+    const results = ranked
+      .filter((r) => r.similarity >= Math.max(0.32, top - 0.04))
+      .slice(0, 12);
 
     return json({ results });
   } catch (e) {
