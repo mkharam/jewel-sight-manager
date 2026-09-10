@@ -90,10 +90,32 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId }: P
           return;
         }
 
-        videoRef.current.srcObject = stream;
-        // play() قد يُرفض على iOS إن لم تكن الإيماءة معتبرة — لا نُسقط الجلسة لأجله،
-        // العنصر playsInline/muted يبدأ العرض تلقائياً في أغلب الحالات.
-        try { await videoRef.current.play(); } catch { /* تجاهل */ }
+        const video = videoRef.current;
+        video.srcObject = stream;
+
+        // لا ننتظر play() أبداً. وعدها على سفاري iOS — خصوصاً داخل التطبيق المثبّت —
+        // قد لا يستقر إطلاقاً (لا يُحلّ ولا يُرفض)، وكان await عليه يمنع الوصول إلى
+        // setReady(true). والنتيجة بالضبط ما يشتكي منه المستخدم: شاشة سوداء وزر التقاط
+        // معطّل (disabled={!ready}) بلا أي رسالة خطأ تشرح السبب.
+        void video.play().catch(() => {});
+
+        // الجاهزية تُقاس بوصول أبعاد الفيديو فعلياً، مع مهلة احتياطية حتى لا نعلق أبداً.
+        await new Promise<void>((resolve) => {
+          if (video.readyState >= 2 || video.videoWidth > 0) return resolve();
+          let settled = false;
+          const done = () => {
+            if (settled) return;
+            settled = true;
+            video.removeEventListener("loadedmetadata", done);
+            video.removeEventListener("canplay", done);
+            resolve();
+          };
+          video.addEventListener("loadedmetadata", done);
+          video.addEventListener("canplay", done);
+          setTimeout(done, 3000);
+        });
+
+        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
         setReady(true);
       } catch (e: any) {
         setError(e?.name === "NotAllowedError" ? "تم رفض إذن الكاميرا — فعّله من إعدادات المتصفح" : "تعذّر فتح الكاميرا");
@@ -303,7 +325,9 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId }: P
             <p className="font-semibold">{error}</p>
           </div>
         ) : (
-          <video ref={videoRef} playsInline muted className="w-full h-full object-contain" />
+          /* autoPlay مع playsInline وmuted هي التركيبة التي يشترطها سفاري iOS لبدء
+             العرض دون إيماءة مستخدم — بدون autoPlay قد تبقى الشاشة سوداء رغم وصول البثّ */
+          <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-contain" />
         )}
         {flash && <div className="absolute inset-0 bg-white/80 animate-pulse" />}
 
