@@ -26,7 +26,7 @@ const BARCODE_SCAN_ENABLED = false;
 // إصلاح فعلاً أم نسخة قديمة عالقة (حصل هذا حرفياً: لقطة شاشة وصلت مطابقة تماماً للقطة
 // أقدم بثلاث نسخ، بصمتها التشخيصية كانت تخلو من حقول أُضيفت لاحقاً). يُزاد يدوياً مع
 // أي تعديل مهم على هذا الملف.
-const CAMERA_DEBUG_BUILD = "v6";
+const CAMERA_DEBUG_BUILD = "v7";
 
 type SaveState = "saving" | "saved" | "error";
 type Shot = { id: string; url: string; weight: string; barcode: string; saveState: SaveState };
@@ -536,24 +536,20 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
           </div>
         ) : (
           <>
-            {/* video مصدر فك التشفير فقط ولا يُعرض أبداً — عرضه هو ما يظهر أسود في
-                التطبيق المثبَّت على iOS (راجع تعليق startFramePump). autoPlay مع
-                playsInline وmuted ضروريان رغم إخفائه لبدء فك التشفير دون إيماءة. */}
-            {/* حجم حقيقي (لا 1px/opacity:0) — تصغير الفيديو لبكسل واحد مع opacity:0 هو
-                بالضبط الإشارة التي تجعل WebKit على الهاتف يُعامله كـ"غير مرئي" ويُعلِّق
-                فكّ تشفير إطاراته فعلياً (تحسين لتوفير الطاقة)، رغم بقاء readyState/
-                videoWidth سليمين — وهذا يطابق ما رآه المستخدم: drawImage "ينجح"
-                (frameCount>0) والمحتوى المرسوم أسود بالكامل. نتجنّب هذا بإبقائه بحجم
-                طبيعي، ويُغطّيه canvas بصرياً بترتيب DOM فقط (canvas بعده مباشرة) بلا
-                حاجة لأي z-index. */}
+            {/* video مصدر فك التشفير فقط ولا يُعرض أبداً — canvas هو المعروض فعلياً.
+                هذا هو الشكل الذي أكّد المستخدم عمله فعلياً على جهازه (opacity:0 بحجم
+                بكسل واحد). جرّبت لاحقاً تغييره لحجم حقيقي خلف canvas بناءً على نظرية
+                غير مؤكَّدة (أن الحجم الصغير يُوقف فكّ التشفير)، وهذا التغيير نفسه هو
+                على الأرجح ما أعاد الشاشة سوداء بعده — رجعت للشكل المؤكَّد عمله. لا
+                تُغيّر هذا بلا دليل فعلي جديد من الجهاز. */}
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
-              className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+              className="absolute opacity-0 pointer-events-none w-px h-px"
             />
-            <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-contain" />
+            <canvas ref={canvasRef} className="w-full h-full object-contain" />
           </>
         )}
 
