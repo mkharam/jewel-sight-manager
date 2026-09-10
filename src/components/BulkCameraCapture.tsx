@@ -146,6 +146,36 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
     };
   }, [open, facing]);
 
+  // تشخيص حيّ للمعاينة: الشاشة السوداء لها أسباب كثيرة متشابهة من الخارج (لا بثّ /
+  // بثّ بلا إطارات / عنصر بارتفاع صفر / تشغيل متوقّف). هذا السطر يفصل بينها بدل
+  // التخمين، ويظهر فقط حين لا تعمل المعاينة فعلاً فلا يزعج الاستخدام العادي.
+  const [diag, setDiag] = useState("");
+  useEffect(() => {
+    if (!open) return;
+    const id = setInterval(() => {
+      const v = videoRef.current;
+      const tracks = streamRef.current?.getVideoTracks() ?? [];
+      const t = tracks[0];
+      const r = v?.getBoundingClientRect();
+      setDiag(
+        [
+          `standalone:${(window.navigator as any).standalone ? "1" : "0"}`,
+          `tracks:${tracks.length}/${t?.readyState ?? "-"}${t?.muted ? "/muted" : ""}`,
+          `enabled:${t?.enabled ? "1" : "0"}`,
+          `video:${v?.videoWidth ?? 0}x${v?.videoHeight ?? 0}`,
+          `rs:${v?.readyState ?? "-"}`,
+          `paused:${v?.paused ? "1" : "0"}`,
+          `box:${Math.round(r?.width ?? 0)}x${Math.round(r?.height ?? 0)}`,
+          `srcObj:${v?.srcObject ? "1" : "0"}`,
+        ].join(" "),
+      );
+    }, 700);
+    return () => clearInterval(id);
+  }, [open]);
+
+  // المعاينة تُعتبر معطّلة إن لم تصل إطارات فعلية رغم عدم وجود رسالة خطأ.
+  const previewBroken = !error && (!ready || (videoRef.current?.videoWidth ?? 0) === 0);
+
   // إعادة المحاولة من نقرة المستخدم مباشرة — راجع التعليق عند زر "إعادة تشغيل الكاميرا".
   const retryCamera = async () => {
     setError(null);
@@ -373,6 +403,19 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
           /* autoPlay مع playsInline وmuted هي التركيبة التي يشترطها سفاري iOS لبدء
              العرض دون إيماءة مستخدم — بدون autoPlay قد تبقى الشاشة سوداء رغم وصول البثّ */
           <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-contain" />
+        )}
+
+        {/* شاشة سوداء بلا رسالة خطأ: نعرض حالة المعاينة الفعلية وزر إعادة تشغيل مباشر */}
+        {previewBroken && (
+          <div className="absolute inset-x-3 bottom-3 space-y-2 text-center">
+            <p className="text-white/80 text-xs">
+              {ready ? "الكاميرا مفتوحة لكن لا تصل صورة" : "جارٍ تشغيل الكاميرا…"}
+            </p>
+            <Button size="sm" variant="secondary" onClick={retryCamera}>
+              <RotateCcw className="size-4 ml-1" /> إعادة تشغيل الكاميرا
+            </Button>
+            <p className="font-mono text-[9px] text-white/45 break-all leading-snug" dir="ltr">{diag}</p>
+          </div>
         )}
         {flash && <div className="absolute inset-0 bg-white/80 animate-pulse" />}
 
