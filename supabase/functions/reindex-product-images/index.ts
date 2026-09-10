@@ -2,15 +2,17 @@
 // ويعيد تحليلها بنفس سلسلة المزودين المجانية (Groq → Gemini) ثم يحفظ النتيجة.
 // للمدير العام فقط (يتحقق من الدور في الكود).
 //
-// Body: { limit?: number }   الافتراضي 8 صور لكل نداء (لتجنّب مهلة 150 ثانية)
+// Body: { limit?: number, force?: boolean }   الافتراضي 8 صور لكل نداء (لتجنّب مهلة 150 ثانية)
+// force: يعالج كل الصور بالترتيب الزمني بدل الاقتصار على من ينقصه ai_labels/ai_embedding —
+// يُستخدم لإعادة فهرسة الكتالوج الحالي (~500 قطعة) ببصمة الصورة الحقيقية بعد ترقية
+// النموذج من التضمين النصي القديم (كانت الفهرسة تُقارن وصف الذكاء الاصطناعي النصي لا الصورة).
 // Response: { processed, failed, remaining, rateLimited, results: [{ imageId, ok, provider?, error? }] }
 
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
-  analysisToEmbeddingText,
   analyzeWithFallback,
-  embedText,
+  embedImage,
   friendlyError,
 } from "../_shared/lovable-ai.ts";
 
@@ -44,21 +46,24 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const limit = Math.min(Math.max(Number(body?.limit ?? 8), 1), 20);
+    const force = body?.force === true;
+    const offset = force ? Math.max(Number(body?.offset ?? 0), 0) : 0;
 
-    // ── الصور التي تحتاج فهرسة ──
+    // ── الصور التي تحتاج فهرسة (أو كل الصور بالترتيب الزمني إن force) ──
     const needsWork = "ai_embedding.is.null,ai_labels.eq.{}";
 
-    const { count: remainingBefore } = await admin
-      .from("product_images")
-      .select("id", { count: "exact", head: true })
-      .or(needsWork);
+    let countQuery = admin.from("product_images").select("id", { count: "exact", head: true });
+    if (!force) countQuery = countQuery.or(needsWork);
+    const { count: remainingBefore } = await countQuery;
 
-    const { data: images, error: listErr } = await admin
-      .from("product_images")
-      .select("id,product_id,storage_path")
-      .or(needsWork)
+    let listQuery = admin.from("product_images").select("id,product_id,storage_path");
+    if (!force) listQuery = listQuery.or(needsWork);
+    // في وضع force لا يوجد فلتر ينقص الصور المُعاد فهرستها من القائمة (كلها تُعتبر
+    // "منتهية" حتى في القديم)، فنستخدم offset يُرسله المستدعي (الواجهة) ليتقدّم بين
+    // النداءات المتتالية ويُغطّي كل الكتالوج تدريجياً بدل تكرار أول limit صورة فقط.
+    const { data: images, error: listErr } = await listQuery
       .order("created_at", { ascending: true })
-      .limit(limit);
+      .range(offset, offset + limit - 1);
     if (listErr) throw listErr;
 
     if (!images?.length) {
@@ -102,7 +107,7 @@ Deno.serve(async (req) => {
             )
           : null;
 
-        const embedding = await withRetry(() => embedText(analysisToEmbeddingText(analysis)));
+        const embedding = await withRetry(() => embedImage(imageBase64, mimeType));
 
         const { error: upErr } = await admin
           .from("product_images")
@@ -124,8 +129,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    const remaining = Math.max((remainingBefore ?? 0) - processed, 0);
-    return json({ processed, failed, remaining, rateLimited, results });
+    const remaining = force
+      ? Math.max((remainingBefore ?? 0) - (offset + processed + failed), 0)
+      : Math.max((remainingBefore ?? 0) - processed, 0);
+    const nextOffset = force ? offset + images.length : undefined;
+    return json({ processed, failed, remaining, rateLimited, results, ...(force ? { nextOffset } : {}) });
   } catch (e) {
     const { status, message } = friendlyError(e);
     return json({ error: message }, status);

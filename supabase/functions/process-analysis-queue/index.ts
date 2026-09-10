@@ -5,7 +5,7 @@
 // عميل المتصفح (كان هشّاً ومربوطاً بإغلاق التبويب وصعب ضبط سرعته بأمان).
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { analysisToEmbeddingText, analyzeBatchWithFallback, embedText, type JewelryAnalysis } from "../_shared/lovable-ai.ts";
+import { analyzeBatchWithFallback, embedImage, type JewelryAnalysis } from "../_shared/lovable-ai.ts";
 
 // سرّ مشترك ثابت للتحقق من أن المستدعي هو pg_cron الخاص بمشروعنا فقط — الدالة verify_jwt=false
 // (لأن pg_cron لا يملك JWT مستخدم)، فهذا الفحص يمنع أي طرف خارجي من استدعائها لاستهلاك
@@ -129,7 +129,7 @@ Deno.serve(async (req) => {
 
       let embedding: unknown = null;
       try {
-        embedding = await embedText(analysisToEmbeddingText(analysis));
+        embedding = await embedImage(l.base64, l.mimeType);
       } catch (e) {
         console.error("embedding failed (non-fatal)", e);
       }

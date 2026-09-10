@@ -765,10 +765,20 @@ export async function analyzeWithFallback(params: {
   );
 }
 
-/**
- * Embedding مجاني عبر Google (gemini-embedding-001) بأبعاد 1536.
- */
-export async function embedText(text: string): Promise<number[]> {
+// gemini-embedding-2 نموذج متعدد الوسائط حقيقي — يضع النص والصورة في نفس فضاء المتجهات
+// (1536 بُعداً هنا عبر outputDimensionality لمطابقة عمود ai_embedding الحالي دون أي
+// تعديل على قاعدة البيانات). كان النظام سابقاً يُضمّن نص الوصف الذي تكتبه الذكاء
+// الاصطناعي عن الصورة (gemini-embedding-001، نص فقط) بدل الصورة نفسها — فحصنا هذا فعلياً
+// عبر استدعاءات مباشرة: قطعتان مختلفتا الشكل واللون كانتا تحصلان على نص وصف متشابه
+// (كلاهما "طقم ذهب مرصّع بأحجار") فتتشابهان بنسبة 90%+ في البحث رغم اختلافهما بصرياً
+// تماماً. مع embedImage (بصمة الصورة الفعلية) اتضح فارق حقيقي بين القطعة الصحيحة
+// والخاطئة (0.82 مقابل 0.75) بدل تشابه زائف (96% مقابل 91%). التبديل شامل: الفهرسة
+// (صورة القطعة عند الرفع) والبحث بالصورة يستخدمان embedImage، والبحث النصي المكتوب يبقى
+// يستخدم embedText — وبما أنهما نفس النموذج الآن، مقارنتهما ببعض عبر pgvector صحيحة
+// دلالياً (بحث نصي عن "أحجار زرقاء" يُطابق فعلياً صور القطع الزرقاء لا وصفها النصي فقط).
+async function embedContentV2(
+  content: { text: string } | { inlineData: { mimeType: string; data: string } },
+): Promise<number[]> {
   const gkey = (Deno.env.get("GOOGLE_API_KEY") ?? Deno.env.get("GEMINI_API_KEY") ?? "")
     .trim()
     .replace(/^["']|["']$/g, "");
@@ -780,18 +790,22 @@ export async function embedText(text: string): Promise<number[]> {
     );
   }
 
-  const input = (text || "").trim().slice(0, 8000) || "قطعة مجوهرات";
+  const part =
+    "text" in content
+      ? { text: content.text }
+      : { inline_data: { mime_type: content.inlineData.mimeType, data: content.inlineData.data } };
+
   let lastStatus = 500;
   let lastText = "";
 
   for (let attempt = 0; attempt < 3; attempt++) {
     const res = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent",
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent",
       {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-goog-api-key": gkey },
         body: JSON.stringify({
-          content: { parts: [{ text: input }] },
+          content: { parts: [part] },
           outputDimensionality: 1536,
         }),
       },
@@ -813,6 +827,18 @@ export async function embedText(text: string): Promise<number[]> {
   }
 
   throw Object.assign(new Error(lastText || `Google embed ${lastStatus}`), { status: lastStatus });
+}
+
+/** بصمة نص — تُستخدم للبحث النصي المكتوب (تبقى بنفس فضاء بصمات الصور أدناه). */
+export async function embedText(text: string): Promise<number[]> {
+  const input = (text || "").trim().slice(0, 8000) || "قطعة مجوهرات";
+  return embedContentV2({ text: input });
+}
+
+/** بصمة صورة حقيقية (لا وصف نصي عنها) — أساس الفهرسة والبحث بالصورة الآن. */
+export async function embedImage(imageBase64: string, mimeType: string): Promise<number[]> {
+  const clean = imageBase64.replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
+  return embedContentV2({ inlineData: { mimeType, data: clean } });
 }
 
 /** Build a compact text representation of an analysis for embedding. */

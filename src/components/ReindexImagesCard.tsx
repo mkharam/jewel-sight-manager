@@ -13,6 +13,7 @@ const BATCH = 8;
 
 export default function ReindexImagesCard() {
   const [running, setRunning] = useState(false);
+  const [forceRunning, setForceRunning] = useState(false);
   const [stopFlag, setStopFlag] = useState(false);
   const [done, setDone] = useState(0);
   const [failed, setFailed] = useState(0);
@@ -31,17 +32,25 @@ export default function ReindexImagesCard() {
     },
   });
 
-  const start = async () => {
-    setRunning(true);
+  const { data: totalImages } = useQuery({
+    queryKey: ["reindex-total"],
+    queryFn: async () => {
+      const { count } = await supabase.from("product_images").select("id", { count: "exact", head: true });
+      return count ?? 0;
+    },
+  });
+
+  const runLoop = async (force: boolean) => {
     setStopFlag(false);
     setDone(0);
     setFailed(0);
     setNote(null);
-    setTotal(pending ?? 0);
+    setTotal(force ? totalImages ?? 0 : pending ?? 0);
 
     let guard = 0;
     let localFailed = 0;
     let localDone = 0;
+    let offset = 0;
 
     try {
       // eslint-disable-next-line no-constant-condition
@@ -51,7 +60,7 @@ export default function ReindexImagesCard() {
         if (guard > 400) break; // حماية من حلقة لا نهائية
 
         const { data, error } = await supabase.functions.invoke("reindex-product-images", {
-          body: { limit: BATCH },
+          body: force ? { limit: BATCH, force: true, offset } : { limit: BATCH },
         });
         if (error) throw error;
         if ((data as any)?.error) throw new Error((data as any).error);
@@ -61,12 +70,14 @@ export default function ReindexImagesCard() {
           failed: number;
           remaining: number;
           rateLimited: boolean;
+          nextOffset?: number;
         };
 
         localDone += res.processed;
         setDone(localDone);
         localFailed += res.failed;
         setFailed(localFailed);
+        if (force) offset = res.nextOffset ?? offset + BATCH;
 
         if (res.rateLimited) {
           setNote("الذكاء الاصطناعي مشغول الآن — توقفنا مؤقتاً، أعد المحاولة بعد قليل وسيكمل من حيث توقف.");
@@ -86,10 +97,21 @@ export default function ReindexImagesCard() {
       toast.error(e?.message ?? "تعذّرت إعادة الفهرسة");
     } finally {
       setRunning(false);
+      setForceRunning(false);
       stopRef.current = false;
       setStopFlag(false);
       refetch();
     }
+  };
+
+  const start = () => {
+    setRunning(true);
+    runLoop(false);
+  };
+
+  const startForce = () => {
+    setForceRunning(true);
+    runLoop(true);
   };
 
   const pct = total > 0 ? Math.min(100, Math.round(((done + failed) / total) * 100)) : 0;
@@ -112,7 +134,7 @@ export default function ReindexImagesCard() {
           <span className="text-sm font-semibold">
             صور تحتاج فهرسة: <span className="text-primary">{pending ?? "…"}</span>
           </span>
-          {!running ? (
+          {!running && !forceRunning ? (
             <Button size="sm" onClick={start} disabled={!pending} className="bg-gold-gradient text-primary-foreground">
               <RefreshCw className="size-4 ml-1" /> بدء الفهرسة
             </Button>
@@ -128,10 +150,25 @@ export default function ReindexImagesCard() {
               <StopCircle className="size-4 ml-1" /> إيقاف
             </Button>
           )}
-          {running && <Loader2 className="size-4 animate-spin text-primary" />}
+          {(running || forceRunning) && <Loader2 className="size-4 animate-spin text-primary" />}
         </div>
 
-        {(running || done > 0 || failed > 0) && (
+        <div className="border-t border-border/60 pt-3 space-y-1.5">
+          <p className="text-xs text-muted-foreground">
+            بعد ترقية بصمة البحث لتعتمد على الصورة نفسها لا وصفها النصي، القطع القديمة (المفهرسة سابقاً)
+            تحتاج إعادة فهرسة كاملة لتستفيد من الدقة الجديدة في البحث بالصورة.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={startForce}
+            disabled={running || forceRunning || !totalImages}
+          >
+            <Sparkles className="size-4 ml-1" /> إعادة فهرسة كل القطع ({totalImages ?? "…"})
+          </Button>
+        </div>
+
+        {(running || forceRunning || done > 0 || failed > 0) && (
           <div className="space-y-1">
             <Progress value={pct} />
             <p className="text-[11px] text-muted-foreground">

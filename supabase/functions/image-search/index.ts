@@ -1,5 +1,6 @@
-// Search by photo: analyze the customer's photo with vision, embed the
-// description, then run pgvector similarity against product_images.ai_embedding.
+// Search by photo: نُشغّل التحليل البصري لعرضه في الواجهة (فئة/عيار/أحجار)، لكن
+// المطابقة نفسها تعتمد على بصمة الصورة الحقيقية (embedImage) لا وصف نصي عنها —
+// راجع التعليق أعلى embedContentV2 في lovable-ai.ts لسبب هذا التحديد.
 //
 // Request:  { imageBase64: string, mimeType?: string, categories?: {id,name}[],
 //             matchCount?: number }
@@ -8,9 +9,8 @@
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
-  analysisToEmbeddingText,
   analyzeWithFallback,
-  embedText,
+  embedImage,
   friendlyError,
 } from "../_shared/lovable-ai.ts";
 
@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
       categoryNames: categories.map((c) => c.name),
     });
 
-    const embedding = await embedText(analysisToEmbeddingText(analysis));
+    const embedding = await embedImage(imageBase64, mimeType);
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,

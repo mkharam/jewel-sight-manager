@@ -4,9 +4,8 @@
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
-  analysisToEmbeddingText,
   analyzeWithFallback,
-  embedText,
+  embedImage,
   friendlyError,
   type JewelryAnalysis,
 } from "../_shared/lovable-ai.ts";
@@ -63,10 +62,11 @@ Deno.serve(async (req) => {
       categoryId = cat?.id ?? null;
     }
 
-    // embedding اختياري — يُستخدم للبحث بالصورة
-    if (imageId) {
+    // embedding اختياري — يُستخدم للبحث بالصورة. بصمة الصورة نفسها (لا وصف نصي عنها) —
+    // راجع التعليق أعلى embedContentV2 في lovable-ai.ts لسبب هذا التحديد.
+    if (imageId && imageBase64) {
       try {
-        const embedding = await embedText(analysisToEmbeddingText(analysis));
+        const embedding = await embedImage(imageBase64, mimeType);
         const supabase = createClient(
           Deno.env.get("SUPABASE_URL")!,
           Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -144,7 +144,7 @@ async function analyzeFromRecord(record: { id: string; storage_path: string; ai_
 
   let embedding: unknown = null;
   try {
-    embedding = await embedText(analysisToEmbeddingText(analysis));
+    embedding = await embedImage(base64, file.type || "image/jpeg");
   } catch (e) {
     console.error("embedding failed (non-fatal)", e);
   }
