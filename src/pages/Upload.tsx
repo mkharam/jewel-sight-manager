@@ -95,10 +95,9 @@ export default function Upload() {
     // مسار للمتابعة.
     let stream: MediaStream | null = null;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1920 } },
-        audio: false,
-      });
+      // لا قيود أبعاد (كان 1920x1920 — مربّع غير طبيعي لمستشعر الكاميرا) تُعقِّد تفاوض
+      // iOS مع الجلسة بلا داعٍ؛ facingMode فقط ونترك الباقي للنظام.
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
     } catch { /* الشاشة ستُظهر الخطأ وتحاول تلقائياً */ }
 
     setCameraStream(stream);

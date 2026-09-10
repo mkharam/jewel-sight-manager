@@ -26,7 +26,7 @@ const BARCODE_SCAN_ENABLED = false;
 // إصلاح فعلاً أم نسخة قديمة عالقة (حصل هذا حرفياً: لقطة شاشة وصلت مطابقة تماماً للقطة
 // أقدم بثلاث نسخ، بصمتها التشخيصية كانت تخلو من حقول أُضيفت لاحقاً). يُزاد يدوياً مع
 // أي تعديل مهم على هذا الملف.
-const CAMERA_DEBUG_BUILD = "v9";
+const CAMERA_DEBUG_BUILD = "v10";
 
 type SaveState = "saving" | "saved" | "error";
 type Shot = { id: string; url: string; weight: string; barcode: string; saveState: SaveState };
@@ -64,11 +64,12 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
 
   // نرسم على canvas بدل عرض <video> مباشرة، ونعتبر الكاميرا "جاهزة" فقط بعد نجاح رسم
   // إطار حقيقي (لا بمجرد وصول videoWidth/readyState، التي رأينا تُبلَّغ صحيحة رغم عدم
-  // وجود أي إطار فعلي). ملاحظة تاريخية: أول تفسير افترضناه للشاشة السوداء كان خلل
-  // تركيب (compositing) في <video> نفسه — تبيّن لاحقاً عبر تشخيص حيّ على الجهاز
-  // (tracks:1/live/muted) أن السبب الفعلي أعمق: مسار الفيديو (MediaStreamTrack) نفسه
-  // مكتوم من نظام iOS ولا يُنتج بيانات إطلاقاً، لا مجرد مشكلة عرض. راجع حلقة إعادة
-  // المحاولة عند muted في start() أدناه — هي المعالجة الفعلية للسبب الحقيقي.
+  // وجود أي إطار فعلي). الحلقة هنا تستمر بالفحص طوال فتح الشاشة بلا مهلة توقّف — على
+  // بعض الأجهزة يبدأ المسار (MediaStreamTrack) مكتوماً (tracks:.../muted في التشخيص)
+  // ويستغرق تفعيله من نظام iOS وقتاً متفاوتاً؛ جرّبنا سابقاً إغلاق الجلسة وطلب جلسة
+  // جديدة تلقائياً كل 2.5 ثانية عند رصد muted، لكن تبيّن أن هذا التدخّل نفسه قد يمنع
+  // النظام من إكمال تفعيل الجلسة أصلاً — فتوقّفنا عن التدخّل ونترك الفحص السلبي هنا
+  // يلتقط اللحظة التي يُفعِّل فيها النظام الجلسة فعلياً بنفسه.
   const startFramePump = (video: HTMLVideoElement) => {
     pumpActiveRef.current = true;
     frameCountRef.current = 0;
@@ -125,10 +126,6 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
   };
   const [shots, setShots] = useState<Shot[]>([]);
   const [ready, setReady] = useState(false);
-  // عدد محاولات إعادة الطلب التلقائية بسبب track.muted — راجع التعليق في start().
-  // ref لا state: يُقرأ داخل مؤقّت التشخيص الذي يُنشأ مرة واحدة (dependency [open])،
-  // فأي state كان سيبقى القيمة القديمة (closure قديم) بعكس ref الذي يبقى محدَّثاً دوماً.
-  const muteRetryAttemptRef = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
   const [facing, setFacing] = useState<"environment" | "user">("environment");
@@ -153,7 +150,6 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
     if (!open) return;
     let cancelled = false;
     setReady(false);
-    muteRetryAttemptRef.current = 0;
     setError(null);
     setPendingBarcode(null);
 
@@ -165,14 +161,14 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
         streamRef.current?.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
 
+        // لا نطلب أبعاداً محدَّدة (كان 1920x1920 — مربّع غير طبيعي لمستشعر الكاميرا
+        // الفعلي) — قيد كهذا يزيد تعقيد تفاوض iOS مع الجلسة بلا داعٍ حقيقي؛ facingMode
+        // فقط كافٍ ويترك القرار للنظام.
         const reusable = !!initialStream && initialStream.getTracks().some((t) => t.readyState === "live");
         const stream =
           first && reusable
             ? initialStream!
-            : await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1920 } },
-                audio: false,
-              });
+            : await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing }, audio: false });
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
 
@@ -195,41 +191,12 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
         void video.play().catch(() => {});
         startFramePump(video);
 
-        // الدليل الحاسم من تشخيص فعلي على الجهاز: tracks:1/live/muted — المسار نفسه
-        // مكتوم من نظام iOS (لا علاقة للعرض/الرسم بهذا، خلافاً لما افترضناه سابقاً؛
-        // muted يعني المصدر لا يُنتج بيانات إطلاقاً). خلل موثّق: أول جلسة getUserMedia
-        // داخل تطبيق iOS المثبَّت قد تُكتَم عند تفاوض النظام معها، وطلب getUserMedia
-        // جديد فعلياً (لا إعادة استخدام نفس المسار) عادة ما ينجح. نعيد المحاولة تلقائياً
-        // بدل زر يدوي — كان المستخدم جرّب الزر ولم يساعد لأنه في نسخة سابقة لم يكن
-        // يتحقق من muted تحديداً ولا يُعيد الطلب أكثر من مرة واحدة.
-        for (let attempt = 0; attempt < 4; attempt++) {
-          await new Promise((r) => setTimeout(r, 2500));
-          if (cancelled) return;
-          if (frameCountRef.current > 0) break;
-          const track = streamRef.current?.getVideoTracks()[0];
-          if (!track?.muted) continue;
-          muteRetryAttemptRef.current = attempt + 1;
-          try {
-            streamRef.current?.getTracks().forEach((t) => t.stop());
-            const fresh = await navigator.mediaDevices.getUserMedia({
-              video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1920 } },
-              audio: false,
-            });
-            if (cancelled) { fresh.getTracks().forEach((t) => t.stop()); return; }
-            streamRef.current = fresh;
-            video.srcObject = fresh;
-            void video.play().catch(() => {});
-            stopFramePump();
-            startFramePump(video);
-          } catch {
-            // نُبقي المحاولة التالية تعمل بدل التوقف على أول فشل مؤقت
-          }
-        }
-
-        // 4 طلبات جديدة فعلياً ولا إطار واحد — تبقى الشاشة كما هي (بلا تحويل تلقائي
-        // لأي مسار آخر) والتشخيص الحيّ ظاهر تحتها، حتى تُراجَع الحالة الفعلية على
-        // الجهاز (مثال: وضع توفير الطاقة يُعرف بأيقونة البطارية الصفراء) بدل إخفاء
-        // المشكلة خلف تحويل صامت لمسار مختلف.
+        // لا إعادة طلب هنا: أوقفنا حلقة كانت تُغلق الجلسة وتطلب جلسة جديدة كل 2.5 ثانية
+        // عند track.muted — تكرار إغلاق/فتح الجلسة بهذه السرعة قد يمنع نظام iOS من
+        // إكمال تفعيلها أصلاً (تفكيك جلسة كاميرا له دورة حياة غير متزامنة قد لا تكتمل
+        // خلال 2.5 ثانية)، فكانت إعادة المحاولة نفسها تُبقي المسار عالقاً بدل حلّه.
+        // نترك pump() يستمر بفحص كل إطار طوال فتح الشاشة — لحظة يُفعِّل النظام الجلسة
+        // فعلياً (قد يستغرق ذلك وقتاً متفاوتاً) يلتقطها تلقائياً بلا أي تدخّل إضافي منّا.
       } catch (e: any) {
         setError(e?.name === "NotAllowedError" ? "تم رفض إذن الكاميرا — فعّله من إعدادات المتصفح" : "تعذّر فتح الكاميرا");
       }
@@ -263,7 +230,6 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
       setDiag(
         [
           `build:${CAMERA_DEBUG_BUILD}`,
-          `muteRetry:${muteRetryAttemptRef.current}`,
           `standalone:${(window.navigator as any).standalone ? "1" : "0"}`,
           `tracks:${tracks.length}/${t?.readyState ?? "-"}${t?.muted ? "/muted" : ""}`,
           `enabled:${t?.enabled ? "1" : "0"}`,
@@ -293,10 +259,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
     setReady(false);
     try {
       streamRef.current?.getTracks().forEach((t) => t.stop());
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1920 } },
-        audio: false,
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing }, audio: false });
       streamRef.current = stream;
       const video = videoRef.current;
       if (!video) {
@@ -542,18 +505,13 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
           </>
         )}
 
-        {/* شاشة سوداء بلا رسالة خطأ: نعرض حالة المعاينة الفعلية وزر إعادة تشغيل مباشر */}
+        {/* لا نُغلق/نُعيد فتح الجلسة تلقائياً بعد الآن (راجع تعليق start()) — الحلقة
+            الفعلية تنتظر بصمت لحظة تفعيل iOS للجلسة فعلياً. سطر التشخيص هنا للمراجعة
+            فقط، غير مرتبط بأي إجراء تلقائي. */}
         {previewBroken && (
-          // زر "إعادة تشغيل الكاميرا" هنا كان يُعيد نفس الفشل حرفياً — لأن السبب
-          // (رأينا لاحقاً) في طريقة عرض العنصر نفسها لا في البثّ، فإعادة الطلب لا
-          // تُغيّر شيئاً وتُضلِّل بأن هناك فعلاً ما يمكن فعله. أُزيل بطلب صريح.
           <div className="absolute inset-x-3 bottom-3 space-y-2 text-center">
             <p className="text-white/80 text-xs">
-              {ready
-                ? "الكاميرا مفتوحة لكن لا تصل صورة"
-                : muteRetryAttemptRef.current > 0
-                  ? `الكاميرا مكتومة من النظام — إعادة محاولة (${muteRetryAttemptRef.current}/4)…`
-                  : "جارٍ تشغيل الكاميرا…"}
+              {ready ? "الكاميرا مفتوحة لكن لا تصل صورة" : "جارٍ تشغيل الكاميرا…"}
             </p>
             <p className="font-mono text-[9px] text-white/45 break-all leading-snug" dir="ltr">{diag}</p>
           </div>
