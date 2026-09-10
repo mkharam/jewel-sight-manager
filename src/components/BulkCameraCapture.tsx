@@ -22,6 +22,12 @@ import { toast } from "sonner";
 
 const BARCODE_SCAN_ENABLED = false;
 
+// رقم مرئي في سطر التشخيص نفسه — بدونه لا طريقة نفرّق فيها هل لقطة شاشة تعكس آخر
+// إصلاح فعلاً أم نسخة قديمة عالقة (حصل هذا حرفياً: لقطة شاشة وصلت مطابقة تماماً للقطة
+// أقدم بثلاث نسخ، بصمتها التشخيصية كانت تخلو من حقول أُضيفت لاحقاً). يُزاد يدوياً مع
+// أي تعديل مهم على هذا الملف.
+const CAMERA_DEBUG_BUILD = "v5";
+
 type SaveState = "saving" | "saved" | "error";
 type Shot = { id: string; url: string; weight: string; barcode: string; saveState: SaveState };
 
@@ -216,6 +222,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
       const r = v?.getBoundingClientRect();
       setDiag(
         [
+          `build:${CAMERA_DEBUG_BUILD}`,
           `standalone:${(window.navigator as any).standalone ? "1" : "0"}`,
           `tracks:${tracks.length}/${t?.readyState ?? "-"}${t?.muted ? "/muted" : ""}`,
           `enabled:${t?.enabled ? "1" : "0"}`,
@@ -495,13 +502,13 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
 
         {/* شاشة سوداء بلا رسالة خطأ: نعرض حالة المعاينة الفعلية وزر إعادة تشغيل مباشر */}
         {previewBroken && (
+          // زر "إعادة تشغيل الكاميرا" هنا كان يُعيد نفس الفشل حرفياً — لأن السبب
+          // (رأينا لاحقاً) في طريقة عرض العنصر نفسها لا في البثّ، فإعادة الطلب لا
+          // تُغيّر شيئاً وتُضلِّل بأن هناك فعلاً ما يمكن فعله. أُزيل بطلب صريح.
           <div className="absolute inset-x-3 bottom-3 space-y-2 text-center">
             <p className="text-white/80 text-xs">
               {ready ? "الكاميرا مفتوحة لكن لا تصل صورة" : "جارٍ تشغيل الكاميرا…"}
             </p>
-            <Button size="sm" variant="secondary" onClick={retryCamera}>
-              <RotateCcw className="size-4 ml-1" /> إعادة تشغيل الكاميرا
-            </Button>
             <p className="font-mono text-[9px] text-white/45 break-all leading-snug" dir="ltr">{diag}</p>
           </div>
         )}
