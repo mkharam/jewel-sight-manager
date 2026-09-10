@@ -168,9 +168,14 @@ export default function AppLayout() {
       <header className="sticky top-0 z-30 border-b border-border bg-card/95 backdrop-blur shadow-card safe-area-pt">
         <div className="container mx-auto px-3 sm:px-4 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-4">
           <Link to="/" className="flex items-center gap-2">
-            <div className="size-8 sm:size-9 rounded-xl bg-gold-gradient flex items-center justify-center shadow-gold">
-              <Sparkles className="size-4 sm:size-5 text-primary-foreground" />
-            </div>
+            {/* شعار المتجر الفعلي بدل أيقونة عامة — نفس النقش الذهبي على الحقل الزمرّدي */}
+            <img
+              src={`${import.meta.env.BASE_URL}brand-logo.webp`}
+              alt="مخرّم"
+              width={36}
+              height={36}
+              className="size-8 sm:size-9 rounded-xl object-cover shadow-emerald ring-1 ring-primary/25"
+            />
             <div className="leading-tight">
               <h1 className="text-base sm:text-lg font-extrabold text-gold-gradient">مخرّم</h1>
               <p className="text-[9px] sm:text-[10px] text-muted-foreground -mt-0.5 hidden sm:block">إدارة المجوهرات</p>

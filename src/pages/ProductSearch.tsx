@@ -417,23 +417,27 @@ export default function ProductSearch() {
   return (
     <div className="space-y-4">
       {/* Luxury welcome + search */}
-      <div className="relative overflow-hidden rounded-3xl bg-gold-gradient shadow-gold p-5 md:p-8">
-        <div className="absolute -top-12 -left-12 size-40 rounded-full bg-white/10 blur-2xl pointer-events-none" />
-        <div className="absolute -bottom-16 -right-10 size-44 rounded-full bg-white/10 blur-2xl pointer-events-none" />
+      {/* بطاقة الترحيب = هوية المتجر نفسها: حرير زمرّدي وخيوط ذهبية ونص ذهبي */}
+      <div className="relative overflow-hidden rounded-3xl brand-silk shadow-emerald p-5 md:p-8">
+        <div className="absolute -top-12 -left-12 size-40 rounded-full bg-primary/10 blur-2xl pointer-events-none" />
+        <div className="absolute -bottom-16 -right-10 size-44 rounded-full bg-primary/10 blur-2xl pointer-events-none" />
+        {/* خيطان ذهبيان رفيعان يعبران البطاقة كما في الشعار */}
+        <div className="absolute inset-x-0 top-6 h-px bg-gradient-to-l from-transparent via-primary/45 to-transparent pointer-events-none" />
+        <div className="absolute inset-x-0 bottom-10 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent pointer-events-none" />
         <div className="relative">
-          <div className="flex items-center gap-2 text-primary-foreground/85 text-xs font-medium mb-1">
+          <div className="flex items-center gap-2 text-primary/80 text-xs font-medium mb-1">
             <Sparkles className="size-3.5" />
             <span>{greeting}</span>
           </div>
-          <h2 className="text-xl md:text-3xl font-extrabold text-primary-foreground leading-tight">
+          <h2 className="text-xl md:text-3xl font-extrabold text-gold-gradient leading-tight">
             أهلاً بك، {profile?.full_name ?? "—"}
           </h2>
           <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary-foreground/15 backdrop-blur text-primary-foreground text-[11px] font-semibold border border-primary-foreground/20">
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/15 backdrop-blur text-primary text-[11px] font-semibold border border-primary/25">
               <Store className="size-3" />
               {myBranchName ?? "بدون فرع محدد"}
             </span>
-            <span className="text-[11px] text-primary-foreground/80">{roleLabel} · مخرّم</span>
+            <span className="text-[11px] text-on-brand-muted">{roleLabel} · مخرّم</span>
           </div>
 
           <div className="flex gap-2 mt-4">

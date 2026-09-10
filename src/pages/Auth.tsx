@@ -74,14 +74,23 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen bg-gold-soft flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+    // شاشة الدخول تعرض الهوية كاملة: حقل الحرير الزمرّدي وشعار المتجر الفعلي
+    <div className="min-h-screen brand-silk flex items-center justify-center p-4 relative overflow-hidden">
+      {/* خيوط ذهبية رفيعة تعبر الخلفية، كما في الشعار */}
+      <div className="pointer-events-none absolute inset-x-0 top-[18%] h-px bg-gradient-to-l from-transparent via-primary/35 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-[22%] h-px bg-gradient-to-r from-transparent via-primary/25 to-transparent" />
+
+      <div className="w-full max-w-md relative">
         <div className="text-center mb-6">
-          <div className="size-16 mx-auto rounded-2xl bg-gold-gradient flex items-center justify-center shadow-gold mb-3">
-            <Sparkles className="size-8 text-primary-foreground" />
-          </div>
+          <img
+            src={`${import.meta.env.BASE_URL}brand-logo.webp`}
+            alt="مخرّم"
+            width={96}
+            height={96}
+            className="size-24 mx-auto rounded-2xl object-cover shadow-emerald ring-1 ring-primary/30 mb-3"
+          />
           <h1 className="text-3xl font-extrabold text-gold-gradient">مخرّم</h1>
-          <p className="text-sm text-muted-foreground mt-1">نظام إدارة محلات الذهب والمجوهرات</p>
+          <p className="text-sm text-on-brand-muted mt-1">نظام إدارة محلات الذهب والمجوهرات</p>
         </div>
 
         <Card className="p-6 shadow-elevated">
