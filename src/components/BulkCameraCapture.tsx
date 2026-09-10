@@ -51,6 +51,9 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
   const frameCountRef = useRef(0);
   const rafRef = useRef<number | null>(null);
   const pumpActiveRef = useRef(false);
+  // دليل فعلي على أن المُستخرَج مرئي لا مجرّد "تم الرسم" — راجع التعليق داخل pump().
+  const blackFrameStreakRef = useRef(0);
+  const lastPixelRef = useRef<[number, number, number] | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   // خلل معروف في WebKit: التطبيق المثبَّت على الآيفون (standalone) لا يُركِّب
@@ -64,6 +67,8 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
   const startFramePump = (video: HTMLVideoElement) => {
     pumpActiveRef.current = true;
     frameCountRef.current = 0;
+    blackFrameStreakRef.current = 0;
+    let n = 0;
     const pump = () => {
       if (!pumpActiveRef.current) return;
       const canvas = canvasRef.current;
@@ -75,6 +80,24 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
         if (ctx) {
           ctx.drawImage(video, 0, 0, w, h);
           frameCountRef.current++;
+
+          // رسم إطار لا يعني بالضرورة صورة مرئية — رأينا حالة يُسجَّل فيها نجاح الرسم
+          // (frameCount>0) والشاشة تبقى سوداء رغم ذلك، أي أن المُستخرَج نفسه أسود أو
+          // canvas غير مركَّب بصرياً رغم قبول الرسم برمجياً (نفس فئة خلل WebKit، طبقة
+          // مختلفة). نتحقق فعلياً من المحتوى بأخذ عيّنة بكسلات كل عدّة إطارات بدل
+          // افتراض أن نجاح drawImage يعني صورة ظاهرة.
+          n++;
+          if (n % 6 === 0) {
+            try {
+              const cx = Math.floor(w / 2), cy = Math.floor(h / 2);
+              const px = ctx.getImageData(cx, cy, 1, 1).data;
+              const bright = px[0] + px[1] + px[2];
+              lastPixelRef.current = [px[0], px[1], px[2]];
+              if (bright < 6) blackFrameStreakRef.current++;
+              else blackFrameStreakRef.current = 0;
+            } catch { /* getImageData قد تُمنع (تصحيح خصوصية) — نتجاهل العيّنة فقط */ }
+          }
+
           if (frameCountRef.current === 1) setReady(true);
         }
       }
@@ -202,16 +225,19 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
           `box:${Math.round(r?.width ?? 0)}x${Math.round(r?.height ?? 0)}`,
           `srcObj:${v?.srcObject ? "1" : "0"}`,
           `frames:${frameCountRef.current}`,
+          `px:${lastPixelRef.current ? lastPixelRef.current.join(",") : "-"}`,
+          `blackStreak:${blackFrameStreakRef.current}`,
         ].join(" "),
       );
     }, 700);
     return () => clearInterval(id);
   }, [open]);
 
-  // المعاينة تُعتبر معطّلة فقط إن لم يصل أي إطار حقيقي مرسوم على canvas — هذا دليل
-  // فعلي بعكس videoWidth/readyState اللذين قد يوهمان بجاهزية غير موجودة (وهذا بالضبط
-  // خلل WebKit في التطبيق المثبَّت الذي دفعنا لاعتماد canvas أصلاً).
-  const previewBroken = !error && frameCountRef.current === 0;
+  // المعاينة تُعتبر معطّلة إن لم يصل أي إطار (كالسابق) — أو إن وصلت إطارات لكن محتواها
+  // أسود باستمرار (≥5 عيّنات متتالية). الحالة الثانية هي بالضبط ما أبلغ عنه المستخدم:
+  // frameCount>0 (الرسم "نجح" برمجياً) والشاشة سوداء رغم ذلك — نجاح drawImage لا يعني
+  // صورة مرئية فعلاً، فلا نكتفي بعدّ الإطارات وحده كدليل جاهزية.
+  const previewBroken = !error && (frameCountRef.current === 0 || blackFrameStreakRef.current >= 5);
 
   // إعادة المحاولة من نقرة المستخدم مباشرة — راجع التعليق عند زر "إعادة تشغيل الكاميرا".
   const retryCamera = async () => {
@@ -449,14 +475,21 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
             {/* video مصدر فك التشفير فقط ولا يُعرض أبداً — عرضه هو ما يظهر أسود في
                 التطبيق المثبَّت على iOS (راجع تعليق startFramePump). autoPlay مع
                 playsInline وmuted ضروريان رغم إخفائه لبدء فك التشفير دون إيماءة. */}
+            {/* حجم حقيقي (لا 1px/opacity:0) — تصغير الفيديو لبكسل واحد مع opacity:0 هو
+                بالضبط الإشارة التي تجعل WebKit على الهاتف يُعامله كـ"غير مرئي" ويُعلِّق
+                فكّ تشفير إطاراته فعلياً (تحسين لتوفير الطاقة)، رغم بقاء readyState/
+                videoWidth سليمين — وهذا يطابق ما رآه المستخدم: drawImage "ينجح"
+                (frameCount>0) والمحتوى المرسوم أسود بالكامل. نتجنّب هذا بإبقائه بحجم
+                طبيعي، ويُغطّيه canvas بصرياً بترتيب DOM فقط (canvas بعده مباشرة) بلا
+                حاجة لأي z-index. */}
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
-              className="absolute opacity-0 pointer-events-none w-px h-px"
+              className="absolute inset-0 w-full h-full object-contain pointer-events-none"
             />
-            <canvas ref={canvasRef} className="w-full h-full object-contain" />
+            <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-contain" />
           </>
         )}
 
