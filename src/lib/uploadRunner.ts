@@ -528,6 +528,8 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
 
   // الرفع يجري داخل المتصفح، وانطفاء الشاشة يُجمّده في منتصفه — نُبقي الجهاز مستيقظاً
   // طوال الدفعة، ونحذّر الموظف إن حاول إغلاق الصفحة قبل أن تكتمل.
+  // مهم: هذا القفل يُعلَّق تلقائياً طوال فتح شاشة الكاميرا (راجع suspendWakeLock في
+  // keepAwake.ts) لأنه يُعطّل جلسة الكاميرا على iOS — لا حاجة لأي تنسيق يدوي هنا.
   const releaseWakeLock = keepAwake();
   const warnBeforeUnload = (e: BeforeUnloadEvent) => e.preventDefault();
   window.addEventListener("beforeunload", warnBeforeUnload);

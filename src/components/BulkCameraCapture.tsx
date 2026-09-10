@@ -22,8 +22,12 @@
 // قفل الشاشة يمرّ عبر نفس طبقة إدارة الطاقة/الوسائط في iOS (mediaserverd) المسؤولة عن
 // جلسة الكاميرا، والتشخيص الحيّ على الجهاز كان يُظهر المسار حيّاً لكن muted:true — أي
 // أن النظام يعامل الجلسة كأنها في الخلفية. إبقاء الشاشة صاحية أثناء التصوير ليس ضرورياً
-// أصلاً (الشاشة تبقى مضاءة ما دام الموظف يضغط زر الالتقاط)، فالمكسب لا يساوي تعطيل
-// الكاميرا بالكامل.
+// أصلاً (الشاشة تبقى مضاءة ما دام الموظف يضغط زر الالتقاط).
+//
+// القفل ما زال مستخدَماً في الرفع بالجملة (مهم هناك: انطفاء الشاشة يُجمّد الرفع)، لذلك
+// لا يكفي ألا تطلبه الكاميرا لنفسها — قد يكون الرفع شغّالاً بالفعل وقت فتح الكاميرا
+// (resumePendingUploads يبدأ دفعة بعد ثوانٍ من فتح التطبيق). لهذا تستدعي الكاميرا
+// suspendWakeLock() التي تُعلّق أي قفل قائم طوال فتحها وتستعيده عند الإغلاق.
 //
 // ملاحظة ثانية: أُبقي جزء تشغيل الكاميرا هنا أبسط ما يمكن عمداً (getUserMedia + <video>
 // عادي) — جُرِّبت طبقات "إصلاح" كثيرة للعطل نفسه (رسم canvas، إخفاء/تكبير الفيديو، إعادة
@@ -36,6 +40,7 @@ import { useBoxedBarcodeScanner } from "@/lib/useBoxedBarcodeScanner";
 import ScanBoxOverlay from "@/components/ScanBoxOverlay";
 import { normalizeDecimalInput } from "@/lib/constants";
 import { saveCapturedPiece, updateCapturedPiece, deleteCapturedPiece } from "@/lib/uploadRunner";
+import { suspendWakeLock } from "@/lib/keepAwake";
 import { toast } from "sonner";
 
 const BARCODE_SCAN_ENABLED = false;
@@ -112,8 +117,13 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
     };
     void start();
 
+    // نُعلّق أي قفل شاشة قائم (قد يكون الرفع شغّالاً في الخلفية) طوال فتح الكاميرا —
+    // راجع التحذير أعلى الملف وتعليق suspendWakeLock. يُستعاد تلقائياً عند الإغلاق.
+    const resumeWakeLock = suspendWakeLock();
+
     return () => {
       cancelled = true;
+      resumeWakeLock();
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };

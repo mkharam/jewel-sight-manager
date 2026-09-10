@@ -15,10 +15,11 @@ type SentinelLike = { released: boolean; release: () => Promise<void> } | null;
 
 let sentinel: SentinelLike = null;
 let holders = 0;
+let suspended = false;
 
 async function request() {
   const wl = (navigator as any)?.wakeLock;
-  if (!wl?.request || document.visibilityState !== "visible") return;
+  if (suspended || !wl?.request || document.visibilityState !== "visible") return;
   try {
     sentinel = await wl.request("screen");
   } catch {
@@ -30,6 +31,32 @@ function onVisibilityChange() {
   if (document.visibilityState === "visible" && holders > 0 && (!sentinel || sentinel.released)) {
     void request();
   }
+}
+
+/**
+ * تعليق القفل مؤقتاً مهما كان عدد المستدعين — ضروري أثناء فتح الكاميرا تحديداً.
+ *
+ * قفل الشاشة يمرّ عبر نفس طبقة إدارة الطاقة/الوسائط في iOS (mediaserverd) التي تدير
+ * جلسة الكاميرا، ووجوده أثناء getUserMedia كان يجعل النظام يعامل الجلسة كأنها في
+ * الخلفية فيرجع المسار حيّاً لكن muted:true بلا أي إطار — شاشة سوداء كاملة داخل
+ * التطبيق المثبَّت (راجع التحذير المفصّل أعلى BulkCameraCapture.tsx).
+ *
+ * الرفع قد يكون شغّالاً في الخلفية وقت فتح الكاميرا (resumePendingUploads يبدأ دفعة
+ * بعد ثوانٍ من فتح التطبيق)، فلا يكفي ألا تطلب الكاميرا القفل لنفسها — يجب تعليق أي
+ * قفل قائم أيضاً. يُستعاد تلقائياً عند إغلاق الكاميرا إن كان الرفع ما زال مستمراً.
+ */
+export function suspendWakeLock(): () => void {
+  suspended = true;
+  void sentinel?.release().catch(() => {});
+  sentinel = null;
+
+  let resumed = false;
+  return () => {
+    if (resumed) return;
+    resumed = true;
+    suspended = false;
+    if (holders > 0) void request();
+  };
 }
 
 /** يطلب القفل ويعيد دالة تحرير. يدعم عدة مستدعين متوازيين. */
