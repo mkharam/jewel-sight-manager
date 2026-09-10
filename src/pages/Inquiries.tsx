@@ -11,7 +11,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, MessageCircle, Phone, MapPin, PackagePlus } from "lucide-react";
+import { Plus, MessageCircle, Phone, MapPin, PackagePlus, Tag } from "lucide-react";
+import { Link } from "react-router-dom";
 import { INQUIRY_STATUS, KARAT_OPTIONS, formatCurrency, formatDate, InquiryStatus } from "@/lib/constants";
 import ReorderRequestDialog from "@/components/ReorderRequestDialog";
 import { toast } from "sonner";
@@ -39,6 +40,9 @@ export default function Inquiries() {
       .on("postgres_changes", { event: "*", schema: "public", table: "customer_inquiries" }, () => {
         qc.invalidateQueries({ queryKey: ["inquiries"] });
       })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "product_quotes" }, () => {
+        qc.invalidateQueries({ queryKey: ["quotes-feed"] });
+      })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [qc]);
@@ -46,6 +50,20 @@ export default function Inquiries() {
   const { data: branches } = useQuery({
     queryKey: ["branches"],
     queryFn: async () => (await supabase.from("branches").select("id,name").order("name")).data ?? [],
+  });
+
+  // الأسعار المعروضة على العملاء — كانت تظهر فقط في صفحة القطعة، الآن تظهر هنا أيضاً
+  // حتى يتابع الجميع كل سعر أُعطي لعميل بدون الحاجة لفتح كل قطعة على حدة.
+  const { data: quotes, isLoading: quotesLoading } = useQuery({
+    queryKey: ["quotes-feed"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("product_quotes")
+        .select("*, branch:branches(name), staff:profiles!product_quotes_quoted_by_fkey(full_name), product:products(id,name)")
+        .order("created_at", { ascending: false })
+        .limit(100);
+      return data ?? [];
+    },
   });
 
   const { data: inquiries, isLoading } = useQuery({
@@ -161,6 +179,47 @@ export default function Inquiries() {
           <p>لا توجد استفسارات بعد.</p>
         </div>
       )}
+
+      {/* الأسعار المعروضة على العملاء — تُسجَّل من صفحة كل قطعة (تسجيل سعر)، تظهر هنا
+          مجمّعة حتى تتابعها بدون فتح كل قطعة على حدة. */}
+      <div className="pt-4 border-t border-border">
+        <h2 className="text-lg font-bold flex items-center gap-2">
+          <Tag className="size-5 text-primary" /> الأسعار المعروضة على العملاء
+        </h2>
+        <p className="text-sm text-muted-foreground mb-3">كل سعر يُعطى لعميل من صفحة القطعة يظهر هنا فوراً.</p>
+
+        {quotesLoading ? (
+          <p className="text-center text-muted-foreground py-8">جارٍ...</p>
+        ) : quotes && quotes.length > 0 ? (
+          <div className="space-y-2">
+            {quotes.map((q: any) => (
+              <Link key={q.id} to={q.product?.id ? `/products/${q.product.id}` : "#"}>
+                <Card className="p-4 hover:bg-muted/40 transition-colors">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1">
+                      <h3 className="font-semibold">{q.product?.name ?? "قطعة محذوفة"}</h3>
+                      {q.customer_name && (
+                        <p className="text-xs text-muted-foreground mt-0.5">{q.customer_name}{q.customer_phone ? ` · ${q.customer_phone}` : ""}</p>
+                      )}
+                    </div>
+                    <span className="text-lg font-extrabold text-primary shrink-0">{formatCurrency(q.price)}</span>
+                  </div>
+                  {q.notes && <p className="text-sm mt-1.5">{q.notes}</p>}
+                  <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground pt-2 mt-2 border-t border-border">
+                    {q.branch?.name && <span className="flex items-center gap-1"><MapPin className="size-3" />{q.branch.name}</span>}
+                    <span className="ms-auto">{q.staff?.full_name} · {formatDate(q.created_at)}</span>
+                  </div>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground">
+            <Tag className="size-10 mx-auto mb-2 opacity-30" />
+            <p>لا توجد أسعار معروضة بعد.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
