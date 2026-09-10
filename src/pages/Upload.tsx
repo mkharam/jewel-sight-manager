@@ -4,7 +4,7 @@
 // - وضع "صينية": يفعّله المستخدم عندما تحتوي الصورة الواحدة على أكثر من قطعة.
 // - الرفع والحفظ يعملان في src/lib/uploadRunner.ts بمعزل عن هذا المكوّن، فالتنقّل لصفحة
 //   أخرى داخل التطبيق لا يوقفهما — فقط إغلاق التبويب نفسه يوقفهما.
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -37,17 +37,6 @@ export default function Upload() {
   const cameraRef = useRef<HTMLInputElement>(null);
   const queue = useUploadQueue();
   const [bulkCameraOpen, setBulkCameraOpen] = useState(false);
-  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
-
-  // نسخة سابقة كانت تحفظ علامة محلية (mkharam-camera-gum-broken) تُحوِّل "تصوير متتالي"
-  // مباشرة لكاميرا النظام بلا حتى محاولة الكاميرا الحيّة — أُزيلت هذه الآلية بالكامل،
-  // لكن أي جهاز ضبطها سابقاً (قبل هذا التحديث) تبقى العلامة في تخزينه المحلي ولا يقرأها
-  // أي كود حالياً فتصبح بلا أثر — إلا إن بقي الجهاز يشغّل نسخة قديمة مخزَّنة لم تُحدَّث
-  // بعد، وعندها الكود القديم نفسه لا يزال يقرأها. نمسحها هنا فور تحميل الصفحة كي لا
-  // يبقى أي أثر لها بمجرد وصول هذا التحديث فعلياً لذلك الجهاز.
-  useEffect(() => {
-    try { localStorage.removeItem("mkharam-camera-gum-broken"); } catch { /* تجاهل */ }
-  }, []);
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
@@ -82,26 +71,10 @@ export default function Upload() {
     });
   };
 
-  // نطلب بثّ الكاميرا داخل نقرة المستخدم نفسها ثم نمرّره للشاشة.
-  // السبب: كان الطلب يتم داخل useEffect بعد تغيّر الحالة، أي خارج نافذة "تفعيل
-  // المستخدم" — سفاري العادي متساهل مع هذا، أما التطبيق المثبّت (standalone) فيرفضه
-  // بصمت، وهذا سبب أن الكاميرا تشتغل في سفاري ولا تشتغل في التطبيق المثبّت.
-  const openCamera = async () => {
+  const openCamera = () => {
     if (!user) return toast.error("سجّل الدخول أولاً");
-    if (!supportsInAppCamera()) return cameraRef.current?.click();
-
-    // نفتح الشاشة في كل الأحوال حتى لو فشل الطلب هنا: الشاشة تعرض سبب الفشل وتحاول
-    // إعادة الطلب تلقائياً بنفسها. لو أغلقنا الطريق عند أول فشل لبقي الموظف بلا أي
-    // مسار للمتابعة.
-    let stream: MediaStream | null = null;
-    try {
-      // لا قيود أبعاد (كان 1920x1920 — مربّع غير طبيعي لمستشعر الكاميرا) تُعقِّد تفاوض
-      // iOS مع الجلسة بلا داعٍ؛ facingMode فقط ونترك الباقي للنظام.
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
-    } catch { /* الشاشة ستُظهر الخطأ وتحاول تلقائياً */ }
-
-    setCameraStream(stream);
-    setBulkCameraOpen(true);
+    if (supportsInAppCamera()) setBulkCameraOpen(true);
+    else cameraRef.current?.click();
   };
 
   return (
@@ -257,8 +230,7 @@ export default function Upload() {
 
       <BulkCameraCapture
         open={bulkCameraOpen}
-        initialStream={cameraStream}
-        onClose={() => { setBulkCameraOpen(false); setCameraStream(null); }}
+        onClose={() => setBulkCameraOpen(false)}
         userId={user?.id ?? ""}
         branchId={branchId === NO_BRANCH ? null : branchId}
         onFinished={(productIds) => navigate("/upload/review", { state: { productIds } })}

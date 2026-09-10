@@ -10,6 +10,15 @@
 //
 // الباركود التلقائي (قراءة الكاميرا المباشرة) مُعطَّل مؤقتاً (BARCODE_SCAN_ENABLED)
 // بطلب صريح — يبقى الكود جاهزاً لإعادة التفعيل بتغيير قيمة واحدة.
+//
+// ملاحظة مهمة: هذا الملف عمداً بسيط قدر الإمكان في جزء تشغيل الكاميرا (getUserMedia
+// + <video> عادي، بلا canvas ولا إعادة محاولة ولا تشخيص). جُرِّبت إصلاحات متعددة لمشكلة
+// شاشة سوداء على جهاز iOS واحد تحديداً (رسم canvas، إخفاء/تكبير الفيديو، إعادة طلب
+// الجلسة تلقائياً) ولم تحل المشكلة فعلياً — والدليل الفعلي (WebKit bug 273938) يقول إن
+// المشكلة خلل نظام iOS نفسه في مسار getUserMedia داخل تطبيقات الشاشة الرئيسية على بعض
+// الأجهزة، لا شيء يُصلَح من كود الصفحة. أُعيد هذا الملف عمداً لأبسط نسخة تعمل على أغلب
+// الأجهزة بدل إبقاء تعقيد إضافي لم يثبت أنه يحل شيئاً. لا تُضف طبقات "إصلاح" جديدة هنا
+// بدون دليل فعلي جديد من جهاز حقيقي يثبت أنها تُغيّر النتيجة.
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Camera, X, Check, Trash2, RotateCcw, ImageOff, Scale, ScanLine, Loader2, AlertCircle } from "lucide-react";
@@ -22,12 +31,6 @@ import { toast } from "sonner";
 
 const BARCODE_SCAN_ENABLED = false;
 
-// رقم مرئي في سطر التشخيص نفسه — بدونه لا طريقة نفرّق فيها هل لقطة شاشة تعكس آخر
-// إصلاح فعلاً أم نسخة قديمة عالقة (حصل هذا حرفياً: لقطة شاشة وصلت مطابقة تماماً للقطة
-// أقدم بثلاث نسخ، بصمتها التشخيصية كانت تخلو من حقول أُضيفت لاحقاً). يُزاد يدوياً مع
-// أي تعديل مهم على هذا الملف.
-const CAMERA_DEBUG_BUILD = "v10";
-
 type SaveState = "saving" | "saved" | "error";
 type Shot = { id: string; url: string; weight: string; barcode: string; saveState: SaveState };
 
@@ -38,92 +41,19 @@ interface Props {
   onClose: () => void;
   userId: string;
   branchId: string | null;
-  /** بثّ حصلنا عليه داخل نقرة المستخدم — يُستخدم كما هو بدل طلب جديد، راجع openCamera. */
-  initialStream?: MediaStream | null;
   /**
    * يُستدعى عند الضغط على "تم" مع معرّفات كل القطع التي حُفظت فعلاً في هذه الجلسة —
    * يُستخدم لأخذ الموظف مباشرة لمراجعتها بدل تركها تُحلَّل وتُسمّى تلقائياً في الخلفية
-   * بلا أي مراجعة بشرية (كان هذا يحصل حتى لمجرد تجربة الكاميرا بضغطة "تم" للخروج فقط).
+   * بلا أي مراجعة بشرية (كان هذا يحصل حتى لمجرد تجربة الكاميرا وضغط "تم" للخروج فقط).
    * لا تشمل صوراً ما زالت قيد الرفع لحظة الضغط على "تم" — تبقى تلك ظاهرة في صفحة
    * "مراجعة غير المسمّاة" العامة حتى تكتمل.
    */
   onFinished?: (savedProductIds: string[]) => void;
 }
 
-export default function BulkCameraCapture({ open, onClose, userId, branchId, initialStream, onFinished }: Props) {
+export default function BulkCameraCapture({ open, onClose, userId, branchId, onFinished }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  // نعرض canvas بدل video مباشرة — راجع التعليق المطوَّل عند startFramePump أدناه.
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const frameCountRef = useRef(0);
-  const rafRef = useRef<number | null>(null);
-  const pumpActiveRef = useRef(false);
-  // دليل فعلي على أن المُستخرَج مرئي لا مجرّد "تم الرسم" — راجع التعليق داخل pump().
-  const blackFrameStreakRef = useRef(0);
-  const lastPixelRef = useRef<[number, number, number] | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-
-  // نرسم على canvas بدل عرض <video> مباشرة، ونعتبر الكاميرا "جاهزة" فقط بعد نجاح رسم
-  // إطار حقيقي (لا بمجرد وصول videoWidth/readyState، التي رأينا تُبلَّغ صحيحة رغم عدم
-  // وجود أي إطار فعلي). الحلقة هنا تستمر بالفحص طوال فتح الشاشة بلا مهلة توقّف — على
-  // بعض الأجهزة يبدأ المسار (MediaStreamTrack) مكتوماً (tracks:.../muted في التشخيص)
-  // ويستغرق تفعيله من نظام iOS وقتاً متفاوتاً؛ جرّبنا سابقاً إغلاق الجلسة وطلب جلسة
-  // جديدة تلقائياً كل 2.5 ثانية عند رصد muted، لكن تبيّن أن هذا التدخّل نفسه قد يمنع
-  // النظام من إكمال تفعيل الجلسة أصلاً — فتوقّفنا عن التدخّل ونترك الفحص السلبي هنا
-  // يلتقط اللحظة التي يُفعِّل فيها النظام الجلسة فعلياً بنفسه.
-  const startFramePump = (video: HTMLVideoElement) => {
-    pumpActiveRef.current = true;
-    frameCountRef.current = 0;
-    blackFrameStreakRef.current = 0;
-    let n = 0;
-    const pump = () => {
-      if (!pumpActiveRef.current) return;
-      const canvas = canvasRef.current;
-      const w = video.videoWidth, h = video.videoHeight;
-      if (canvas && w > 0 && h > 0 && video.readyState >= 2) {
-        if (canvas.width !== w) canvas.width = w;
-        if (canvas.height !== h) canvas.height = h;
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.drawImage(video, 0, 0, w, h);
-          frameCountRef.current++;
-
-          // رسم إطار لا يعني بالضرورة صورة مرئية — رأينا حالة يُسجَّل فيها نجاح الرسم
-          // (frameCount>0) والشاشة تبقى سوداء رغم ذلك، أي أن المُستخرَج نفسه أسود أو
-          // canvas غير مركَّب بصرياً رغم قبول الرسم برمجياً (نفس فئة خلل WebKit، طبقة
-          // مختلفة). نتحقق فعلياً من المحتوى بأخذ عيّنة بكسلات كل عدّة إطارات بدل
-          // افتراض أن نجاح drawImage يعني صورة ظاهرة.
-          n++;
-          if (n % 6 === 0) {
-            try {
-              const cx = Math.floor(w / 2), cy = Math.floor(h / 2);
-              const px = ctx.getImageData(cx, cy, 1, 1).data;
-              const bright = px[0] + px[1] + px[2];
-              lastPixelRef.current = [px[0], px[1], px[2]];
-              if (bright < 6) blackFrameStreakRef.current++;
-              else blackFrameStreakRef.current = 0;
-            } catch { /* getImageData قد تُمنع (تصحيح خصوصية) — نتجاهل العيّنة فقط */ }
-          }
-
-          if (frameCountRef.current === 1) setReady(true);
-        }
-      }
-      rafRef.current =
-        "requestVideoFrameCallback" in video
-          ? (video as any).requestVideoFrameCallback(pump)
-          : requestAnimationFrame(pump);
-    };
-    pump();
-  };
-
-  const stopFramePump = () => {
-    pumpActiveRef.current = false;
-    if (rafRef.current != null) {
-      const video = videoRef.current as any;
-      if (video && "cancelVideoFrameCallback" in video) video.cancelVideoFrameCallback(rafRef.current);
-      else cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    }
-  };
   const [shots, setShots] = useState<Shot[]>([]);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -155,20 +85,11 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
 
     const start = async () => {
       try {
-        // البثّ الجاهز من نقرة الفتح يُستخدم كما هو في أول تشغيل فقط؛ تبديل الكاميرا
-        // لاحقاً يطلب بثّاً جديداً (وهو أيضاً ناتج عن نقرة مباشرة داخل الشاشة).
-        const first = !streamRef.current;
         streamRef.current?.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-
-        // لا نطلب أبعاداً محدَّدة (كان 1920x1920 — مربّع غير طبيعي لمستشعر الكاميرا
-        // الفعلي) — قيد كهذا يزيد تعقيد تفاوض iOS مع الجلسة بلا داعٍ حقيقي؛ facingMode
-        // فقط كافٍ ويترك القرار للنظام.
-        const reusable = !!initialStream && initialStream.getTracks().some((t) => t.readyState === "live");
-        const stream =
-          first && reusable
-            ? initialStream!
-            : await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing }, audio: false });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1920 } },
+          audio: false,
+        });
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
 
@@ -186,17 +107,11 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
           return;
         }
 
-        const video = videoRef.current;
-        video.srcObject = stream;
-        void video.play().catch(() => {});
-        startFramePump(video);
-
-        // لا إعادة طلب هنا: أوقفنا حلقة كانت تُغلق الجلسة وتطلب جلسة جديدة كل 2.5 ثانية
-        // عند track.muted — تكرار إغلاق/فتح الجلسة بهذه السرعة قد يمنع نظام iOS من
-        // إكمال تفعيلها أصلاً (تفكيك جلسة كاميرا له دورة حياة غير متزامنة قد لا تكتمل
-        // خلال 2.5 ثانية)، فكانت إعادة المحاولة نفسها تُبقي المسار عالقاً بدل حلّه.
-        // نترك pump() يستمر بفحص كل إطار طوال فتح الشاشة — لحظة يُفعِّل النظام الجلسة
-        // فعلياً (قد يستغرق ذلك وقتاً متفاوتاً) يلتقطها تلقائياً بلا أي تدخّل إضافي منّا.
+        videoRef.current.srcObject = stream;
+        // play() قد يُرفض على iOS إن لم تكن الإيماءة معتبرة — لا نُسقط الجلسة لأجله،
+        // العنصر playsInline/muted يبدأ العرض تلقائياً في أغلب الحالات.
+        try { await videoRef.current.play(); } catch { /* تجاهل */ }
+        setReady(true);
       } catch (e: any) {
         setError(e?.name === "NotAllowedError" ? "تم رفض إذن الكاميرا — فعّله من إعدادات المتصفح" : "تعذّر فتح الكاميرا");
       }
@@ -210,75 +125,10 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
     return () => {
       cancelled = true;
       releaseWakeLock();
-      stopFramePump();
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
   }, [open, facing]);
-
-  // تشخيص حيّ للمعاينة: الشاشة السوداء لها أسباب كثيرة متشابهة من الخارج (لا بثّ /
-  // بثّ بلا إطارات / عنصر بارتفاع صفر / تشغيل متوقّف). هذا السطر يفصل بينها بدل
-  // التخمين، ويظهر فقط حين لا تعمل المعاينة فعلاً فلا يزعج الاستخدام العادي.
-  const [diag, setDiag] = useState("");
-  useEffect(() => {
-    if (!open) return;
-    const id = setInterval(() => {
-      const v = videoRef.current;
-      const tracks = streamRef.current?.getVideoTracks() ?? [];
-      const t = tracks[0];
-      const r = v?.getBoundingClientRect();
-      setDiag(
-        [
-          `build:${CAMERA_DEBUG_BUILD}`,
-          `standalone:${(window.navigator as any).standalone ? "1" : "0"}`,
-          `tracks:${tracks.length}/${t?.readyState ?? "-"}${t?.muted ? "/muted" : ""}`,
-          `enabled:${t?.enabled ? "1" : "0"}`,
-          `video:${v?.videoWidth ?? 0}x${v?.videoHeight ?? 0}`,
-          `rs:${v?.readyState ?? "-"}`,
-          `paused:${v?.paused ? "1" : "0"}`,
-          `box:${Math.round(r?.width ?? 0)}x${Math.round(r?.height ?? 0)}`,
-          `srcObj:${v?.srcObject ? "1" : "0"}`,
-          `frames:${frameCountRef.current}`,
-          `px:${lastPixelRef.current ? lastPixelRef.current.join(",") : "-"}`,
-          `blackStreak:${blackFrameStreakRef.current}`,
-        ].join(" "),
-      );
-    }, 700);
-    return () => clearInterval(id);
-  }, [open]);
-
-  // المعاينة تُعتبر معطّلة إن لم يصل أي إطار (كالسابق) — أو إن وصلت إطارات لكن محتواها
-  // أسود باستمرار (≥5 عيّنات متتالية). الحالة الثانية هي بالضبط ما أبلغ عنه المستخدم:
-  // frameCount>0 (الرسم "نجح" برمجياً) والشاشة سوداء رغم ذلك — نجاح drawImage لا يعني
-  // صورة مرئية فعلاً، فلا نكتفي بعدّ الإطارات وحده كدليل جاهزية.
-  const previewBroken = !error && (frameCountRef.current === 0 || blackFrameStreakRef.current >= 5);
-
-  // إعادة المحاولة من نقرة المستخدم مباشرة — راجع التعليق عند زر "إعادة تشغيل الكاميرا".
-  const retryCamera = async () => {
-    setError(null);
-    setReady(false);
-    try {
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing }, audio: false });
-      streamRef.current = stream;
-      const video = videoRef.current;
-      if (!video) {
-        stream.getTracks().forEach((t) => t.stop());
-        setError("تعذّر عرض الكاميرا — أغلق الشاشة وافتحها من جديد");
-        return;
-      }
-      video.srcObject = stream;
-      void video.play().catch(() => {});
-      stopFramePump();
-      startFramePump(video);
-    } catch (e: any) {
-      setError(
-        e?.name === "NotAllowedError"
-          ? "تم رفض إذن الكاميرا — فعّله من إعدادات الآيفون ← مخرّم ← الكاميرا"
-          : "تعذّر فتح الكاميرا",
-      );
-    }
-  };
 
   // فحص مستمر للباركود/QR — معطَّل مؤقتاً (BARCODE_SCAN_ENABLED)، راجع التعليق أعلى الملف.
   useBoxedBarcodeScanner(videoRef, open && ready && BARCODE_SCAN_ENABLED, (text) => setPendingBarcode(text));
@@ -326,17 +176,14 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
   };
 
   const capture = () => {
-    // نلتقط من نفس canvas المعروض على الشاشة (آخر إطار رسمته حلقة startFramePump)
-    // بدل إعادة الرسم من video مباشرة — هذا الالتقاط يطابق ما يراه الموظف فعلاً،
-    // ولا يعتمد على video.videoWidth/readyState التي أثبتنا أنها قد تُضلِّل.
-    const live = canvasRef.current;
-    if (!live || !ready || frameCountRef.current === 0) return;
+    const video = videoRef.current;
+    if (!video || !ready) return;
     const canvas = document.createElement("canvas");
-    canvas.width = live.width;
-    canvas.height = live.height;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.drawImage(live, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const barcodeForShot = pendingBarcode ?? "";
     setPendingBarcode(null);
     canvas.toBlob(
@@ -472,49 +319,12 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
       {/* عرض الكاميرا */}
       <div className="relative flex-1 overflow-hidden bg-black flex items-center justify-center">
         {error ? (
-          <div className="text-center text-white p-6 space-y-3">
+          <div className="text-center text-white p-6 space-y-2">
             <ImageOff className="size-10 mx-auto text-white/70" />
             <p className="font-semibold">{error}</p>
-            {/* محاولة يدوية: الطلب هنا يقع داخل نقرة المستخدم مباشرة، وهي الحالة الوحيدة
-                التي يقبلها التطبيق المثبّت على iOS بشكل موثوق. */}
-            <Button variant="secondary" onClick={retryCamera}>
-              <RotateCcw className="size-4 ml-1" /> إعادة تشغيل الكاميرا
-            </Button>
           </div>
         ) : (
-          <>
-            {/* video مصدر فك التشفير فقط — canvas هو المعروض فعلياً.
-                تاريخ هذا العنصر (حتى لا يُعاد نفس التخمين مرة ثالثة):
-                1) بدأ بحجم حقيقي كامل خلف canvas.
-                2) جُرِّب تصغيره لبكسل واحد مع opacity:0 بعد أن أفاد المستخدم أن الكاميرا
-                   عملت قبل ذلك — لكن دليلاً جديداً من نفس الجهاز (build:v8) أظهر أن
-                   المسار (track) يُصبح فعلياً "غير مكتوم" ويحمل بيانات حقيقية (tracks:
-                   1/live بلا "muted") ومع ذلك يبقى rs:0/frames:0 طالما video بهذا الحجم
-                   المصغَّر (box:1x1) — أي أن التصغير نفسه يمنع فكّ التشفير حتى مع بثّ
-                   سليم فعلاً، لا مجرد نظرية هذه المرة بل ملاحظة مباشرة من تشخيص حيّ.
-                لذلك رجع لحجمه الحقيقي، ويُغطّيه canvas بصرياً بترتيب DOM فقط (بعده
-                مباشرة) بلا أي تصغير أو إخفاء. */}
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-            />
-            <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-contain" />
-          </>
-        )}
-
-        {/* لا نُغلق/نُعيد فتح الجلسة تلقائياً بعد الآن (راجع تعليق start()) — الحلقة
-            الفعلية تنتظر بصمت لحظة تفعيل iOS للجلسة فعلياً. سطر التشخيص هنا للمراجعة
-            فقط، غير مرتبط بأي إجراء تلقائي. */}
-        {previewBroken && (
-          <div className="absolute inset-x-3 bottom-3 space-y-2 text-center">
-            <p className="text-white/80 text-xs">
-              {ready ? "الكاميرا مفتوحة لكن لا تصل صورة" : "جارٍ تشغيل الكاميرا…"}
-            </p>
-            <p className="font-mono text-[9px] text-white/45 break-all leading-snug" dir="ltr">{diag}</p>
-          </div>
+          <video ref={videoRef} playsInline muted className="w-full h-full object-contain" />
         )}
         {flash && <div className="absolute inset-0 bg-white/80 animate-pulse" />}
 
