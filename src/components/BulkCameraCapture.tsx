@@ -26,7 +26,7 @@ const BARCODE_SCAN_ENABLED = false;
 // إصلاح فعلاً أم نسخة قديمة عالقة (حصل هذا حرفياً: لقطة شاشة وصلت مطابقة تماماً للقطة
 // أقدم بثلاث نسخ، بصمتها التشخيصية كانت تخلو من حقول أُضيفت لاحقاً). يُزاد يدوياً مع
 // أي تعديل مهم على هذا الملف.
-const CAMERA_DEBUG_BUILD = "v8";
+const CAMERA_DEBUG_BUILD = "v9";
 
 type SaveState = "saving" | "saved" | "error";
 type Shot = { id: string; url: string; weight: string; barcode: string; saveState: SaveState };
@@ -520,20 +520,25 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
           </div>
         ) : (
           <>
-            {/* video مصدر فك التشفير فقط ولا يُعرض أبداً — canvas هو المعروض فعلياً.
-                هذا هو الشكل الذي أكّد المستخدم عمله فعلياً على جهازه (opacity:0 بحجم
-                بكسل واحد). جرّبت لاحقاً تغييره لحجم حقيقي خلف canvas بناءً على نظرية
-                غير مؤكَّدة (أن الحجم الصغير يُوقف فكّ التشفير)، وهذا التغيير نفسه هو
-                على الأرجح ما أعاد الشاشة سوداء بعده — رجعت للشكل المؤكَّد عمله. لا
-                تُغيّر هذا بلا دليل فعلي جديد من الجهاز. */}
+            {/* video مصدر فك التشفير فقط — canvas هو المعروض فعلياً.
+                تاريخ هذا العنصر (حتى لا يُعاد نفس التخمين مرة ثالثة):
+                1) بدأ بحجم حقيقي كامل خلف canvas.
+                2) جُرِّب تصغيره لبكسل واحد مع opacity:0 بعد أن أفاد المستخدم أن الكاميرا
+                   عملت قبل ذلك — لكن دليلاً جديداً من نفس الجهاز (build:v8) أظهر أن
+                   المسار (track) يُصبح فعلياً "غير مكتوم" ويحمل بيانات حقيقية (tracks:
+                   1/live بلا "muted") ومع ذلك يبقى rs:0/frames:0 طالما video بهذا الحجم
+                   المصغَّر (box:1x1) — أي أن التصغير نفسه يمنع فكّ التشفير حتى مع بثّ
+                   سليم فعلاً، لا مجرد نظرية هذه المرة بل ملاحظة مباشرة من تشخيص حيّ.
+                لذلك رجع لحجمه الحقيقي، ويُغطّيه canvas بصرياً بترتيب DOM فقط (بعده
+                مباشرة) بلا أي تصغير أو إخفاء. */}
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
-              className="absolute opacity-0 pointer-events-none w-px h-px"
+              className="absolute inset-0 w-full h-full object-contain pointer-events-none"
             />
-            <canvas ref={canvasRef} className="w-full h-full object-contain" />
+            <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-contain" />
           </>
         )}
 
