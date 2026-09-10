@@ -26,7 +26,7 @@ const BARCODE_SCAN_ENABLED = false;
 // إصلاح فعلاً أم نسخة قديمة عالقة (حصل هذا حرفياً: لقطة شاشة وصلت مطابقة تماماً للقطة
 // أقدم بثلاث نسخ، بصمتها التشخيصية كانت تخلو من حقول أُضيفت لاحقاً). يُزاد يدوياً مع
 // أي تعديل مهم على هذا الملف.
-const CAMERA_DEBUG_BUILD = "v7";
+const CAMERA_DEBUG_BUILD = "v8";
 
 type SaveState = "saving" | "saved" | "error";
 type Shot = { id: string; url: string; weight: string; barcode: string; saveState: SaveState };
@@ -48,17 +48,9 @@ interface Props {
    * "مراجعة غير المسمّاة" العامة حتى تكتمل.
    */
   onFinished?: (savedProductIds: string[]) => void;
-  /**
-   * يُستدعى إن استُنفدت محاولات إعادة الطلب التلقائية عند track.muted بلا أي إطار
-   * حقيقي واحد — دليل ميداني (4 محاولات جديدة فعلياً، لا إعادة استخدام) على أن
-   * getUserMedia داخل هذا التطبيق المثبَّت لا يعمل إطلاقاً على هذا الجهاز تحديداً،
-   * لا عطل عابر. المستدعي يتوقّع أن يفتح كاميرا النظام (<input capture>) بدلاً منها،
-   * وهي مسار مختلف تماماً لا يمرّ عبر getUserMedia فيتجاوز المشكلة كلياً.
-   */
-  onGiveUp?: () => void;
 }
 
-export default function BulkCameraCapture({ open, onClose, userId, branchId, initialStream, onFinished, onGiveUp }: Props) {
+export default function BulkCameraCapture({ open, onClose, userId, branchId, initialStream, onFinished }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   // نعرض canvas بدل video مباشرة — راجع التعليق المطوَّل عند startFramePump أدناه.
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -234,18 +226,10 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
           }
         }
 
-        // 4 طلبات جديدة فعلياً ولا إطار واحد — تأكّدنا ميدانياً أن هذا ليس عطلاً عابراً
-        // يزول بالمحاولة، بل getUserMedia داخل هذا التطبيق المثبَّت لا يعمل إطلاقاً على
-        // هذا الجهاز. الاستمرار في إعادة المحاولة من هنا مضيعة وقت — نُسلِّم الأمر
-        // لكاميرا النظام (مسار مختلف كلياً لا يمرّ عبر getUserMedia) بدل شاشة سوداء دائمة.
-        if (!cancelled && frameCountRef.current === 0) {
-          setError("تعذّر تشغيل الكاميرا داخل التطبيق على هذا الجهاز — سنستخدم كاميرا النظام بدلاً منها");
-          await new Promise((r) => setTimeout(r, 1800));
-          if (!cancelled) {
-            onClose();
-            onGiveUp?.();
-          }
-        }
+        // 4 طلبات جديدة فعلياً ولا إطار واحد — تبقى الشاشة كما هي (بلا تحويل تلقائي
+        // لأي مسار آخر) والتشخيص الحيّ ظاهر تحتها، حتى تُراجَع الحالة الفعلية على
+        // الجهاز (مثال: وضع توفير الطاقة يُعرف بأيقونة البطارية الصفراء) بدل إخفاء
+        // المشكلة خلف تحويل صامت لمسار مختلف.
       } catch (e: any) {
         setError(e?.name === "NotAllowedError" ? "تم رفض إذن الكاميرا — فعّله من إعدادات المتصفح" : "تعذّر فتح الكاميرا");
       }

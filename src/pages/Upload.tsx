@@ -76,17 +76,9 @@ export default function Upload() {
   // السبب: كان الطلب يتم داخل useEffect بعد تغيّر الحالة، أي خارج نافذة "تفعيل
   // المستخدم" — سفاري العادي متساهل مع هذا، أما التطبيق المثبّت (standalone) فيرفضه
   // بصمت، وهذا سبب أن الكاميرا تشتغل في سفاري ولا تشتغل في التطبيق المثبّت.
-  // بعض الأجهزة (تأكّدنا ميدانياً على الأقل من جهاز واحد) لا يعمل عليها getUserMedia
-  // إطلاقاً داخل التطبيق المثبَّت — المسار الحيّ يستنفد 4 محاولات فعلية (~11 ثانية)
-  // ثم يُبلِّغ BulkCameraCapture عبر onGiveUp أدناه. هذا ثابت على الجهاز لا عابر، فمن
-  // غير المنطقي تكرار نفس الانتظار كل مرة يفتح فيها الموظف الكاميرا — نتذكّره محلياً
-  // (بلا اتصال بالخادم، خاص بهذا الجهاز/المتصفح فقط) ونتجه مباشرة لكاميرا النظام.
-  const GUM_BROKEN_KEY = "mkharam-camera-gum-broken";
-
   const openCamera = async () => {
     if (!user) return toast.error("سجّل الدخول أولاً");
     if (!supportsInAppCamera()) return cameraRef.current?.click();
-    if (localStorage.getItem(GUM_BROKEN_KEY) === "1") return cameraRef.current?.click();
 
     // نفتح الشاشة في كل الأحوال حتى لو فشل الطلب هنا: الشاشة تعرض سبب الفشل وتحاول
     // إعادة الطلب تلقائياً بنفسها. لو أغلقنا الطريق عند أول فشل لبقي الموظف بلا أي
@@ -261,14 +253,6 @@ export default function Upload() {
         userId={user?.id ?? ""}
         branchId={branchId === NO_BRANCH ? null : branchId}
         onFinished={(productIds) => navigate("/upload/review", { state: { productIds } })}
-        // بعد استنفاد إعادة المحاولة التلقائية داخل الكاميرا الحيّة (track يبقى مكتوماً
-        // من iOS رغم 4 طلبات جديدة فعلياً — تأكّدنا هذا ثابت على هذا الجهاز لا عابر)،
-        // نفتح كاميرا النظام مباشرة: مسار مختلف تماماً (<input capture>) لا يمرّ عبر
-        // getUserMedia إطلاقاً فيتجاوز المشكلة بدل الإصرار على مسار مُثبَت العطل.
-        onGiveUp={() => {
-          try { localStorage.setItem(GUM_BROKEN_KEY, "1"); } catch { /* تجاهل — تحسين فقط */ }
-          cameraRef.current?.click();
-        }}
       />
     </div>
   );
