@@ -75,10 +75,25 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId }: P
         });
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
+
+        // عنصر <video> لا يُعرض أثناء وجود خطأ، فقد لا يكون موجوداً بعد لحظة عودة
+        // getUserMedia (مثلاً عند إعادة المحاولة بعد رفض الإذن، أو عند تبديل الكاميرا).
+        // كنا نضع setReady(true) رغم ذلك فتظهر شاشة سوداء بلا صورة وبلا رسالة خطأ —
+        // ننتظر ظهور العنصر بضع دورات بدل الاستسلام الصامت.
+        for (let i = 0; i < 20 && !videoRef.current && !cancelled; i++) {
+          await new Promise((r) => setTimeout(r, 50));
         }
+        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+        if (!videoRef.current) {
+          stream.getTracks().forEach((t) => t.stop());
+          setError("تعذّر عرض الكاميرا — أغلق الشاشة وافتحها من جديد");
+          return;
+        }
+
+        videoRef.current.srcObject = stream;
+        // play() قد يُرفض على iOS إن لم تكن الإيماءة معتبرة — لا نُسقط الجلسة لأجله،
+        // العنصر playsInline/muted يبدأ العرض تلقائياً في أغلب الحالات.
+        try { await videoRef.current.play(); } catch { /* تجاهل */ }
         setReady(true);
       } catch (e: any) {
         setError(e?.name === "NotAllowedError" ? "تم رفض إذن الكاميرا — فعّله من إعدادات المتصفح" : "تعذّر فتح الكاميرا");

@@ -28,8 +28,25 @@ export type PendingUpload = {
   createdAt: number;
 };
 
+/**
+ * حدّ زمني إلزامي لكل عملية تخزين.
+ *
+ * indexedDB.open قد لا يُطلق onsuccess ولا onerror إطلاقاً فيبقى الوعد معلّقاً للأبد —
+ * يحدث عند onblocked (تبويب آخر يحمل نسخة أقدم) وهو عطل معروف في سفاري iOS خصوصاً داخل
+ * التطبيق المثبّت بعد رجوعه من الخلفية. بدون هذا الحدّ كان أي تعليق هنا يُجمّد التقاط
+ * الصور نفسه، لأن الحفظ يسبق الرفع في saveCapturedPiece — أي كاميرا تبدو "معلّقة" بلا
+ * أي رسالة خطأ. التخزين تحسين احتياطي فقط، فتجاوزه أهون بكثير من تعطيل التصوير.
+ */
+function withTimeout<T>(p: Promise<T>, ms = 3000): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error("idb timeout")), ms)),
+  ]);
+}
+
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") return reject(new Error("no indexedDB"));
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
@@ -37,19 +54,23 @@ function openDb(): Promise<IDBDatabase> {
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error("idb blocked"));
   });
 }
 
 function tx<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  return openDb().then(
-    (db) =>
-      new Promise<T>((resolve, reject) => {
-        const t = db.transaction(STORE, mode);
-        const req = run(t.objectStore(STORE));
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-        t.oncomplete = () => db.close();
-      }),
+  return withTimeout(
+    openDb().then(
+      (db) =>
+        new Promise<T>((resolve, reject) => {
+          const t = db.transaction(STORE, mode);
+          const req = run(t.objectStore(STORE));
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+          t.onabort = () => reject(t.error ?? new Error("idb aborted"));
+          t.oncomplete = () => db.close();
+        }),
+    ),
   );
 }
 
