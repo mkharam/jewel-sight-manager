@@ -4,7 +4,7 @@
 // - وضع "صينية": يفعّله المستخدم عندما تحتوي الصورة الواحدة على أكثر من قطعة.
 // - الرفع والحفظ يعملان في src/lib/uploadRunner.ts بمعزل عن هذا المكوّن، فالتنقّل لصفحة
 //   أخرى داخل التطبيق لا يوقفهما — فقط إغلاق التبويب نفسه يوقفهما.
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -38,6 +38,16 @@ export default function Upload() {
   const queue = useUploadQueue();
   const [bulkCameraOpen, setBulkCameraOpen] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+
+  // نسخة سابقة كانت تحفظ علامة محلية (mkharam-camera-gum-broken) تُحوِّل "تصوير متتالي"
+  // مباشرة لكاميرا النظام بلا حتى محاولة الكاميرا الحيّة — أُزيلت هذه الآلية بالكامل،
+  // لكن أي جهاز ضبطها سابقاً (قبل هذا التحديث) تبقى العلامة في تخزينه المحلي ولا يقرأها
+  // أي كود حالياً فتصبح بلا أثر — إلا إن بقي الجهاز يشغّل نسخة قديمة مخزَّنة لم تُحدَّث
+  // بعد، وعندها الكود القديم نفسه لا يزال يقرأها. نمسحها هنا فور تحميل الصفحة كي لا
+  // يبقى أي أثر لها بمجرد وصول هذا التحديث فعلياً لذلك الجهاز.
+  useEffect(() => {
+    try { localStorage.removeItem("mkharam-camera-gum-broken"); } catch { /* تجاهل */ }
+  }, []);
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
