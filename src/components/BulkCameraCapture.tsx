@@ -38,7 +38,55 @@ interface Props {
 
 export default function BulkCameraCapture({ open, onClose, userId, branchId, initialStream }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  // نعرض canvas بدل video مباشرة — راجع التعليق المطوَّل عند startFramePump أدناه.
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const frameCountRef = useRef(0);
+  const rafRef = useRef<number | null>(null);
+  const pumpActiveRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
+
+  // خلل معروف في WebKit: التطبيق المثبَّت على الآيفون (standalone) لا يُركِّب
+  // (compositing) عنصر <video> فوق الشاشة عند تشغيله من MediaStream مباشر — يبقى
+  // أسود رغم أن التشغيل غير متوقّف والبثّ حيّ (تحققنا من هذا حرفياً عبر تشخيص حيّ
+  // على الجهاز نفسه: paused:0 و tracks:live لكن لا صورة). نفس هذا البثّ يبقى قابلاً
+  // لالتقاط إطاراته عبر drawImage إلى <canvas> رغم فشل عرضه في <video> — فنعرض
+  // canvas بدل video، ونعتبر الكاميرا "جاهزة" فقط بعد نجاح رسم إطار حقيقي فعلاً،
+  // لا بمجرد وصول بيانات وصفية قد تكون مضلِّلة (رأينا videoWidth يُبلَّغ رغم
+  // readyState=0 وعدم وجود أي إطار فعلي).
+  const startFramePump = (video: HTMLVideoElement) => {
+    pumpActiveRef.current = true;
+    frameCountRef.current = 0;
+    const pump = () => {
+      if (!pumpActiveRef.current) return;
+      const canvas = canvasRef.current;
+      const w = video.videoWidth, h = video.videoHeight;
+      if (canvas && w > 0 && h > 0 && video.readyState >= 2) {
+        if (canvas.width !== w) canvas.width = w;
+        if (canvas.height !== h) canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, w, h);
+          frameCountRef.current++;
+          if (frameCountRef.current === 1) setReady(true);
+        }
+      }
+      rafRef.current =
+        "requestVideoFrameCallback" in video
+          ? (video as any).requestVideoFrameCallback(pump)
+          : requestAnimationFrame(pump);
+    };
+    pump();
+  };
+
+  const stopFramePump = () => {
+    pumpActiveRef.current = false;
+    if (rafRef.current != null) {
+      const video = videoRef.current as any;
+      if (video && "cancelVideoFrameCallback" in video) video.cancelVideoFrameCallback(rafRef.current);
+      else cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+  };
   const [shots, setShots] = useState<Shot[]>([]);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,31 +151,8 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
 
         const video = videoRef.current;
         video.srcObject = stream;
-
-        // لا ننتظر play() أبداً. وعدها على سفاري iOS — خصوصاً داخل التطبيق المثبّت —
-        // قد لا يستقر إطلاقاً (لا يُحلّ ولا يُرفض)، وكان await عليه يمنع الوصول إلى
-        // setReady(true). والنتيجة بالضبط ما يشتكي منه المستخدم: شاشة سوداء وزر التقاط
-        // معطّل (disabled={!ready}) بلا أي رسالة خطأ تشرح السبب.
         void video.play().catch(() => {});
-
-        // الجاهزية تُقاس بوصول أبعاد الفيديو فعلياً، مع مهلة احتياطية حتى لا نعلق أبداً.
-        await new Promise<void>((resolve) => {
-          if (video.readyState >= 2 || video.videoWidth > 0) return resolve();
-          let settled = false;
-          const done = () => {
-            if (settled) return;
-            settled = true;
-            video.removeEventListener("loadedmetadata", done);
-            video.removeEventListener("canplay", done);
-            resolve();
-          };
-          video.addEventListener("loadedmetadata", done);
-          video.addEventListener("canplay", done);
-          setTimeout(done, 3000);
-        });
-
-        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
-        setReady(true);
+        startFramePump(video);
       } catch (e: any) {
         setError(e?.name === "NotAllowedError" ? "تم رفض إذن الكاميرا — فعّله من إعدادات المتصفح" : "تعذّر فتح الكاميرا");
       }
@@ -141,6 +166,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
     return () => {
       cancelled = true;
       releaseWakeLock();
+      stopFramePump();
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
@@ -167,14 +193,17 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
           `paused:${v?.paused ? "1" : "0"}`,
           `box:${Math.round(r?.width ?? 0)}x${Math.round(r?.height ?? 0)}`,
           `srcObj:${v?.srcObject ? "1" : "0"}`,
+          `frames:${frameCountRef.current}`,
         ].join(" "),
       );
     }, 700);
     return () => clearInterval(id);
   }, [open]);
 
-  // المعاينة تُعتبر معطّلة إن لم تصل إطارات فعلية رغم عدم وجود رسالة خطأ.
-  const previewBroken = !error && (!ready || (videoRef.current?.videoWidth ?? 0) === 0);
+  // المعاينة تُعتبر معطّلة فقط إن لم يصل أي إطار حقيقي مرسوم على canvas — هذا دليل
+  // فعلي بعكس videoWidth/readyState اللذين قد يوهمان بجاهزية غير موجودة (وهذا بالضبط
+  // خلل WebKit في التطبيق المثبَّت الذي دفعنا لاعتماد canvas أصلاً).
+  const previewBroken = !error && frameCountRef.current === 0;
 
   // إعادة المحاولة من نقرة المستخدم مباشرة — راجع التعليق عند زر "إعادة تشغيل الكاميرا".
   const retryCamera = async () => {
@@ -195,7 +224,8 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
       }
       video.srcObject = stream;
       void video.play().catch(() => {});
-      setReady(true);
+      stopFramePump();
+      startFramePump(video);
     } catch (e: any) {
       setError(
         e?.name === "NotAllowedError"
@@ -251,14 +281,17 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
   };
 
   const capture = () => {
-    const video = videoRef.current;
-    if (!video || !ready) return;
+    // نلتقط من نفس canvas المعروض على الشاشة (آخر إطار رسمته حلقة startFramePump)
+    // بدل إعادة الرسم من video مباشرة — هذا الالتقاط يطابق ما يراه الموظف فعلاً،
+    // ولا يعتمد على video.videoWidth/readyState التي أثبتنا أنها قد تُضلِّل.
+    const live = canvasRef.current;
+    if (!live || !ready || frameCountRef.current === 0) return;
     const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    canvas.width = live.width;
+    canvas.height = live.height;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(live, 0, 0, canvas.width, canvas.height);
     const barcodeForShot = pendingBarcode ?? "";
     setPendingBarcode(null);
     canvas.toBlob(
@@ -400,9 +433,19 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
             </Button>
           </div>
         ) : (
-          /* autoPlay مع playsInline وmuted هي التركيبة التي يشترطها سفاري iOS لبدء
-             العرض دون إيماءة مستخدم — بدون autoPlay قد تبقى الشاشة سوداء رغم وصول البثّ */
-          <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-contain" />
+          <>
+            {/* video مصدر فك التشفير فقط ولا يُعرض أبداً — عرضه هو ما يظهر أسود في
+                التطبيق المثبَّت على iOS (راجع تعليق startFramePump). autoPlay مع
+                playsInline وmuted ضروريان رغم إخفائه لبدء فك التشفير دون إيماءة. */}
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="absolute opacity-0 pointer-events-none w-px h-px"
+            />
+            <canvas ref={canvasRef} className="w-full h-full object-contain" />
+          </>
         )}
 
         {/* شاشة سوداء بلا رسالة خطأ: نعرض حالة المعاينة الفعلية وزر إعادة تشغيل مباشر */}
