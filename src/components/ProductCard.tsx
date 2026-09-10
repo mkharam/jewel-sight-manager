@@ -18,6 +18,7 @@ import QuickQuoteSheet from "@/components/QuickQuoteSheet";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
 
 export interface ProductCardData {
   id: string;
@@ -58,6 +59,11 @@ export default function ProductCard({
   const imgUrl = getImageUrl(primary?.storage_path);
   const status = PRODUCT_STATUS[product.status];
   const [pending, setPending] = useState<ProductStatus | null>(null);
+  const { roles, profile } = useAuth();
+  const isAdmin = roles.includes("admin");
+  const isManager = roles.includes("manager");
+  // تغيير الحالة السريع تعديل — يقتصر على المدير العام أو المشرف على قطع فرعه فقط.
+  const canEditStatus = isAdmin || (isManager && product.branch_id === profile?.branch_id);
 
   const quickSetStatus = async (next: ProductStatus) => {
     if (next === product.status) return;
@@ -187,7 +193,8 @@ export default function ProductCard({
             />
           </div>
 
-          {/* Quick status menu — top-right of body, below badge */}
+          {/* Quick status menu — top-right of body, below badge (المدير/المشرف على فرعه فقط) */}
+          {canEditStatus && (
           <div
             className="absolute bottom-2 right-2 z-10"
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
@@ -221,6 +228,7 @@ export default function ProductCard({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+          )}
         </>
       )}
     </Card>

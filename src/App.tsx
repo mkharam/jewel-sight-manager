@@ -27,6 +27,7 @@ const StockTake = lazy(() => import("@/pages/StockTake"));
 const Sales = lazy(() => import("@/pages/Sales"));
 const LiveAdd = lazy(() => import("@/pages/LiveAdd"));
 const AdminProducts = lazy(() => import("@/pages/AdminProducts"));
+const Notifications = lazy(() => import("@/pages/Notifications"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 function PageLoader() {
@@ -66,6 +67,7 @@ const App = () => (
                 <Route path="/products/:id" element={<ProductDetail />} />
                 <Route path="/products/:id/edit" element={<ProductForm />} />
                 <Route path="/inquiries" element={<Inquiries />} />
+                <Route path="/notifications" element={<Notifications />} />
                 <Route path="/upload" element={<Upload />} />
                 <Route path="/live-add" element={<LiveAdd />} />
                 <Route path="/upload/review" element={<ReviewUnnamed />} />

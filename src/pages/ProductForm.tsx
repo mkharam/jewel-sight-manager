@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
@@ -55,7 +55,12 @@ export default function ProductForm() {
   const { id } = useParams<{ id: string }>();
   const editing = id && id !== "new";
   const navigate = useNavigate();
-  const { user, profile } = useAuth();
+  const { user, profile, roles } = useAuth();
+  const isAdmin = roles.includes("admin");
+  const isManager = roles.includes("manager");
+  // الموظف لا يملك صلاحية التعديل/الإضافة الكاملة إطلاقاً (يضيف صوراً/وزناً فقط من صفحة
+  // القطعة). المشرف يقتصر على قطع فرعه — يُتحقّق من فرع القطعة الفعلي بعد تحميلها أدناه.
+  const [loadedProductBranch, setLoadedProductBranch] = useState<string | null | "pending">("pending");
 
   const [form, setForm] = useState({
     name: "", sku: "", category_id: "", branch_id: "",
@@ -97,6 +102,7 @@ export default function ProductForm() {
     (async () => {
       const { data } = await supabase.from("products").select("*, images:product_images(id,storage_path,is_primary,sort_order)").eq("id", id!).maybeSingle();
       if (!data) return;
+      setLoadedProductBranch(data.branch_id ?? null);
       setForm({
         name: data.name ?? "", sku: data.sku ?? "",
         category_id: data.category_id ?? "", branch_id: data.branch_id ?? "",
@@ -311,6 +317,13 @@ export default function ProductForm() {
     setExistingImages((arr) => arr.filter((i) => i.id !== imgId));
   };
 
+  // الموظف لا يصل لهذه الصفحة إطلاقاً (يستخدم "تحديث سريع" من صفحة القطعة بدلاً منها).
+  // المشرف يقتصر على قطع فرعه فقط — بعد تحميل القطعة (وضع التعديل)، إن كانت لفرع آخر يُعاد توجيهه.
+  if (!isAdmin && !isManager) return <Navigate to="/" replace />;
+  if (isManager && editing && loadedProductBranch !== "pending" && loadedProductBranch !== profile?.branch_id) {
+    return <Navigate to={`/products/${id}`} replace />;
+  }
+
   return (
     <div className="max-w-3xl mx-auto space-y-4">
       <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
@@ -459,8 +472,10 @@ export default function ProductForm() {
 
         <Card className="p-5 space-y-4">
           <h2 className="font-bold">الأسعار</h2>
-          <div className="grid grid-cols-3 gap-3">
-            <Field label="التكلفة"><Input type="number" step="0.01" inputMode="decimal" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} dir="ltr" /></Field>
+          <div className={`grid gap-3 ${isAdmin ? "grid-cols-3" : "grid-cols-2"}`}>
+            {isAdmin && (
+              <Field label="التكلفة"><Input type="number" step="0.01" inputMode="decimal" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} dir="ltr" /></Field>
+            )}
             <Field label="سعر البيع"><Input type="number" step="0.01" inputMode="decimal" value={form.sale_price} onChange={(e) => setForm({ ...form, sale_price: e.target.value })} dir="ltr" /></Field>
             <Field label="سعر العرض"><Input type="number" step="0.01" inputMode="decimal" value={form.promo_price} onChange={(e) => setForm({ ...form, promo_price: e.target.value })} dir="ltr" /></Field>
           </div>

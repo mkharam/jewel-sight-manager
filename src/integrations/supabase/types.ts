@@ -44,6 +44,42 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_model_limits: {
+        Row: {
+          limit_value: number
+          model: string
+          updated_at: string
+        }
+        Insert: {
+          limit_value: number
+          model: string
+          updated_at?: string
+        }
+        Update: {
+          limit_value?: number
+          model?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      ai_usage_daily: {
+        Row: {
+          day: string
+          model: string
+          used: number
+        }
+        Insert: {
+          day?: string
+          model: string
+          used?: number
+        }
+        Update: {
+          day?: string
+          model?: string
+          used?: number
+        }
+        Relationships: []
+      }
       branches: {
         Row: {
           code: string | null
@@ -1152,7 +1188,7 @@ export type Database = {
             foreignKeyName: "transfers_approved_by_fkey"
             columns: ["approved_by"]
             isOneToOne: false
-            referencedRelation: "profiles"
+            referencedRelation: "branches"
             referencedColumns: ["id"]
           },
           {
@@ -1276,6 +1312,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      increment_ai_usage: {
+        Args: { p_day: string; p_model: string }
+        Returns: undefined
+      }
       is_branch_manager: {
         Args: { _branch_id: string; _user_id: string }
         Returns: boolean
@@ -1318,6 +1358,18 @@ export type Database = {
       }
       sku_type_letter: { Args: { _item_type: string }; Returns: string }
       tags_from_ai_labels: { Args: { labels: Json }; Returns: string[] }
+      update_product_barcode: {
+        Args: { p_barcode_value: string; p_product_id: string }
+        Returns: undefined
+      }
+      update_product_weight: {
+        Args: { p_product_id: string; p_weight_grams: number }
+        Returns: undefined
+      }
+      verify_product_presence: {
+        Args: { p_product_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       app_role: "admin" | "manager" | "employee" | "kiosk"

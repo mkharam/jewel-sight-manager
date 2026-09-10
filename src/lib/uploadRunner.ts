@@ -175,12 +175,22 @@ export async function saveCapturedPiece(
   return saveUnanalyzedProduct(path, opts, weightGrams, barcodeValue, karat ?? null, null);
 }
 
-/** تحديث الوزن/الباركود بعد أن حُفظت القطعة فعلاً — الموظف يكتبهما بعد رؤية الصورة عادة. */
+/**
+ * تحديث الوزن/الباركود بعد أن حُفظت القطعة فعلاً — الموظف يكتبهما بعد رؤية الصورة عادة.
+ * نمرّ عبر دوال RPC ضيّقة (update_product_weight/update_product_barcode) بدل UPDATE عام
+ * على الجدول، لأن صلاحية UPDATE المباشرة أصبحت مقتصرة على المدير العام والمشرف على فرعه —
+ * الموظف يحتاج فقط تعديل هذين الحقلين تحديداً على قطعة أضافها للتو، لا القطعة كاملة.
+ */
 export async function updateCapturedPiece(
   productId: string,
   patch: { weight_grams?: number | null; barcode_value?: string | null },
 ): Promise<void> {
-  await supabase.from("products").update(patch as any).eq("id", productId);
+  if ("weight_grams" in patch) {
+    await supabase.rpc("update_product_weight", { p_product_id: productId, p_weight_grams: patch.weight_grams ?? null });
+  }
+  if ("barcode_value" in patch) {
+    await supabase.rpc("update_product_barcode", { p_product_id: productId, p_barcode_value: patch.barcode_value ?? null });
+  }
 }
 
 /** تراجع عن قطعة سبق حفظها فعلاً (خطأ تصوير) — يحذفها نهائياً مع صورتها. */

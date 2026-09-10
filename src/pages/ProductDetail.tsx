@@ -11,8 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowRight, Edit, ImageIcon, MapPin, MessageCircle, Tag, Trash2, User, ArrowLeftRight, Sparkles, Copy, Share2, CheckCircle2, ShieldCheck } from "lucide-react";
-import { PRODUCT_STATUS, formatCurrency, formatDate, formatWeight, getImageUrl } from "@/lib/constants";
+import { ArrowRight, Edit, ImageIcon, MapPin, MessageCircle, Tag, Trash2, User, ArrowLeftRight, Sparkles, Copy, Share2, CheckCircle2, ShieldCheck, Scale, ImagePlus, Loader2 } from "lucide-react";
+import { PRODUCT_STATUS, formatCurrency, formatDate, formatWeight, getImageUrl, normalizeDecimalInput } from "@/lib/constants";
 import { GOLD_COLORS, STONE_COLORS } from "@/lib/luxury";
 import { toast } from "sonner";
 import QuickQuoteSheet from "@/components/QuickQuoteSheet";
@@ -31,6 +31,10 @@ export default function ProductDetail() {
   const isManager = roles.includes("manager");
   const [activeImage, setActiveImage] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  // للموظف تحديداً (لا يملك صلاحية التعديل الكاملة): تحديث الوزن وإضافة صور فقط.
+  const [weightInput, setWeightInput] = useState("");
+  const [savingWeight, setSavingWeight] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
 
   const { data: product, isLoading } = useQuery({
@@ -88,6 +92,10 @@ export default function ProductDetail() {
     enabled: !!id,
   });
 
+  useEffect(() => {
+    setWeightInput(product?.weight_grams != null ? String(product.weight_grams) : "");
+  }, [product?.weight_grams]);
+
   // بث مباشر للأسعار والاستفسارات لهذه القطعة
   useEffect(() => {
     if (!id) return;
@@ -110,6 +118,9 @@ export default function ProductDetail() {
   const sortedImages = [...(product.images ?? [])].sort((a, b) =>
     (b.is_primary ? 1 : 0) - (a.is_primary ? 1 : 0) || a.sort_order - b.sort_order
   );
+  // تعديل/حذف القطعة كاملة: المدير العام دائماً، أو المشرف على قطع فرعه فقط — الموظف
+  // لا يملك هذه الصلاحية إطلاقاً، فقط إضافة صور وتحديث الوزن (أزرار منفصلة أدناه).
+  const canEditProduct = isAdmin || (isManager && product.branch_id === profile?.branch_id);
 
   const onDelete = async () => {
     if (!confirm("حذف هذه القطعة نهائياً؟")) return;
@@ -124,10 +135,7 @@ export default function ProductDetail() {
   };
 
   const verifyProduct = async () => {
-    const { error } = await supabase.from("products").update({
-      last_verified_at: new Date().toISOString(),
-      last_verified_by: user?.id,
-    }).eq("id", id!);
+    const { error } = await supabase.rpc("verify_product_presence", { p_product_id: id! });
     if (error) return toast.error(error.message);
     await supabase.from("activity_log").insert({
       actor_id: user?.id, action: "verify", entity_type: "product", entity_id: id,
@@ -137,6 +145,45 @@ export default function ProductDetail() {
     qc.invalidateQueries({ queryKey: ["product", id] });
   };
 
+  const saveWeight = async () => {
+    setSavingWeight(true);
+    try {
+      const w = weightInput.trim() ? parseFloat(weightInput) : null;
+      const { error } = await supabase.rpc("update_product_weight", { p_product_id: id!, p_weight_grams: w });
+      if (error) throw error;
+      toast.success("تم تحديث الوزن");
+      qc.invalidateQueries({ queryKey: ["product", id] });
+    } catch (e: any) {
+      toast.error(e.message ?? "تعذّر تحديث الوزن");
+    } finally {
+      setSavingWeight(false);
+    }
+  };
+
+  const addPhoto = async (file: File) => {
+    setUploadingPhoto(true);
+    try {
+      const branchPrefix = product.branch_id ? `branch-${product.branch_id}` : "unassigned";
+      const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+      const path = `${branchPrefix}/${id}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("product-images").upload(path, file);
+      if (upErr) throw upErr;
+      const { error: insErr } = await supabase.from("product_images").insert({
+        product_id: id!,
+        storage_path: path,
+        is_primary: sortedImages.length === 0,
+        uploaded_by: user?.id,
+      } as any);
+      if (insErr) throw insErr;
+      toast.success("تمت إضافة الصورة");
+      qc.invalidateQueries({ queryKey: ["product", id] });
+    } catch (e: any) {
+      toast.error(e.message ?? "تعذّر رفع الصورة");
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
   return (
     <div className="space-y-4 max-w-5xl mx-auto">
       <div className="flex items-center justify-between gap-2">
@@ -144,12 +191,12 @@ export default function ProductDetail() {
           <ArrowRight className="size-4 ml-1" /> رجوع
         </Button>
         <div className="flex gap-2">
-          {canEdit && (
+          {canEditProduct && (
             <Link to={`/products/${id}/edit`}>
               <Button variant="outline" size="sm"><Edit className="size-4 ml-1" /> تعديل</Button>
             </Link>
           )}
-          {roles.includes("admin") && (
+          {canEditProduct && (
             <Button variant="ghost" size="sm" onClick={onDelete} className="text-destructive">
               <Trash2 className="size-4" />
             </Button>
@@ -247,7 +294,7 @@ export default function ProductDetail() {
               ) : (
                 <p className="text-3xl font-extrabold text-primary">{formatCurrency(product.sale_price)}</p>
               )}
-              {canEdit && product.cost_price != null && (
+              {isAdmin && product.cost_price != null && (
                 <p className="text-xs text-muted-foreground mt-1">التكلفة: {formatCurrency(product.cost_price)}</p>
               )}
             </div>
@@ -289,6 +336,42 @@ export default function ProductDetail() {
           <Button variant="outline" size="lg" className="w-full" onClick={verifyProduct}>
             <CheckCircle2 className="size-4 ml-1" /> تحقق من وجود القطعة
           </Button>
+
+          {/* للموظف الذي لا يملك صلاحية التعديل الكاملة: تحديث الوزن وإضافة صور فقط */}
+          {!canEditProduct && canEdit && (
+            <Card className="p-4 space-y-3">
+              <p className="text-sm font-semibold">تحديث سريع</p>
+              <div className="flex gap-2">
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={weightInput}
+                  onChange={(e) => setWeightInput(normalizeDecimalInput(e.target.value))}
+                  placeholder="الوزن (غ)"
+                  dir="ltr"
+                  className="flex-1"
+                />
+                <Button variant="outline" onClick={saveWeight} disabled={savingWeight}>
+                  {savingWeight ? <Loader2 className="size-4 animate-spin" /> : <Scale className="size-4" />}
+                </Button>
+              </div>
+              <label className="flex items-center justify-center gap-2 h-10 rounded-md border border-input text-sm cursor-pointer hover:bg-accent">
+                {uploadingPhoto ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4" />}
+                إضافة صورة
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={uploadingPhoto}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (file) void addPhoto(file);
+                  }}
+                />
+              </label>
+            </Card>
+          )}
 
           <Link to={`/transfers?product=${id}&name=${encodeURIComponent(product.name)}`} className="block">
             <Button variant="outline" size="lg" className="w-full">

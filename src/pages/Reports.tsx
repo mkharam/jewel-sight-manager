@@ -268,7 +268,8 @@ export default function Reports() {
   };
 
   if (rolesLoading) return null;
-  if (!isAdmin && !(isManager && myBranchId)) return <Navigate to="/" replace />;
+  // التقارير أمر إداري/حسابي — للمدير العام فقط الآن (كان متاحاً للمشرف أيضاً).
+  if (!isAdmin) return <Navigate to="/" replace />;
 
   const fmt = (n: number) => new Intl.NumberFormat("ar-LY", { maximumFractionDigits: 2 }).format(n);
 

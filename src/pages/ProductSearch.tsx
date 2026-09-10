@@ -74,6 +74,9 @@ export default function ProductSearch() {
   const [bulkBranch, setBulkBranch] = useState<string>("");
   const [bulkBusy, setBulkBusy] = useState(false);
   const isAdmin = roles.includes("admin");
+  const isManager = roles.includes("manager");
+  // التعديل الجماعي (حالة/فرع) للمدير العام والمشرف فقط — الموظف لا يعدّل شيئاً.
+  const canBulkEdit = isAdmin || isManager;
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -668,15 +671,17 @@ export default function ProductSearch() {
             <ArrowUpDown className="size-4 ml-1" />
             {filters.sortDir === "desc" ? "الأحدث أولاً" : "الأقدم أولاً"}
           </Button>
-          <Button
-            size="sm"
-            variant={selectionMode ? "default" : "outline"}
-            onClick={() => (selectionMode ? exitSelection() : setSelectionMode(true))}
-            className={selectionMode ? "bg-primary text-primary-foreground" : ""}
-          >
-            <CheckSquare className="size-4 ml-1" />
-            {selectionMode ? "إلغاء التحديد" : "تحديد متعدد"}
-          </Button>
+          {canBulkEdit && (
+            <Button
+              size="sm"
+              variant={selectionMode ? "default" : "outline"}
+              onClick={() => (selectionMode ? exitSelection() : setSelectionMode(true))}
+              className={selectionMode ? "bg-primary text-primary-foreground" : ""}
+            >
+              <CheckSquare className="size-4 ml-1" />
+              {selectionMode ? "إلغاء التحديد" : "تحديد متعدد"}
+            </Button>
+          )}
           <Link to="/upload">
             <Button size="sm" className="bg-gold-gradient text-primary-foreground shadow-gold">
               <Plus className="size-4 ml-1" /> إضافة قطعة

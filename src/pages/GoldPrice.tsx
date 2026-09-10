@@ -18,6 +18,7 @@ const KARATS = ["18K", "21K", "22K", "24K"];
 export default function GoldPrice() {
   const { user, roles, rolesLoading } = useAuth();
   const qc = useQueryClient();
+  // سعر الذهب: المدير العام والمشرف فقط — ليس الموظف.
   const canEdit = roles.includes("admin") || roles.includes("manager");
   const [form, setForm] = useState<Record<string, { price: string; making: string }>>({});
   const [weight, setWeight] = useState("");

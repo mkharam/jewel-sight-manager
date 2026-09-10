@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Search, MessageCircle, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks } from "lucide-react";
+import { Search, MessageCircle, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Bell } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -21,14 +21,27 @@ const baseNav: NavItem[] = [
   { to: "/upload", label: "رفع", icon: Upload, badgeKey: "uploads" },
 ];
 
-const desktopExtras: NavItem[] = [];
+const desktopExtras: NavItem[] = [
+  { to: "/notifications", label: "الإشعارات", icon: Bell },
+];
 
+// مفيد للعمل اليومي — يراه المشرف والموظف بلا فرق بينهما (بضاعة كل الفروع، طلبات إعادة
+// الطلب، الجرد الميداني)، بخلاف أمور إدارية/حسابية بحتة أدناه.
+const sharedExtras: NavItem[] = [
+  { to: "/stock-take", label: "جرد ميداني", icon: ClipboardCheck },
+  { to: "/reorders", label: "طلبات إعادة الطلب", icon: PackagePlus, badgeKey: "reorders" },
+];
+
+// سعر الذهب: المدير العام والمشرف فقط — ليس الموظف.
+const managerExtras: NavItem[] = [
+  { to: "/gold-price", label: "سعر الذهب", icon: Coins },
+];
+
+// أمور إدارية/حسابية — للمدير العام فقط: تقارير الأرباح، سجل المبيعات، التعديل الجماعي،
+// وإدارة الموظفين.
 const adminExtras: NavItem[] = [
   { to: "/reports", label: "التقارير", icon: BarChart3 },
   { to: "/sales", label: "المبيعات", icon: Receipt },
-  { to: "/gold-price", label: "سعر الذهب", icon: Coins },
-  { to: "/stock-take", label: "جرد ميداني", icon: ClipboardCheck },
-  { to: "/reorders", label: "طلبات إعادة الطلب", icon: PackagePlus, badgeKey: "reorders" },
   { to: "/admin/products", label: "إدارة القطع", icon: ListChecks },
 ];
 
@@ -116,18 +129,19 @@ export default function AppLayout() {
   const mobileNav: NavItem[] = baseNav;
   const moreItems: NavItem[] = [
     ...desktopExtras,
-    { to: "/gold-price", label: "سعر الذهب", icon: Coins },
-    { to: "/stock-take", label: "جرد ميداني", icon: ClipboardCheck },
-    { to: "/reorders", label: "طلبات إعادة الطلب", icon: PackagePlus, badgeKey: "reorders" },
-    ...(isAdmin || isManager ? [{ to: "/reports", label: "التقارير", icon: BarChart3 }, { to: "/sales", label: "المبيعات", icon: Receipt }] : []),
-    ...(isAdmin ? [{ to: "/staff", label: "موظفون", icon: Users }, { to: "/admin/products", label: "إدارة القطع", icon: ListChecks }] : []),
+    ...sharedExtras,
+    ...((isAdmin || isManager) ? managerExtras : []),
+    ...(isAdmin ? [...adminExtras, { to: "/staff", label: "موظفون", icon: Users }] : []),
   ];
 
+  // المشرف والموظف يريان نفس الشيء تقريباً — بضاعة كل الفروع والاستفسارات وما يفيد
+  // العمل اليومي، بدون أي فرق بينهما في التنقّل عدا سعر الذهب (للمشرف والمدير فقط).
+  // صلاحيات التعديل/الحذف تُضبط داخل كل صفحة (مثلاً ProductDetail) لا من القائمة.
   const desktopNav: NavItem[] = isAdmin
-    ? [...baseNav, ...desktopExtras, ...adminExtras, { to: "/staff", label: "موظفون", icon: Users }]
+    ? [...baseNav, ...desktopExtras, ...sharedExtras, ...managerExtras, ...adminExtras, { to: "/staff", label: "موظفون", icon: Users }]
     : isManager
-      ? [...baseNav, ...desktopExtras, { to: "/reports", label: "التقارير", icon: BarChart3 }, { to: "/sales", label: "المبيعات", icon: Receipt }, { to: "/reorders", label: "طلبات إعادة الطلب", icon: PackagePlus, badgeKey: "reorders" }]
-      : [...baseNav, ...desktopExtras];
+      ? [...baseNav, ...desktopExtras, ...sharedExtras, ...managerExtras]
+      : [...baseNav, ...desktopExtras, ...sharedExtras];
 
   const signOut = async () => {
     await supabase.auth.signOut();

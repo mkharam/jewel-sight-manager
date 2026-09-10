@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { enablePush, disablePush, currentPushStatus, type PushStatus } from "@/lib/push";
 import { toast } from "sonner";
 
-interface ActivityItem {
+export interface ActivityItem {
   id: string;
   action: string;
   entity_type: string;
@@ -37,7 +37,7 @@ const PRODUCT_STATUS_AR: Record<string, string> = {
   transferred: "محوّلة",
 };
 
-function describe(a: ActivityItem): { text: string; icon: any; href: string } | null {
+export function describe(a: ActivityItem): { text: string; icon: any; href: string } | null {
   const actor = a.actor_name ?? "موظف";
   if (a.entity_type === "transfers") {
     const product = a.details?.product ?? "قطعة";
@@ -212,6 +212,13 @@ export default function NotificationsBell() {
             })}
           </ul>
         )}
+        <Link
+          to="/notifications"
+          onClick={() => setOpen(false)}
+          className="block text-center text-sm font-semibold text-primary p-3 border-t border-border hover:bg-muted/40 transition-colors sticky bottom-0 bg-card"
+        >
+          عرض المزيد
+        </Link>
       </PopoverContent>
     </Popover>
   );
