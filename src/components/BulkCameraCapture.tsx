@@ -34,9 +34,17 @@ interface Props {
   branchId: string | null;
   /** بثّ حصلنا عليه داخل نقرة المستخدم — يُستخدم كما هو بدل طلب جديد، راجع openCamera. */
   initialStream?: MediaStream | null;
+  /**
+   * يُستدعى عند الضغط على "تم" مع معرّفات كل القطع التي حُفظت فعلاً في هذه الجلسة —
+   * يُستخدم لأخذ الموظف مباشرة لمراجعتها بدل تركها تُحلَّل وتُسمّى تلقائياً في الخلفية
+   * بلا أي مراجعة بشرية (كان هذا يحصل حتى لمجرد تجربة الكاميرا بضغطة "تم" للخروج فقط).
+   * لا تشمل صوراً ما زالت قيد الرفع لحظة الضغط على "تم" — تبقى تلك ظاهرة في صفحة
+   * "مراجعة غير المسمّاة" العامة حتى تكتمل.
+   */
+  onFinished?: (savedProductIds: string[]) => void;
 }
 
-export default function BulkCameraCapture({ open, onClose, userId, branchId, initialStream }: Props) {
+export default function BulkCameraCapture({ open, onClose, userId, branchId, initialStream, onFinished }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   // نعرض canvas بدل video مباشرة — راجع التعليق المطوَّل عند startFramePump أدناه.
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -390,8 +398,12 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
   };
 
   const finish = () => {
+    const savedIds = Object.values(productIdsRef.current);
     if (shots.length) toast.success(`تم حفظ ${shots.length} قطعة`);
     onClose();
+    // نأخذ الموظف لمراجعة ما صوّره في هذه الجلسة بالتحديد — بدل تركه يُحلَّل ويُسمَّى
+    // تلقائياً في الخلفية بلا مراجعة، حتى لو كان مجرّد تجربة للكاميرا وضغط "تم" للخروج.
+    if (savedIds.length) onFinished?.(savedIds);
   };
 
   if (!open) return null;

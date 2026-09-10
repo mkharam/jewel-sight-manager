@@ -2,7 +2,7 @@
 // (إن وُجدت) وتسمح بحفظ الاسم والحقول مباشرة، أو إعادة التحليل يدوياً إن كانت الصورة
 // لم تُحلّل بعد (مثلاً بسبب انقطاع الاتصال أو فشل الذكاء الاصطناعي).
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,16 @@ type Row = {
 
 export default function ReviewUnnamed() {
   const navigate = useNavigate();
+  const location = useLocation();
   const qc = useQueryClient();
+
+  // مراجعة جلسة تصوير محدَّدة: قادمة من "تصوير متتالي" فور الضغط على "تم" — تعرض فقط
+  // القطع التي صُوّرت في هذه الجلسة بدل كل القطع غير المسمّاة في المتجر، حتى تُراجع
+  // وتُحذف قطع التجربة قبل أن يُحلّلها الطابور الخلفي ويُسمّيها تلقائياً بلا أي مراجعة
+  // بشرية (وهذا بالضبط ما كان يحصل حتى لمجرد تجربة الكاميرا). القطع التي لم يكتمل
+  // رفعها لحظة الضغط على "تم" لا تظهر هنا لكنها تبقى ظاهرة في المراجعة العامة لاحقاً.
+  const sessionIds = (location.state as { productIds?: string[] } | null)?.productIds;
+  const isSessionReview = !!sessionIds?.length;
   const [drafts, setDrafts] = useState<Record<string, Partial<Row>>>({});
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [reanalyzingIds, setReanalyzingIds] = useState<Set<string>>(new Set());
@@ -49,17 +58,24 @@ export default function ReviewUnnamed() {
     queryFn: async () => (await supabase.from("categories").select("id,name").eq("is_active", true)).data ?? [],
   });
 
-  // نُحدّث كل 5 ثوانٍ — طابور المعالجة الخلفي (pg_cron كل 15 ثانية) يحلّل القطع تلقائياً
-  // بدون أي فعل من الموظف، فيحتاج الموظف رؤية النتائج فور جهوزيتها دون إعادة تحميل الصفحة.
+  // مفتاح الاستعلام يشمل معرّفات الجلسة حتى يُعاد الجلب عند وصول جلسة جديدة (بدل عرض
+  // نتيجة الجلسة السابقة المخزّنة تحت نفس المفتاح)، ويُستخدم بنفس الشكل في كل تحديثات
+  // الكاش أدناه (save/reanalyze/bulkDelete) بدل مفتاح مكتوب حرفياً كل مرة قد يختلف.
+  const queryKey = ["unnamed-products", sortDir, sessionIds?.join(",") ?? "all"] as const;
+
+  // نُحدّث كل 5 ثوانٍ — طابور المعالجة الخلفي (pg_cron) يحلّل القطع تلقائياً بدون أي
+  // فعل من الموظف، فيحتاج الموظف رؤية النتائج فور جهوزيتها دون إعادة تحميل الصفحة.
   const { data: rows, isLoading } = useQuery({
-    queryKey: ["unnamed-products", sortDir],
+    queryKey,
     queryFn: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from("products")
-        .select("id,name,category_id,karat,item_type,description,images:product_images(id,storage_path,thumb_path,ai_labels)")
-        .eq("name", PLACEHOLDER_NAME)
-        .order("created_at", { ascending: sortDir === "asc" })
-        .limit(200);
+        .select("id,name,category_id,karat,item_type,description,images:product_images(id,storage_path,thumb_path,ai_labels)");
+      // مراجعة جلسة: بالمعرّف مباشرة، بلا فلتر الاسم — القطعة قد تكون تحلّلت وتسمّت
+      // تلقائياً بالفعل بحلول وصول الموظف لهذه الشاشة، ونريده يراها ليقرّر (يحذفها
+      // أو يُبقيها) رغم ذلك. المراجعة العامة تبقى بفلتر الاسم الافتراضي كالسابق.
+      q = isSessionReview ? q.in("id", sessionIds!) : q.eq("name", PLACEHOLDER_NAME);
+      const { data, error } = await q.order("created_at", { ascending: sortDir === "asc" }).limit(200);
       if (error) throw error;
       return (data ?? []) as Row[];
     },
@@ -91,7 +107,7 @@ export default function ReviewUnnamed() {
         .eq("id", row.id);
       if (error) throw error;
       toast.success("تم الحفظ");
-      qc.setQueryData<Row[]>(["unnamed-products", sortDir], (prev) => (prev ?? []).filter((r) => r.id !== row.id));
+      qc.setQueryData<Row[]>(queryKey, (prev) => (prev ?? []).filter((r) => r.id !== row.id));
       setJustAnalyzedOrder((prev) => prev.filter((id) => id !== row.id));
     } catch (e: any) {
       toast.error(e.message ?? "تعذّر الحفظ");
@@ -142,7 +158,7 @@ export default function ReviewUnnamed() {
         karat: KARAT_OPTIONS.includes(a.karat) ? a.karat : draftFor(row).karat,
         description: a.description_ar || draftFor(row).description,
       });
-      qc.setQueryData<Row[]>(["unnamed-products", sortDir], (prev) =>
+      qc.setQueryData<Row[]>(queryKey, (prev) =>
         (prev ?? []).map((r) =>
           r.id === row.id
             ? { ...r, images: r.images.map((im) => (im.id === img.id ? { ...im, ai_labels: { ...a } } : im)) }
@@ -176,6 +192,22 @@ export default function ReviewUnnamed() {
     setSelected(allSelected ? new Set() : new Set(rows.map((r) => r.id)));
   };
 
+  // حذف سريع لقطعة واحدة بلا تحديد مسبق — أهم في مراجعة الجلسة تحديداً حيث الهدف
+  // الأساسي هو حذف لقطات التجربة بأقل عدد ضغطات ممكن قبل أن تُحلَّل تلقائياً.
+  const deleteOne = async (row: Row) => {
+    if (!confirm(`حذف "${draftFor(row).name || PLACEHOLDER_NAME}" نهائياً؟`)) return;
+    setSavingIds((s) => new Set(s).add(row.id));
+    try {
+      const { error } = await supabase.from("products").delete().eq("id", row.id);
+      if (error) throw error;
+      qc.setQueryData<Row[]>(queryKey, (prev) => (prev ?? []).filter((r) => r.id !== row.id));
+      setSelected((s) => { const next = new Set(s); next.delete(row.id); return next; });
+    } catch (e: any) {
+      toast.error(e.message ?? "تعذّر الحذف");
+      setSavingIds((s) => { const next = new Set(s); next.delete(row.id); return next; });
+    }
+  };
+
   const bulkDelete = async () => {
     if (!selected.size) return;
     if (!confirm(`حذف ${selected.size} قطعة نهائياً؟ لا يمكن التراجع.`)) return;
@@ -185,7 +217,7 @@ export default function ReviewUnnamed() {
       const { error } = await supabase.from("products").delete().in("id", ids);
       if (error) throw error;
       toast.success(`تم حذف ${ids.length} قطعة`);
-      qc.setQueryData<Row[]>(["unnamed-products", sortDir], (prev) => (prev ?? []).filter((r) => !selected.has(r.id)));
+      qc.setQueryData<Row[]>(queryKey, (prev) => (prev ?? []).filter((r) => !selected.has(r.id)));
       setSelected(new Set());
     } catch (e: any) {
       toast.error(e.message ?? "تعذّر الحذف");
@@ -263,13 +295,25 @@ export default function ReviewUnnamed() {
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Sparkles className="size-6 text-primary" />
-          مراجعة الصور غير المسمّاة
+          {isSessionReview ? "مراجعة صور هذه الجلسة" : "مراجعة الصور غير المسمّاة"}
         </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          القطع التي ما زالت بالاسم الافتراضي "{PLACEHOLDER_NAME}" — التحليل يجري الآن فوراً أثناء الرفع، فلا يصل
-          إلى هنا إلا ما تعذّر تحليله لحظتها (ازدحام المزوّدات مثلاً)، ويُعاد تحليله تلقائياً في الخلفية. راجع اسم
-          كل قطعة ونتيجة تحليلها ثم احفظ، أو اضغط "إعادة التحليل" للحصول على نتيجة فورية.
-        </p>
+        {isSessionReview ? (
+          <p className="text-sm text-muted-foreground mt-1">
+            القطع التي صوّرتها للتو. احذف أي صورة تجربة أو غير مطلوبة الآن — قبل أن يحلّلها النظام ويضيفها
+            تلقائياً للكتالوج بلا مراجعة. للباقي: تأكّد من الاسم ثم اضغط "حفظ"، أو اتركها لتُحلَّل تلقائياً
+            وراجعها لاحقاً من{" "}
+            <button className="underline font-semibold" onClick={() => navigate("/upload/review", { replace: true })}>
+              كل القطع غير المسمّاة
+            </button>
+            .
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground mt-1">
+            القطع التي ما زالت بالاسم الافتراضي "{PLACEHOLDER_NAME}" — التحليل يجري الآن فوراً أثناء الرفع، فلا يصل
+            إلى هنا إلا ما تعذّر تحليله لحظتها (ازدحام المزوّدات مثلاً)، ويُعاد تحليله تلقائياً في الخلفية. راجع اسم
+            كل قطعة ونتيجة تحليلها ثم احفظ، أو اضغط "إعادة التحليل" للحصول على نتيجة فورية.
+          </p>
+        )}
       </div>
 
       {usage && (
@@ -290,9 +334,18 @@ export default function ReviewUnnamed() {
           ))}
         </div>
       ) : !rows?.length ? (
-        <p className="text-center text-sm text-muted-foreground py-16">
-          لا توجد قطع بانتظار المراجعة — كل شيء تم تسميته 🎉
-        </p>
+        <div className="text-center py-16 space-y-2">
+          <p className="text-sm text-muted-foreground">
+            {isSessionReview
+              ? "لا توجد قطع من هذه الجلسة (رُبما لم تكتمل بعد، أو حُذفت كلها)."
+              : "لا توجد قطع بانتظار المراجعة — كل شيء تم تسميته 🎉"}
+          </p>
+          {isSessionReview && (
+            <Button variant="link" onClick={() => navigate("/upload/review", { replace: true })}>
+              عرض كل القطع غير المسمّاة
+            </Button>
+          )}
+        </div>
       ) : (
         <>
           <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -408,6 +461,16 @@ export default function ReviewUnnamed() {
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => navigate(`/products/${row.id}/edit`)} title="فتح صفحة التعديل الكاملة">
                       <ExternalLink className="size-3.5" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => deleteOne(row)}
+                      disabled={busy}
+                      title="حذف هذه القطعة"
+                    >
+                      <Trash2 className="size-3.5" />
                     </Button>
                   </div>
                 </Card>
