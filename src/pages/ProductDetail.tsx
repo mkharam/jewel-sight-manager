@@ -46,7 +46,7 @@ export default function ProductDetail() {
           *,
           branch:branches(id,name),
           category:categories(id,name),
-          images:product_images(id,storage_path,is_primary,sort_order),
+          images:product_images(id,storage_path,thumb_path,is_primary,sort_order),
           creator:profiles!products_created_by_fkey(full_name)
         `)
         .eq("id", id!)

@@ -17,6 +17,7 @@ import { useBoxedBarcodeScanner } from "@/lib/useBoxedBarcodeScanner";
 import ScanBoxOverlay from "@/components/ScanBoxOverlay";
 import { normalizeDecimalInput } from "@/lib/constants";
 import { saveCapturedPiece, updateCapturedPiece, deleteCapturedPiece } from "@/lib/uploadRunner";
+import { keepAwake } from "@/lib/keepAwake";
 import { toast } from "sonner";
 
 const BARCODE_SCAN_ENABLED = false;
@@ -85,8 +86,13 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId }: P
     };
     void start();
 
+    // جلسة التصوير المتتالي تطول (عشرات القطع)، وانطفاء الشاشة بين لقطة وأخرى يُجمّد
+    // الرفع الجاري في الخلفية — نُبقي الجهاز مستيقظاً ما دامت الكاميرا مفتوحة.
+    const releaseWakeLock = keepAwake();
+
     return () => {
       cancelled = true;
+      releaseWakeLock();
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };

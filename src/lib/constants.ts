@@ -71,3 +71,13 @@ export function getImageUrl(path: string | null | undefined) {
   const base = import.meta.env.VITE_SUPABASE_URL;
   return `${base}/storage/v1/object/public/product-images/${path}`;
 }
+
+/**
+ * رابط العرض في الشبكات والقوائم: يفضّل النسخة المصغّرة (~25KB) على الصورة الكاملة
+ * (~250KB). الصور المرفوعة قبل تفعيل المصغّرات ليس لها thumb_path فتسقط للصورة الكاملة
+ * تلقائياً — لا تنكسر أي صورة قديمة. الصورة الكاملة تُستخدم في صفحة تفاصيل القطعة فقط.
+ */
+export function getThumbUrl(img: { storage_path?: string | null; thumb_path?: string | null } | null | undefined) {
+  if (!img) return null;
+  return getImageUrl(img.thumb_path || img.storage_path);
+}

@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ImageIcon, MapPin, MoreVertical, Check, Barcode } from "lucide-react";
-import { PRODUCT_STATUS, formatCurrency, formatWeight, getImageUrl, ProductStatus } from "@/lib/constants";
+import { PRODUCT_STATUS, formatCurrency, formatWeight, getThumbUrl, ProductStatus } from "@/lib/constants";
 import { GOLD_COLORS } from "@/lib/luxury";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -34,7 +34,7 @@ export interface ProductCardData {
   branch_id?: string | null;
   branch?: { name: string } | null;
   category?: { name: string } | null;
-  images?: { storage_path: string; is_primary: boolean }[];
+  images?: { storage_path: string; thumb_path?: string | null; is_primary: boolean }[];
 }
 
 interface ProductCardProps {
@@ -58,7 +58,7 @@ export default function ProductCard({
   onStatusChanged,
 }: ProductCardProps) {
   const primary = product.images?.find((i) => i.is_primary) ?? product.images?.[0];
-  const imgUrl = getImageUrl(primary?.storage_path);
+  const imgUrl = getThumbUrl(primary);
   const status = PRODUCT_STATUS[product.status];
   const [pending, setPending] = useState<ProductStatus | null>(null);
   const { roles, profile } = useAuth();

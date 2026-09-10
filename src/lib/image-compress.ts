@@ -97,6 +97,38 @@ export async function prepareForAIBase64(
   return { base64, mimeType: small.type || file.type || "image/jpeg" };
 }
 
+/**
+ * نسخة مصغّرة للعرض في الشبكات والقوائم. الصورة المخزّنة بدقتها الكاملة ~250KB وسطياً،
+ * وشاشة الكتالوج تعرض ~48 قطعة — أي ~12MB لمجرد فتح الصفحة على بيانات الهاتف. المصغّرة
+ * ~20–35KB فيصير نفس المشهد أقل من 2MB. الصورة الكاملة تبقى لصفحة تفاصيل القطعة فقط.
+ * نمرّ دائماً عبر canvas هنا (بعكس compressImage الذي يُرجع الأصل إن كان صغيراً أصلاً)
+ * لأن المطلوب حجم عرض ثابت لا "أصغر من الأصل".
+ */
+export async function makeThumbnail(file: File, maxDimension = 400, quality = 0.7): Promise<File | null> {
+  if (!file.type.startsWith("image/") || file.type === "image/gif") return null;
+  let handle: Awaited<ReturnType<typeof loadImage>> | null = null;
+  try {
+    handle = await loadImage(file);
+    const scale = Math.min(1, maxDimension / Math.max(handle.width, handle.height));
+    const w = Math.max(1, Math.round(handle.width * scale));
+    const h = Math.max(1, Math.round(handle.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(handle.draw, 0, 0, w, h);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+    if (!blob) return null;
+    return new File([blob], "thumb.jpg", { type: "image/jpeg", lastModified: Date.now() });
+  } catch {
+    return null;
+  } finally {
+    handle?.close?.();
+  }
+}
+
 export type NormalizedBbox = { x: number; y: number; w: number; h: number };
 
 /**

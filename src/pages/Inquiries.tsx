@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, MessageCircle, Phone, MapPin, PackagePlus, Tag } from "lucide-react";
 import { Link } from "react-router-dom";
-import { INQUIRY_STATUS, KARAT_OPTIONS, formatCurrency, formatDate, getImageUrl, InquiryStatus } from "@/lib/constants";
+import { INQUIRY_STATUS, KARAT_OPTIONS, formatCurrency, formatDate, getThumbUrl, InquiryStatus } from "@/lib/constants";
 import ReorderRequestDialog from "@/components/ReorderRequestDialog";
 import { toast } from "sonner";
 
@@ -59,7 +59,7 @@ export default function Inquiries() {
     queryFn: async () => {
       const { data } = await supabase
         .from("product_quotes")
-        .select("*, branch:branches(name), staff:profiles!product_quotes_quoted_by_fkey(full_name), product:products(id,name,images:product_images(storage_path,is_primary))")
+        .select("*, branch:branches(name), staff:profiles!product_quotes_quoted_by_fkey(full_name), product:products(id,name,images:product_images(storage_path,thumb_path,is_primary))")
         .order("created_at", { ascending: false })
         .limit(100);
       return data ?? [];
@@ -193,9 +193,9 @@ export default function Inquiries() {
         ) : quotes && quotes.length > 0 ? (
           <div className="space-y-2">
             {quotes.map((q: any) => {
-              const images = (q.product?.images ?? []) as { storage_path: string; is_primary: boolean }[];
+              const images = (q.product?.images ?? []) as { storage_path: string; thumb_path?: string | null; is_primary: boolean }[];
               const primary = images.find((i) => i.is_primary) ?? images[0];
-              const imgUrl = getImageUrl(primary?.storage_path);
+              const imgUrl = getThumbUrl(primary);
               return (
                 <Link key={q.id} to={q.product?.id ? `/products/${q.product.id}` : "#"}>
                   <Card className="p-3 hover:bg-muted/40 transition-colors">

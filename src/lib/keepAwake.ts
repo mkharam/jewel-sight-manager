@@ -1,0 +1,54 @@
+/**
+ * إبقاء الجهاز مستيقظاً أثناء الرفع.
+ *
+ * الرفع والتحليل يجريان داخل المتصفح، ومتصفحات الهاتف تُجمّد الجافاسكربت بمجرّد أن تُطفأ
+ * الشاشة أو يخرج المستخدم من التطبيق — فيتوقف الرفع في منتصفه. سفاري iOS تحديداً لا تدعم
+ * Background Sync إطلاقاً، فلا توجد طريقة لمواصلة الرفع فعلياً بعد الخروج من التطبيق.
+ * أكثر سبب عملي لانقطاع الرفع هو انطفاء الشاشة أثناء الانتظار، وهذا ما يعالجه Wake Lock
+ * (مدعوم في أندرويد كروم و iOS 16.4+).
+ *
+ * ملاحظة: النظام يُحرّر القفل تلقائياً عند إخفاء الصفحة، لذا نُعيد طلبه عند العودة إليها
+ * ما دام الرفع مستمراً — وإلا يبقى مفقوداً بعد أول تبديل تطبيق.
+ */
+
+type SentinelLike = { released: boolean; release: () => Promise<void> } | null;
+
+let sentinel: SentinelLike = null;
+let holders = 0;
+
+async function request() {
+  const wl = (navigator as any)?.wakeLock;
+  if (!wl?.request || document.visibilityState !== "visible") return;
+  try {
+    sentinel = await wl.request("screen");
+  } catch {
+    // مرفوض (بطارية منخفضة مثلاً) — الرفع يكمل عادياً ما دامت الشاشة مضاءة.
+  }
+}
+
+function onVisibilityChange() {
+  if (document.visibilityState === "visible" && holders > 0 && (!sentinel || sentinel.released)) {
+    void request();
+  }
+}
+
+/** يطلب القفل ويعيد دالة تحرير. يدعم عدة مستدعين متوازيين. */
+export function keepAwake(): () => void {
+  if (holders === 0) {
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    void request();
+  }
+  holders++;
+
+  let releasedByCaller = false;
+  return () => {
+    if (releasedByCaller) return;
+    releasedByCaller = true;
+    holders = Math.max(0, holders - 1);
+    if (holders === 0) {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      void sentinel?.release().catch(() => {});
+      sentinel = null;
+    }
+  };
+}

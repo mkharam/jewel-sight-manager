@@ -13,7 +13,8 @@
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { KARAT_OPTIONS } from "@/lib/constants";
-import { compressMany, cropImageToBbox, prepareForAIBase64 } from "@/lib/image-compress";
+import { compressMany, cropImageToBbox, makeThumbnail, prepareForAIBase64 } from "@/lib/image-compress";
+import { keepAwake } from "@/lib/keepAwake";
 import { isPdf, pdfToImageFiles } from "@/lib/pdf-to-images";
 import { uploadQueue } from "@/lib/uploadQueue";
 import { normalizeAr } from "@/lib/arabic-search";
@@ -92,15 +93,38 @@ async function saveStoneColors(productId: string, gemstones: string[] | undefine
     .insert(stones.map((s) => ({ product_id: productId, color: s.color, stone_type: s.stoneType, quantity: 1 })) as any);
 }
 
-async function uploadFile(file: File, userId: string, k: number): Promise<string> {
+// مسارات التخزين فريدة ولا يُعاد استخدامها أبداً (طابع زمني + عشوائي)، فمحتوى أي مسار
+// ثابت للأبد — نسمح للمتصفح بتخزينها سنة كاملة. الافتراضي كان ساعة واحدة فقط، وكان
+// المتصفح يرسل طلب تحقّق لكل صورة عند كل زيارة (48 صورة في الشاشة = 48 ذهاب وإياب على
+// شبكة الهاتف قبل أن تظهر الصور، حتى وهي مخزّنة مسبقاً).
+const IMMUTABLE_CACHE = "public, max-age=31536000, immutable";
+
+async function uploadFile(file: File, userId: string, k: number): Promise<{ path: string; thumbPath: string | null }> {
   let lastErr: any;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
-      const path = `imports/${userId}/${Date.now()}-${k}-${Math.random().toString(36).slice(2, 7)}.${ext || "jpg"}`;
-      const { error } = await supabase.storage.from("product-images").upload(path, file);
+      const stem = `imports/${userId}/${Date.now()}-${k}-${Math.random().toString(36).slice(2, 7)}`;
+      const path = `${stem}.${ext || "jpg"}`;
+      const { error } = await supabase.storage
+        .from("product-images")
+        .upload(path, file, { cacheControl: IMMUTABLE_CACHE });
       if (error) throw error;
-      return path;
+
+      // المصغّرة إضافة تحسينية — فشلها لا يمنع نجاح الرفع، والعرض يسقط للصورة الكاملة.
+      let thumbPath: string | null = null;
+      try {
+        const thumb = await makeThumbnail(file);
+        if (thumb) {
+          const tp = `${stem}-thumb.jpg`;
+          const { error: tErr } = await supabase.storage
+            .from("product-images")
+            .upload(tp, thumb, { cacheControl: IMMUTABLE_CACHE });
+          if (!tErr) thumbPath = tp;
+        }
+      } catch { /* تجاهل — الصورة الكاملة كافية */ }
+
+      return { path, thumbPath };
     } catch (e) {
       lastErr = e;
       if (attempt === 0) await new Promise((r) => setTimeout(r, 1500));
@@ -121,6 +145,7 @@ function matchCategoryId(name: string | null | undefined, categories: { id: stri
  */
 async function saveUnanalyzedProduct(
   storagePath: string,
+  thumbPath: string | null,
   opts: UploadOptions,
   weightGrams?: number | null,
   barcodeValue?: string | null,
@@ -148,6 +173,7 @@ async function saveUnanalyzedProduct(
     .insert({
       product_id: prod.id,
       storage_path: storagePath,
+      thumb_path: thumbPath,
       is_primary: true,
       uploaded_by: opts.userId,
     } as any)
@@ -171,8 +197,8 @@ export async function saveCapturedPiece(
   barcodeValue?: string | null,
   karat?: string | null,
 ): Promise<{ productId: string; imageId: string }> {
-  const path = await uploadFile(file, opts.userId, Math.floor(Math.random() * 1_000_000));
-  return saveUnanalyzedProduct(path, opts, weightGrams, barcodeValue, karat ?? null, null);
+  const { path, thumbPath } = await uploadFile(file, opts.userId, Math.floor(Math.random() * 1_000_000));
+  return saveUnanalyzedProduct(path, thumbPath, opts, weightGrams, barcodeValue, karat ?? null, null);
 }
 
 /**
@@ -278,11 +304,16 @@ async function saveTrayPieces(
     // وأحجار القطع المجاورة كان يُربك تقدير العيار/الأحجار). عند فشل القص أو غياب مستطيل
     // صالح نسقط لصورة الصينية الكاملة وبيانات التحليل الجماعي الأصلية بدل فقدان القطعة.
     let piecePath = storagePath;
+    let pieceThumbPath: string | null = null;
     let croppedFile: File | null = null;
     if (p.bbox) {
       try {
         croppedFile = await cropImageToBbox(file, p.bbox);
-        if (croppedFile) piecePath = await uploadFile(croppedFile, opts.userId, 1000 + pieceIndex);
+        if (croppedFile) {
+          const up = await uploadFile(croppedFile, opts.userId, 1000 + pieceIndex);
+          piecePath = up.path;
+          pieceThumbPath = up.thumbPath;
+        }
       } catch { /* نسقط للصينية الكاملة */ }
     }
 
@@ -333,6 +364,7 @@ async function saveTrayPieces(
     await supabase.from("product_images").insert({
       product_id: prod.id,
       storage_path: piecePath,
+      thumb_path: pieceThumbPath,
       is_primary: true,
       uploaded_by: opts.userId,
       ai_labels: { ...a, position: p.position, category_id: categoryId, provider },
@@ -451,6 +483,14 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
   let failed = 0;
   let deferred = 0; // نجح رفعها لكن تعذّر تحليلها فوراً — تبقى للطابور الخلفي
 
+  // الرفع يجري داخل المتصفح، وانطفاء الشاشة يُجمّده في منتصفه — نُبقي الجهاز مستيقظاً
+  // طوال الدفعة، ونحذّر الموظف إن حاول إغلاق الصفحة قبل أن تكتمل.
+  const releaseWakeLock = keepAwake();
+  const warnBeforeUnload = (e: BeforeUnloadEvent) => e.preventDefault();
+  window.addEventListener("beforeunload", warnBeforeUnload);
+
+  try {
+
   // كلا الوضعين يستدعيان الذكاء الاصطناعي مباشرة الآن (التحليل الفوري مع مؤشر تحميل بدل
   // "سيُحلّل قريباً")، لذا نُبقي التوازي محدوداً والبدايات متباعدة حتى لا نصطدم بحد
   // الطلبات في الدقيقة عند المزوّدات المجانية عند رفع دفعة كبيرة.
@@ -458,14 +498,14 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
   const stagger = 350;
   await pool(entries, concurrency, async (entry, k) => {
     try {
-      const path = await uploadFile(entry.file, opts.userId, k);
+      const { path, thumbPath } = await uploadFile(entry.file, opts.userId, k);
 
       if (opts.trayMode) {
         uploadQueue.update(entry.id, { status: "analyzing", label: "جارٍ التحليل…" });
         const n = await saveTrayPieces(entry.file, path, opts, categories);
         uploadQueue.update(entry.id, { status: "done", label: `تم حفظ ${n} قطعة` });
       } else {
-        const saved = await saveUnanalyzedProduct(path, opts, entry.weightGrams, entry.barcodeValue, entry.karat, entry.itemType);
+        const saved = await saveUnanalyzedProduct(path, thumbPath, opts, entry.weightGrams, entry.barcodeValue, entry.karat, entry.itemType);
 
         // مؤشر التحليل يظهر فوراً بعد نجاح الرفع والحفظ — الموظف يرى أن العمل جارٍ.
         uploadQueue.update(entry.id, { status: "analyzing", label: "جارٍ التحليل…" });
@@ -492,6 +532,10 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
       uploadQueue.update(entry.id, { status: "error", message: e?.message ?? "فشل الرفع" });
     }
   }, stagger);
+  } finally {
+    window.removeEventListener("beforeunload", warnBeforeUnload);
+    releaseWakeLock();
+  }
 
   toast.success(`اكتمل رفع ${ok} صورة` + (failed ? ` (${failed} فشل)` : ""), { duration: 6000 });
 

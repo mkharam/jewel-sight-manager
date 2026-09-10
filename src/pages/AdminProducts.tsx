@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { PRODUCT_STATUS, KARAT_OPTIONS, ProductStatus, formatWeight, getImageUrl } from "@/lib/constants";
+import { PRODUCT_STATUS, KARAT_OPTIONS, ProductStatus, formatWeight, getThumbUrl } from "@/lib/constants";
 import { GOLD_COLORS } from "@/lib/luxury";
 import { Loader2, Search as SearchIcon, Pencil, Trash2, ImageOff } from "lucide-react";
 import { toast } from "sonner";
@@ -76,7 +76,7 @@ export default function AdminProducts() {
       let query = supabase
         .from("products")
         .select(
-          "id,name,sku,karat,gold_color,item_type,weight_grams,status,branch_id,category_id,branch:branches(name),category:categories(name),images:product_images(storage_path,is_primary)",
+          "id,name,sku,karat,gold_color,item_type,weight_grams,status,branch_id,category_id,branch:branches(name),category:categories(name),images:product_images(storage_path,thumb_path,is_primary)",
         )
         .order("created_at", { ascending: false })
         .limit(PAGE_SIZE * pages);
@@ -246,7 +246,7 @@ export default function AdminProducts() {
           <TableBody>
             {products?.map((p) => {
               const img = primaryImage(p);
-              const url = img ? getImageUrl(img.storage_path) : null;
+              const url = getThumbUrl(img);
               return (
                 <TableRow key={p.id} data-state={selectedIds.has(p.id) ? "selected" : undefined}>
                   <TableCell>

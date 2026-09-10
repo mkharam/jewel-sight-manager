@@ -100,7 +100,7 @@ export default function ProductForm() {
       return;
     }
     (async () => {
-      const { data } = await supabase.from("products").select("*, images:product_images(id,storage_path,is_primary,sort_order)").eq("id", id!).maybeSingle();
+      const { data } = await supabase.from("products").select("*, images:product_images(id,storage_path,thumb_path,is_primary,sort_order)").eq("id", id!).maybeSingle();
       if (!data) return;
       setLoadedProductBranch(data.branch_id ?? null);
       setForm({

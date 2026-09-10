@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BarChart3, Download, TrendingUp, ArrowLeftRight, Package, DollarSign, Clock, AlertTriangle, Receipt, Undo2 } from "lucide-react";
 import ReindexImagesCard from "@/components/ReindexImagesCard";
+import GenerateThumbsCard from "@/components/GenerateThumbsCard";
 
 type Branch = { id: string; name: string; code: string | null };
 
@@ -336,6 +337,7 @@ export default function Reports() {
 
       {/* صيانة الذكاء الاصطناعي — إعادة فهرسة الصور غير المحلَّلة */}
       <ReindexImagesCard />
+      <GenerateThumbsCard />
 
       {/* Aging report per branch */}
       <Card>

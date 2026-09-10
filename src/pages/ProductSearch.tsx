@@ -254,7 +254,7 @@ export default function ProductSearch() {
     queryKey: ["products", debounced, similarIds, similarIds ? 0 : pages],
     queryFn: async () => {
       const SELECT =
-        "id,name,sku,barcode_value,karat,gold_color,weight_grams,ring_size,sale_price,promo_price,status,branch_id,search_tags,description,category_id,created_at,branch:branches(name),category:categories(name),images:product_images(storage_path,is_primary)";
+        "id,name,sku,barcode_value,karat,gold_color,weight_grams,ring_size,sale_price,promo_price,status,branch_id,search_tags,description,category_id,created_at,branch:branches(name),category:categories(name),images:product_images(storage_path,thumb_path,is_primary)";
       const sortAsc = debounced.sortDir === "asc";
 
       // لون الحجر مُخزَّن في جدول product_stones منفصل (لا عمود مباشر على products) —

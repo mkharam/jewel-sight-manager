@@ -56,7 +56,7 @@ export default function ReviewUnnamed() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("products")
-        .select("id,name,category_id,karat,item_type,description,images:product_images(id,storage_path,ai_labels)")
+        .select("id,name,category_id,karat,item_type,description,images:product_images(id,storage_path,thumb_path,ai_labels)")
         .eq("name", PLACEHOLDER_NAME)
         .order("created_at", { ascending: sortDir === "asc" })
         .limit(200);
