@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { KARAT_OPTIONS } from "@/lib/constants";
 import { compressMany, cropImageToBbox, makeThumbnail, prepareForAIBase64 } from "@/lib/image-compress";
 import { keepAwake } from "@/lib/keepAwake";
+import { listPending, prunePending, removePending, savePending } from "@/lib/pendingUploads";
 import { isPdf, pdfToImageFiles } from "@/lib/pdf-to-images";
 import { uploadQueue } from "@/lib/uploadQueue";
 import { normalizeAr } from "@/lib/arabic-search";
@@ -94,10 +95,13 @@ async function saveStoneColors(productId: string, gemstones: string[] | undefine
 }
 
 // مسارات التخزين فريدة ولا يُعاد استخدامها أبداً (طابع زمني + عشوائي)، فمحتوى أي مسار
-// ثابت للأبد — نسمح للمتصفح بتخزينها سنة كاملة. الافتراضي كان ساعة واحدة فقط، وكان
-// المتصفح يرسل طلب تحقّق لكل صورة عند كل زيارة (48 صورة في الشاشة = 48 ذهاب وإياب على
-// شبكة الهاتف قبل أن تظهر الصور، حتى وهي مخزّنة مسبقاً).
-const IMMUTABLE_CACHE = "public, max-age=31536000, immutable";
+// ثابت للأبد — نطلب تخزينها سنة بدل الساعة الافتراضية.
+// تنبيه: القيمة هنا عدد ثوانٍ كنص (هذا ما يتوقعه supabase-js ويحوّله إلى max-age)، لا
+// ترويسة كاملة — تمرير "public, max-age=…" ينتج ترويسة تالفة ويفشل الرفع كله.
+// وملاحظة ثانية: خطة المشروع الحالية تُرجع no-cache للملفات العامة مهما ضبطنا هنا
+// (التخزين المؤقت عبر CDN ميزة مدفوعة كما هو حال تحويل الصور)، فالقيمة تبقى صحيحة
+// وتصير فعّالة تلقائياً إن رُقّيت الخطة — والمكسب الحقيقي اليوم يأتي من حجم المصغّرة.
+const IMMUTABLE_CACHE = "31536000";
 
 async function uploadFile(file: File, userId: string, k: number): Promise<{ path: string; thumbPath: string | null }> {
   let lastErr: any;
@@ -197,8 +201,27 @@ export async function saveCapturedPiece(
   barcodeValue?: string | null,
   karat?: string | null,
 ): Promise<{ productId: string; imageId: string }> {
+  // نحتفظ بنسخة محلية قبل الرفع: لقطة الكاميرا غير موجودة في أي مكان آخر، فلو انقطع
+  // الرفع (خروج من التطبيق/ضعف شبكة) تضيع القطعة نهائياً بدون هذه النسخة. تُحذف فور
+  // نجاح الحفظ، ويستأنفها resumePendingUploads عند فتح التطبيق لاحقاً إن بقيت.
+  const pendingId = `cap-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  await savePending({
+    id: pendingId,
+    file,
+    fileName: file.name || "capture.jpg",
+    branchId: opts.branchId ?? null,
+    weightGrams: weightGrams ?? null,
+    barcodeValue: barcodeValue ?? null,
+    karat: karat ?? null,
+    itemType: null,
+    trayMode: false,
+    createdAt: Date.now(),
+  });
+
   const { path, thumbPath } = await uploadFile(file, opts.userId, Math.floor(Math.random() * 1_000_000));
-  return saveUnanalyzedProduct(path, thumbPath, opts, weightGrams, barcodeValue, karat ?? null, null);
+  const saved = await saveUnanalyzedProduct(path, thumbPath, opts, weightGrams, barcodeValue, karat ?? null, null);
+  await removePending(pendingId);
+  return saved;
 }
 
 /**
@@ -479,6 +502,26 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
     uploadQueue.add({ id: e.id, previewUrl: e.previewUrl, label: "جارٍ الرفع…", status: "uploading" }),
   );
 
+  // نحفظ كل صورة في IndexedDB قبل أن نبدأ رفعها. صورة الكاميرا لا يمكن استرجاعها من أي
+  // مكان آخر لو قُتل التبويب في المنتصف، فبدون هذا الحفظ تضيع بلا أثر ولا يعرف الموظف
+  // أصلاً أيّ قطعة ضاعت. السجل يُحذف فور نجاح رفع صورته.
+  await Promise.all(
+    entries.map((e) =>
+      savePending({
+        id: e.id,
+        file: e.file,
+        fileName: e.file.name,
+        branchId: opts.branchId ?? null,
+        weightGrams: e.weightGrams,
+        barcodeValue: e.barcodeValue,
+        karat: e.karat,
+        itemType: e.itemType,
+        trayMode: !!opts.trayMode,
+        createdAt: Date.now(),
+      }),
+    ),
+  );
+
   let ok = 0;
   let failed = 0;
   let deferred = 0; // نجح رفعها لكن تعذّر تحليلها فوراً — تبقى للطابور الخلفي
@@ -526,9 +569,12 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
           });
         }
       }
+      // اكتمل حفظ القطعة في قاعدة البيانات — لم تعد الصورة بحاجة لنسخة احتياطية محلية.
+      await removePending(entry.id);
       ok++;
     } catch (e: any) {
       failed++;
+      // نُبقي السجل في IndexedDB ليُستأنف لاحقاً بدل فقدان الصورة.
       uploadQueue.update(entry.id, { status: "error", message: e?.message ?? "فشل الرفع" });
     }
   }, stagger);
@@ -554,4 +600,43 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
       }
     })();
   }
+}
+
+/**
+ * يستأنف الصور التي بقيت في IndexedDB من جلسة سابقة انقطعت (خروج من التطبيق، قتل التبويب،
+ * انطفاء الشاشة الطويل). يُستدعى مرة عند إقلاع التطبيق.
+ *
+ * الصور تعود إلى نفس مسار الرفع العادي، ولا نمرّر أي ضغط إضافي لأنها مضغوطة أصلاً قبل
+ * حفظها. لا نستأنف وضع "الصينية" تلقائياً لأنه يفتح قطعاً متعددة لكل صورة ويحتاج قرار
+ * الموظف، فنكتفي بإبقائها محفوظة.
+ */
+export async function resumePendingUploads(userId: string): Promise<number> {
+  await prunePending();
+  const pending = (await listPending()).filter((p) => !p.trayMode);
+  if (!pending.length) return 0;
+
+  toast.info(`استئناف ${pending.length} صورة لم يكتمل رفعها`, { duration: 5000 });
+
+  // الوزن/الباركود/العيار تُنقل كخصائص على كائن الملف نفسه — هذا ما يقرأه runUploadBatch.
+  const files = pending.map((p) => {
+    const f = new File([p.file], p.fileName || "photo.jpg", { type: p.file.type || "image/jpeg" });
+    Object.assign(f, {
+      weightGrams: p.weightGrams ?? null,
+      barcodeValue: p.barcodeValue ?? null,
+      karat: p.karat ?? null,
+      itemType: p.itemType ?? null,
+    });
+    return f;
+  });
+
+  await runUploadBatch(files, {
+    userId,
+    branchId: pending[0].branchId ?? null,
+    trayMode: false,
+  });
+
+  // السجلات القديمة استُبدلت بسجلات جديدة داخل runUploadBatch (معرّفات جديدة)، فنحذف
+  // القديمة صراحةً كي لا تُستأنف مرة أخرى في الإقلاع القادم.
+  for (const p of pending) await removePending(p.id);
+  return pending.length;
 }

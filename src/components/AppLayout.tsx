@@ -11,6 +11,7 @@ import NotificationsBell from "@/components/NotificationsBell";
 import InstallPrompt from "@/components/InstallPrompt";
 import { useUploadQueuePendingCount } from "@/lib/uploadQueue";
 import { ensurePushEnabled } from "@/lib/push";
+import { resumePendingUploads } from "@/lib/uploadRunner";
 
 type NavItem = { to: string; label: string; icon: any; end?: boolean; badgeKey?: "transfers" | "uploads" | "reorders" };
 
@@ -60,6 +61,20 @@ export default function AppLayout() {
   useEffect(() => {
     if (!user) return;
     void ensurePushEnabled();
+  }, [user]);
+
+  // صور بقيت من جلسة رفع انقطعت (خروج من التطبيق أو قتل التبويب على الهاتف) — تُستأنف
+  // مرة واحدة عند فتح التطبيق. بدون هذا كانت الصورة تضيع نهائياً لأنها من الكاميرا ولا
+  // نسخة منها في أي مكان آخر. راجع src/lib/pendingUploads.ts.
+  useEffect(() => {
+    if (!user) return;
+    let done = false;
+    const t = setTimeout(() => {
+      if (done) return;
+      done = true;
+      void resumePendingUploads(user.id).catch(() => {});
+    }, 3000);
+    return () => clearTimeout(t);
   }, [user]);
 
   // عدد طلبات إعادة الطلب التي بانتظار قرار المدير

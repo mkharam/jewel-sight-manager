@@ -14,7 +14,8 @@ import { makeThumbnail } from "@/lib/image-compress";
 import { toast } from "sonner";
 
 const BATCH = 6;
-const IMMUTABLE_CACHE = "public, max-age=31536000, immutable";
+// عدد ثوانٍ كنص — هذا ما يتوقّعه supabase-js. راجع التعليق المطوّل في uploadRunner.ts.
+const IMMUTABLE_CACHE = "31536000";
 
 export default function GenerateThumbsCard() {
   const [running, setRunning] = useState(false);
