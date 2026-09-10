@@ -42,6 +42,10 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId }: P
   const [flash, setFlash] = useState(false);
   const [facing, setFacing] = useState<"environment" | "user">("environment");
   const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
+  // العيار يُختار قبل التصوير بدل ترك الذكاء الاصطناعي يخمّنه من الصورة لاحقاً — أغلب
+  // المخزون 18K فهو الافتراضي، ويبقى ظاهراً وقابلاً للتبديل طوال الجلسة (القطع عادة
+  // مرتّبة حسب العيار في نفس الدرج/الفاترينة فلا حاجة لتبديله كل صورة).
+  const [karat, setKarat] = useState<"18K" | "21K">("18K");
   const weightInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const lastShotId = useRef<string | null>(null);
 
@@ -157,7 +161,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId }: P
         // نرفع ونحفظ فوراً — لا ننتظر ضغط "تم"، حتى لا يُفقد التقاط سابق عند إغلاق التبويب
         // أو قفل الهاتف قبل إنهاء الجلسة.
         const file = new File([blob], `capture-${id}.jpg`, { type: "image/jpeg" });
-        saveCapturedPiece(file, { userId, branchId, trayMode: false }, null, barcodeForShot || null)
+        saveCapturedPiece(file, { userId, branchId, trayMode: false }, null, barcodeForShot || null, karat)
           .then(({ productId }) => {
             if (pendingDeleteRef.current.has(id)) {
               pendingDeleteRef.current.delete(id);
@@ -251,7 +255,19 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId }: P
       {/* شريط علوي — بدون زر إغلاق/رجوع منفصل عمداً: "تم" هي الطريقة الوحيدة للخروج،
           حتى لا يخرج الموظف بالخطأ من الجلسة أثناء التصوير المتتالي. */}
       <div className="flex items-center justify-between px-4 py-3 safe-area-pt text-white bg-black/60">
-        <span className="size-9" aria-hidden="true" />
+        {/* العيار يُختار قبل التصوير ويبقى ثابتاً لكل الصور حتى يُبدَّل يدوياً — القطع
+            عادة مرتّبة حسب العيار في نفس الدرج فلا حاجة لتبديله كل صورة. */}
+        <div className="flex rounded-full bg-white/10 border border-white/25 p-0.5 text-xs font-bold" role="group" aria-label="العيار">
+          {(["18K", "21K"] as const).map((k) => (
+            <button
+              key={k}
+              onClick={() => setKarat(k)}
+              className={`px-2.5 py-1 rounded-full transition-colors ${karat === k ? "bg-primary text-primary-foreground" : "text-white/70"}`}
+            >
+              {k}
+            </button>
+          ))}
+        </div>
         <p className="text-sm font-semibold">{shots.length > 0 ? `${shots.length} صورة مُلتقطة` : "صوّر القطع واحدة تلو الأخرى"}</p>
         <button onClick={() => setFacing((f) => (f === "environment" ? "user" : "environment"))} className="p-2 -m-2" aria-label="تبديل الكاميرا">
           <RotateCcw className="size-5" />

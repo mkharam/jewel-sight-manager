@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
     // صور بانتظار التحليل: قطعتها ما زالت بالاسم الافتراضي ولم تُحلّل بعد.
     const { data: pending, error: qErr } = await admin
       .from("product_images")
-      .select("id, storage_path, product_id, products!inner(id, name)")
+      .select("id, storage_path, product_id, products!inner(id, name, karat)")
       .is("ai_labels", null)
       .eq("products.name", PLACEHOLDER_NAME)
       .order("created_at", { ascending: true })
@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
     const categories = cats ?? [];
 
     // تحميل الصور وترميزها base64 — نتجاهل أي صورة يفشل تحميلها بدل إفشال الدفعة كاملة.
-    const loaded: { id: string; base64: string; mimeType: string; productId: string }[] = [];
+    const loaded: { id: string; base64: string; mimeType: string; productId: string; karatAlreadySet: boolean }[] = [];
     for (const row of pending) {
       const { data: file, error: dlErr } = await admin.storage.from("product-images").download(row.storage_path);
       if (dlErr || !file) {
@@ -94,7 +94,14 @@ Deno.serve(async (req) => {
       const bytes = new Uint8Array(await file.arrayBuffer());
       let binary = "";
       for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-      loaded.push({ id: row.id, base64: btoa(binary), mimeType: file.type || "image/jpeg", productId: row.product_id });
+      const existingKarat = (row as any).products?.karat as string | null | undefined;
+      loaded.push({
+        id: row.id,
+        base64: btoa(binary),
+        mimeType: file.type || "image/jpeg",
+        productId: row.product_id,
+        karatAlreadySet: !!existingKarat,
+      });
     }
     if (!loaded.length) return json({ processed: 0, message: "تعذّر تحميل صور الدفعة" });
 
@@ -141,12 +148,18 @@ Deno.serve(async (req) => {
       if (gemstones.length) descriptionText += `\nألوان الأحجار: ${gemstones.join("، ")}`;
       if (extras) descriptionText += `\n(${extras})`;
       const description = descriptionText.trim() || null;
+      // لا نكتب فوق عيار اختاره الموظف يدوياً قبل الرفع (راجع BulkCameraCapture/Upload) —
+      // القيمة اليدوية أوثق من تخمين الذكاء الاصطناعي من الصورة، تماماً كمنطق analyzeAndApply
+      // في مسار الرفع الفوري (uploadRunner.ts).
+      const karatPatch = l.karatAlreadySet
+        ? {}
+        : { karat: ["18K", "21K"].includes(analysis.karat as string) ? analysis.karat : null };
       await admin
         .from("products")
         .update({
           name: analysis.name_ar || PLACEHOLDER_NAME,
           category_id: categoryId,
-          karat: ["18K", "21K", "22K", "24K", "ألماس", "فضة", "أخرى"].includes(analysis.karat as string) ? analysis.karat : null,
+          ...karatPatch,
           item_type: analysis.item_type || null,
           description,
         })

@@ -169,9 +169,10 @@ export async function saveCapturedPiece(
   opts: UploadOptions,
   weightGrams?: number | null,
   barcodeValue?: string | null,
+  karat?: string | null,
 ): Promise<{ productId: string; imageId: string }> {
   const path = await uploadFile(file, opts.userId, Math.floor(Math.random() * 1_000_000));
-  return saveUnanalyzedProduct(path, opts, weightGrams, barcodeValue, null, null);
+  return saveUnanalyzedProduct(path, opts, weightGrams, barcodeValue, karat ?? null, null);
 }
 
 /** تحديث الوزن/الباركود بعد أن حُفظت القطعة فعلاً — الموظف يكتبهما بعد رؤية الصورة عادة. */

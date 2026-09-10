@@ -28,6 +28,9 @@ const PLACEHOLDER_NAME = "قطعة جديدة";
 export default function Upload() {
   const { user, profile } = useAuth();
   const [trayMode, setTrayMode] = useState(false);
+  // العيار يُختار قبل الرفع بدل ترك الذكاء الاصطناعي يخمّنه من الصورة فقط — أغلب المخزون
+  // 18K فهو الافتراضي. "دع الذكاء الاصطناعي يحدد" يبقى متاحاً لدفعة مختلطة العيار.
+  const [karatDefault, setKaratDefault] = useState<"18K" | "21K" | "auto">("18K");
   const [branchId, setBranchId] = useState<string>(profile?.branch_id ?? NO_BRANCH);
   const galleryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -54,7 +57,13 @@ export default function Upload() {
   const handleFiles = (files: FileList | File[] | null) => {
     if (!files || !files.length) return;
     if (!user) return toast.error("سجّل الدخول أولاً");
-    void runUploadBatch(files, {
+    const list = Array.from(files);
+    // في وضع الصينية قد تحتوي الصورة الواحدة قطعاً بعيارات مختلفة، فتحليل كل قطعة مقصوصة
+    // يبقى مستقلاً كالمعتاد — لا نفرض عياراً واحداً على الصينية كلها.
+    if (!trayMode && karatDefault !== "auto") {
+      for (const f of list) (f as any).karat = karatDefault;
+    }
+    void runUploadBatch(list, {
       userId: user.id,
       branchId: branchId === NO_BRANCH ? null : branchId,
       trayMode,
@@ -105,6 +114,29 @@ export default function Upload() {
           </div>
           <Switch checked={trayMode} onCheckedChange={setTrayMode} />
         </div>
+
+        {!trayMode && (
+          <div className="flex items-center justify-between gap-3 rounded-lg bg-muted/50 p-3">
+            <div>
+              <p className="text-sm font-semibold">العيار</p>
+              <p className="text-xs text-muted-foreground">يُطبَّق على كل قطع هذه الدفعة بدل انتظار تخمين الذكاء الاصطناعي</p>
+            </div>
+            <div className="flex rounded-lg border overflow-hidden shrink-0">
+              {([["18K", "18K"], ["21K", "21K"], ["auto", "تلقائي"]] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setKaratDefault(value)}
+                  className={`px-3 h-9 text-xs font-semibold transition-colors ${
+                    karatDefault === value ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-2">
           <input ref={galleryRef} type="file" accept="image/*,application/pdf,.pdf" multiple className="hidden" onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }} />
