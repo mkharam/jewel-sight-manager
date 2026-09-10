@@ -90,23 +90,25 @@ export default function Inquiries() {
 
   return (
     <div className="space-y-4 max-w-4xl mx-auto">
-      <div className="flex items-center justify-between gap-2">
+      {/* على الهاتف: العنوان ثم الزرّان تحت بعضهما بعرض كامل — الزرّان جنباً إلى جنب
+          كانا يتزاحمان ويقصّان النص. من sm فأعلى يعودان بجانب العنوان كالسابق. */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">استفسارات العملاء</h1>
           <p className="text-sm text-muted-foreground">سجّل ما يطلبه العملاء حتى لو القطعة غير موجودة الآن.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
           <ReorderRequestDialog
             branchId={profile?.branch_id ?? null}
             trigger={
-              <Button variant="outline">
+              <Button variant="outline" className="w-full sm:w-auto h-11 sm:h-10">
                 <PackagePlus className="size-4 ml-1" /> طلب إعادة طلب بصورة
               </Button>
             }
           />
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-gold-gradient text-primary-foreground shadow-gold">
+            <Button className="bg-gold-gradient text-primary-foreground shadow-gold w-full sm:w-auto h-11 sm:h-10">
               <Plus className="size-4 ml-1" /> استفسار جديد
             </Button>
           </DialogTrigger>
