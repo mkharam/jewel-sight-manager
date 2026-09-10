@@ -497,14 +497,15 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
 
   // الطابور الخلفي صار شبكة أمان فقط: يُستدعى حين يتعذّر التحليل الفوري لبعض القطع
   // (ازدحام/نفاد حصة لحظية)، بدل استدعائه دائماً كما كان.
+  // كان هنا سرّ الطابور مكتوباً صراحةً في الكود — أي أنه يُشحن داخل حزمة الجافاسكربت العلنية
+  // فيقرأه أي زائر، وهو عكس الغرض منه أصلاً (منع الغرباء من استهلاك حصص الذكاء الاصطناعي).
+  // وفوق ذلك كانت قيمته خاطئة أساساً فكان كل نداء يرجع 401 ويُبتلع صامتاً. الدالة الآن تقبل
+  // JWT المستخدم المسجّل، وهو ما يرسله supabase-js تلقائياً — فلا حاجة لأي سرّ في المتصفح.
   if (deferred > 0 && !opts.trayMode) {
-    const QUEUE_SECRET = "555b188d91d392e574d5b939db23f50d39e4a9c68c425350";
     const rounds = Math.min(6, Math.ceil(deferred / 4));
     (async () => {
       for (let i = 0; i < rounds; i++) {
-        await supabase.functions
-          .invoke("process-analysis-queue", { headers: { "x-queue-secret": QUEUE_SECRET } })
-          .catch(() => {});
+        await supabase.functions.invoke("process-analysis-queue").catch(() => {});
         if (i < rounds - 1) await new Promise((r) => setTimeout(r, 500));
       }
     })();

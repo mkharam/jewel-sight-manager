@@ -7,10 +7,6 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { analyzeBatchWithFallback, embedImage, type JewelryAnalysis } from "../_shared/lovable-ai.ts";
 
-// سرّ مشترك ثابت للتحقق من أن المستدعي هو pg_cron الخاص بمشروعنا فقط — الدالة verify_jwt=false
-// (لأن pg_cron لا يملك JWT مستخدم)، فهذا الفحص يمنع أي طرف خارجي من استدعائها لاستهلاك
-// حصص الذكاء الاصطناعي المجانية عبثاً.
-const QUEUE_SECRET = Deno.env.get("QUEUE_SECRET") ?? "";
 const BATCH_SIZE = 4;
 const PLACEHOLDER_NAME = "قطعة جديدة";
 
@@ -56,17 +52,42 @@ function detectStoneColors(gemstones: string[] | undefined): { color: string; st
   return Array.from(found, ([color, stoneType]) => ({ color, stoneType }));
 }
 
+// الدالة verify_jwt=false لأن pg_cron لا يملك JWT مستخدم، فنتحقق من المستدعي هنا بأحد طريقين:
+//  1) سرّ الطابور من Vault — هذا مسار pg_cron.
+//  2) JWT مستخدم مسجّل دخول — هذا مسار المتصفح بعد رفع دفعة صور (شبكة أمان فورية).
+// المهم أن يبقى مغلقاً أمام الغرباء كي لا تُستهلك حصص الذكاء الاصطناعي المجانية عبثاً.
+// كان الفحص سابقاً يقارن بمتغيّر بيئة QUEUE_SECRET لم يُضبط أصلاً، فكان كل نداء — من الـ cron
+// ومن المتصفح — يرجع 401 بصمت؛ راجع migration 20260910030000 للتفاصيل.
+async function isAuthorized(req: Request, admin: ReturnType<typeof createClient>): Promise<boolean> {
+  const queueSecret = req.headers.get("x-queue-secret");
+  if (queueSecret) {
+    const { data } = await admin.rpc("verify_internal_secret", {
+      _name: "analysis_queue_secret",
+      _value: queueSecret,
+    });
+    if (data === true) return true;
+  }
+
+  const authHeader = req.headers.get("Authorization") ?? "";
+  if (authHeader.startsWith("Bearer ")) {
+    const { data } = await admin.auth.getUser(authHeader.replace("Bearer ", ""));
+    if (data?.user) return true;
+  }
+
+  return false;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-
-  if (!QUEUE_SECRET || req.headers.get("x-queue-secret") !== QUEUE_SECRET) {
-    return json({ error: "unauthorized" }, 401);
-  }
 
   const admin = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+
+  if (!(await isAuthorized(req, admin))) {
+    return json({ error: "unauthorized" }, 401);
+  }
 
   try {
     // صور بانتظار التحليل: قطعتها ما زالت بالاسم الافتراضي ولم تُحلّل بعد.

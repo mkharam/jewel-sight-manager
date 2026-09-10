@@ -17,11 +17,20 @@ Deno.serve(async (req) => {
     const body = await req.json();
 
     // نداء من trigger قاعدة البيانات: { table: "product_images", record: {...} }
+    // السرّ يُتحقق منه من Vault (نفس القيمة التي يرسلها الـ trigger) بدل متغيّر البيئة
+    // PRODUCT_IMAGE_WEBHOOK_SECRET الذي لم يُضبط أصلاً فكان هذا المسار كله يرجع 401
+    // بصمت — راجع migration 20260910030000.
     if (body?.table === "product_images" && body?.record) {
-      const secret = Deno.env.get("PRODUCT_IMAGE_WEBHOOK_SECRET") ?? "";
-      if (!secret || req.headers.get("x-webhook-secret") !== secret) {
-        return json({ error: "unauthorized" }, 401);
-      }
+      const provided = req.headers.get("x-webhook-secret") ?? "";
+      const admin = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
+      const { data: ok } = await admin.rpc("verify_internal_secret", {
+        _name: "analyze_image_webhook_secret",
+        _value: provided,
+      });
+      if (ok !== true) return json({ error: "unauthorized" }, 401);
       return json(await analyzeFromRecord(body.record));
     }
 
