@@ -32,9 +32,11 @@ interface Props {
   onClose: () => void;
   userId: string;
   branchId: string | null;
+  /** بثّ حصلنا عليه داخل نقرة المستخدم — يُستخدم كما هو بدل طلب جديد، راجع openCamera. */
+  initialStream?: MediaStream | null;
 }
 
-export default function BulkCameraCapture({ open, onClose, userId, branchId }: Props) {
+export default function BulkCameraCapture({ open, onClose, userId, branchId, initialStream }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [shots, setShots] = useState<Shot[]>([]);
@@ -68,11 +70,20 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId }: P
 
     const start = async () => {
       try {
+        // البثّ الجاهز من نقرة الفتح يُستخدم كما هو في أول تشغيل فقط؛ تبديل الكاميرا
+        // لاحقاً يطلب بثّاً جديداً (وهو أيضاً ناتج عن نقرة مباشرة داخل الشاشة).
+        const first = !streamRef.current;
         streamRef.current?.getTracks().forEach((t) => t.stop());
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1920 } },
-          audio: false,
-        });
+        streamRef.current = null;
+
+        const reusable = !!initialStream && initialStream.getTracks().some((t) => t.readyState === "live");
+        const stream =
+          first && reusable
+            ? initialStream!
+            : await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1920 } },
+                audio: false,
+              });
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
 
@@ -134,6 +145,35 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId }: P
       streamRef.current = null;
     };
   }, [open, facing]);
+
+  // إعادة المحاولة من نقرة المستخدم مباشرة — راجع التعليق عند زر "إعادة تشغيل الكاميرا".
+  const retryCamera = async () => {
+    setError(null);
+    setReady(false);
+    try {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1920 } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      const video = videoRef.current;
+      if (!video) {
+        stream.getTracks().forEach((t) => t.stop());
+        setError("تعذّر عرض الكاميرا — أغلق الشاشة وافتحها من جديد");
+        return;
+      }
+      video.srcObject = stream;
+      void video.play().catch(() => {});
+      setReady(true);
+    } catch (e: any) {
+      setError(
+        e?.name === "NotAllowedError"
+          ? "تم رفض إذن الكاميرا — فعّله من إعدادات الآيفون ← مخرّم ← الكاميرا"
+          : "تعذّر فتح الكاميرا",
+      );
+    }
+  };
 
   // فحص مستمر للباركود/QR — معطَّل مؤقتاً (BARCODE_SCAN_ENABLED)، راجع التعليق أعلى الملف.
   useBoxedBarcodeScanner(videoRef, open && ready && BARCODE_SCAN_ENABLED, (text) => setPendingBarcode(text));
@@ -320,9 +360,14 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId }: P
       {/* عرض الكاميرا */}
       <div className="relative flex-1 overflow-hidden bg-black flex items-center justify-center">
         {error ? (
-          <div className="text-center text-white p-6 space-y-2">
+          <div className="text-center text-white p-6 space-y-3">
             <ImageOff className="size-10 mx-auto text-white/70" />
             <p className="font-semibold">{error}</p>
+            {/* محاولة يدوية: الطلب هنا يقع داخل نقرة المستخدم مباشرة، وهي الحالة الوحيدة
+                التي يقبلها التطبيق المثبّت على iOS بشكل موثوق. */}
+            <Button variant="secondary" onClick={retryCamera}>
+              <RotateCcw className="size-4 ml-1" /> إعادة تشغيل الكاميرا
+            </Button>
           </div>
         ) : (
           /* autoPlay مع playsInline وmuted هي التركيبة التي يشترطها سفاري iOS لبدء

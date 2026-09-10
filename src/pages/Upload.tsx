@@ -36,6 +36,7 @@ export default function Upload() {
   const cameraRef = useRef<HTMLInputElement>(null);
   const queue = useUploadQueue();
   const [bulkCameraOpen, setBulkCameraOpen] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
@@ -70,10 +71,27 @@ export default function Upload() {
     });
   };
 
-  const openCamera = () => {
+  // نطلب بثّ الكاميرا داخل نقرة المستخدم نفسها ثم نمرّره للشاشة.
+  // السبب: كان الطلب يتم داخل useEffect بعد تغيّر الحالة، أي خارج نافذة "تفعيل
+  // المستخدم" — سفاري العادي متساهل مع هذا، أما التطبيق المثبّت (standalone) فيرفضه
+  // بصمت، وهذا سبب أن الكاميرا تشتغل في سفاري ولا تشتغل في التطبيق المثبّت.
+  const openCamera = async () => {
     if (!user) return toast.error("سجّل الدخول أولاً");
-    if (supportsInAppCamera()) setBulkCameraOpen(true);
-    else cameraRef.current?.click();
+    if (!supportsInAppCamera()) return cameraRef.current?.click();
+
+    // نفتح الشاشة في كل الأحوال حتى لو فشل الطلب هنا: الشاشة تعرض سبب الفشل وزر
+    // "إعادة تشغيل الكاميرا" الذي يطلب البثّ من نقرة مباشرة أيضاً. لو أغلقنا الطريق
+    // عند أول فشل لبقي الموظف بلا وسيلة إعادة محاولة داخل التطبيق.
+    let stream: MediaStream | null = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1920 } },
+        audio: false,
+      });
+    } catch { /* الشاشة ستُظهر الخطأ وتتيح إعادة المحاولة */ }
+
+    setCameraStream(stream);
+    setBulkCameraOpen(true);
   };
 
   return (
@@ -229,7 +247,8 @@ export default function Upload() {
 
       <BulkCameraCapture
         open={bulkCameraOpen}
-        onClose={() => setBulkCameraOpen(false)}
+        initialStream={cameraStream}
+        onClose={() => { setBulkCameraOpen(false); setCameraStream(null); }}
         userId={user?.id ?? ""}
         branchId={branchId === NO_BRANCH ? null : branchId}
       />
