@@ -50,22 +50,26 @@ Deno.serve(async (req) => {
     const limit = Math.min(Math.max(Number(body?.limit ?? 8), 1), 20);
     const force = body?.force === true;
     const offset = force ? Math.max(Number(body?.offset ?? 0), 0) : 0;
+    // إعادة تحليل صور محدّدة بالاسم — لتصحيح دفعة صغيرة أخطأ التحليل فيها (مثلاً نسبة
+    // قطع لعلامات تجارية خطأً) دون إعادة تشغيل الكتالوج كله وإهدار حصص الرؤية.
+    const imageIds: string[] = Array.isArray(body?.imageIds) ? body.imageIds.slice(0, 20) : [];
 
     // ── الصور التي تحتاج فهرسة (أو كل الصور بالترتيب الزمني إن force) ──
     const needsWork = "ai_embedding.is.null,ai_labels.eq.{}";
 
     let countQuery = admin.from("product_images").select("id", { count: "exact", head: true });
-    if (!force) countQuery = countQuery.or(needsWork);
+    if (!force && !imageIds.length) countQuery = countQuery.or(needsWork);
     const { count: remainingBefore } = await countQuery;
 
     let listQuery = admin.from("product_images").select("id,product_id,storage_path");
-    if (!force) listQuery = listQuery.or(needsWork);
+    if (imageIds.length) listQuery = listQuery.in("id", imageIds);
+    else if (!force) listQuery = listQuery.or(needsWork);
     // في وضع force لا يوجد فلتر ينقص الصور المُعاد فهرستها من القائمة (كلها تُعتبر
     // "منتهية" حتى في القديم)، فنستخدم offset يُرسله المستدعي (الواجهة) ليتقدّم بين
     // النداءات المتتالية ويُغطّي كل الكتالوج تدريجياً بدل تكرار أول limit صورة فقط.
-    const { data: images, error: listErr } = await listQuery
-      .order("created_at", { ascending: true })
-      .range(offset, offset + limit - 1);
+    const { data: images, error: listErr } = imageIds.length
+      ? await listQuery
+      : await listQuery.order("created_at", { ascending: true }).range(offset, offset + limit - 1);
     if (listErr) throw listErr;
 
     if (!images?.length) {

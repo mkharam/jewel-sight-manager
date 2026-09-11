@@ -6,14 +6,22 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, RefreshCw, Sparkles, StopCircle } from "lucide-react";
+import { Loader2, RefreshCw, Sparkles, StopCircle, Tag } from "lucide-react";
 import { toast } from "sonner";
 
 const BATCH = 8;
+// دفعة أصغر لإعادة التحليل الموجّهة — كل صورة تمرّ بنموذج رؤية كامل، والدفعة الكبيرة
+// تقترب من مهلة تنفيذ الدالة.
+const FIX_BATCH = 4;
+const BRAND_NAMES = [
+  "بولغري", "فان كليف", "كارتييه", "مسيكا", "تيفاني", "شوبارد",
+  "بوشرون", "هاري وينستون", "غراف", "ديور", "شانيل", "غوتشي", "بياجيه",
+];
 
 export default function ReindexImagesCard() {
   const [running, setRunning] = useState(false);
   const [forceRunning, setForceRunning] = useState(false);
+  const [brandFixing, setBrandFixing] = useState(false);
   const [stopFlag, setStopFlag] = useState(false);
   const [done, setDone] = useState(0);
   const [failed, setFailed] = useState(0);
@@ -37,6 +45,21 @@ export default function ReindexImagesCard() {
     queryFn: async () => {
       const { count } = await supabase.from("product_images").select("id", { count: "exact", head: true });
       return count ?? 0;
+    },
+  });
+
+  // القطع التي نُسبت لعلامة تجارية عالمية في وصفها. أُضيف هذا بعد أن رصدنا أن التحليل
+  // كان يمنح أسماء دور (هاري وينستون، مسيكا، غراف…) لأي طقم ألماس عرايسي فاخر بلا أي
+  // توقيع شكلي فعلي — 21 قطعة من 24 كانت نسبة خاطئة، وهي تُغرق البحث بنتائج مضلّلة.
+  // إعادة تحليلها بالقواعد المشدّدة تُبقي النسبة الصحيحة فقط (ألامبرا، باثر…) وتحذف الباقي.
+  const { data: brandTagged, refetch: refetchBrands } = useQuery({
+    queryKey: ["reindex-brand-tagged"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("product_images")
+        .select("id")
+        .or(BRAND_NAMES.map((b) => `ai_labels->>description_ar.ilike.%${b}%`).join(","));
+      return (data ?? []).map((r) => r.id as string);
     },
   });
 
@@ -114,6 +137,49 @@ export default function ReindexImagesCard() {
     runLoop(true);
   };
 
+  // إعادة تحليل موجّهة للصور المنسوبة لعلامة تجارية فقط — أسرع وأرخص بكثير من إعادة
+  // فهرسة الكتالوج كله، وتُصحّح النسب الخاطئة بالقواعد المشدّدة.
+  const startBrandFix = async () => {
+    const ids = brandTagged ?? [];
+    if (!ids.length) return;
+    setBrandFixing(true);
+    setStopFlag(false);
+    setDone(0);
+    setFailed(0);
+    setNote(null);
+    setTotal(ids.length);
+
+    let localDone = 0;
+    let localFailed = 0;
+    try {
+      for (let i = 0; i < ids.length; i += FIX_BATCH) {
+        if (stopRef.current) break;
+        const { data, error } = await supabase.functions.invoke("reindex-product-images", {
+          body: { imageIds: ids.slice(i, i + FIX_BATCH) },
+        });
+        if (error) throw error;
+        if ((data as any)?.error) throw new Error((data as any).error);
+        localDone += (data as any).processed ?? 0;
+        localFailed += (data as any).failed ?? 0;
+        setDone(localDone);
+        setFailed(localFailed);
+        if ((data as any).rateLimited) {
+          setNote("الذكاء الاصطناعي مشغول الآن — توقفنا مؤقتاً، أعد المحاولة بعد قليل.");
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 600));
+      }
+      toast.success(`أُعيد تحليل ${localDone} قطعة` + (localFailed ? ` (${localFailed} فشل)` : ""));
+    } catch (e: any) {
+      toast.error(e?.message ?? "تعذّر تصحيح نسب العلامات");
+    } finally {
+      setBrandFixing(false);
+      stopRef.current = false;
+      setStopFlag(false);
+      refetchBrands();
+    }
+  };
+
   const pct = total > 0 ? Math.min(100, Math.round(((done + failed) / total) * 100)) : 0;
 
   return (
@@ -162,13 +228,30 @@ export default function ReindexImagesCard() {
             size="sm"
             variant="outline"
             onClick={startForce}
-            disabled={running || forceRunning || !totalImages}
+            disabled={running || forceRunning || brandFixing || !totalImages}
           >
             <Sparkles className="size-4 ml-1" /> إعادة فهرسة كل القطع ({totalImages ?? "…"})
           </Button>
         </div>
 
-        {(running || forceRunning || done > 0 || failed > 0) && (
+        <div className="border-t border-border/60 pt-3 space-y-1.5">
+          <p className="text-xs text-muted-foreground">
+            القطع التي نُسب وصفها لعلامة عالمية (كارتييه، فان كليف، مسيكا…). التحليل القديم كان
+            يمنح اسم دار لأي طقم ألماس فاخر بلا توقيع شكلي حقيقي، وهذا يُغرق البحث بنتائج مضلّلة.
+            إعادة تحليلها بالقواعد المشدّدة تُبقي النسبة الصحيحة فقط وتحذف الباقي.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={startBrandFix}
+            disabled={running || forceRunning || brandFixing || !brandTagged?.length}
+          >
+            {brandFixing ? <Loader2 className="size-4 ml-1 animate-spin" /> : <Tag className="size-4 ml-1" />}
+            تصحيح نسب العلامات ({brandTagged?.length ?? "…"})
+          </Button>
+        </div>
+
+        {(running || forceRunning || brandFixing || done > 0 || failed > 0) && (
           <div className="space-y-1">
             <Progress value={pct} />
             <p className="text-[11px] text-muted-foreground">
