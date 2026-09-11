@@ -56,7 +56,11 @@ Deno.serve(async (req) => {
       query_image_embedding: imageEmbedding as unknown as string,
       query_text_embedding: (textEmbedding ?? null) as unknown as string | null,
       match_count: matchCount * 3, // نجلب أكثر ثم نوحّد حسب القطعة
-      image_weight: 0.6,
+      // الوصف يُرجّح أكثر من الصورة عمداً: الوصف يلتقط تركيبة القطعة الكاملة (فكرة
+      // "طقم زهور وأوراق"، طراز تجاري معروف…) بينما التشابه البصري وحده قد يُطابق حسب
+      // زاوية/إضاءة/خلفية الصورة فقط دون التقاط الفكرة العامة للتصميم. راجع توثيق الوصف
+      // الموسّع في buildSystemPrompt (lovable-ai.ts).
+      image_weight: 0.35,
     });
 
     if (error) {

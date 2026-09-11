@@ -13,7 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowRight, Loader2, RotateCw, Save, Sparkles, ExternalLink, Trash2, ArrowUpDown, CheckCheck } from "lucide-react";
 import { toast } from "sonner";
-import { KARAT_OPTIONS, getImageUrl } from "@/lib/constants";
+import { KARAT_OPTIONS, getImageUrl, getThumbUrl } from "@/lib/constants";
 import { prepareForAIBase64 } from "@/lib/image-compress";
 
 const PLACEHOLDER_NAME = "قطعة جديدة";
@@ -394,9 +394,11 @@ export default function ReviewUnnamed() {
                     <div className="relative shrink-0">
                       {img ? (
                         <img
-                          src={getImageUrl(img.storage_path)!}
+                          src={getThumbUrl(img)!}
                           alt=""
-                          className="size-24 rounded-lg object-cover bg-muted"
+                          className="size-24 rounded-lg object-contain bg-muted"
+                          loading="lazy"
+                          decoding="async"
                         />
                       ) : (
                         <div className="size-24 rounded-lg bg-muted flex items-center justify-center text-[10px] text-muted-foreground">

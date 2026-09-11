@@ -200,11 +200,11 @@ export default function Inquiries() {
               const imgUrl = getThumbUrl(primary);
               return (
                 <Link key={q.id} to={q.product?.id ? `/products/${q.product.id}` : "#"}>
-                  <Card className="p-3 hover:bg-muted/40 transition-colors">
+                  <Card className="p-3 hover:bg-muted/40 hover:shadow-card transition-all">
                     <div className="flex gap-3">
                       <div className="size-16 rounded-lg bg-gold-soft overflow-hidden shrink-0">
                         {imgUrl ? (
-                          <img src={imgUrl} alt={q.product?.name ?? ""} className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                          <img src={imgUrl} alt={q.product?.name ?? ""} className="w-full h-full object-contain" loading="lazy" decoding="async" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-muted-foreground">
                             <Tag className="size-5 opacity-40" />

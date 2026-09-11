@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 import { ArrowRight, Edit, ImageIcon, MapPin, MessageCircle, Tag, Trash2, User, ArrowLeftRight, Sparkles, Copy, Share2, CheckCircle2, ShieldCheck, Scale, ImagePlus, Loader2 } from "lucide-react";
-import { PRODUCT_STATUS, formatCurrency, formatDate, formatWeight, getImageUrl, normalizeDecimalInput } from "@/lib/constants";
+import { PRODUCT_STATUS, formatCurrency, formatDate, formatWeight, getImageUrl, getThumbUrl, normalizeDecimalInput } from "@/lib/constants";
 import { GOLD_COLORS, STONE_COLORS } from "@/lib/luxury";
 import { toast } from "sonner";
 import QuickQuoteSheet from "@/components/QuickQuoteSheet";
@@ -212,10 +212,13 @@ export default function ProductDetail() {
             onClick={() => sortedImages.length && setLightboxOpen(true)}
           >
             {sortedImages[activeImage] ?? sortedImages[0] ? (
+              // الصورة الكاملة بدقتها الأصلية هنا فقط (لا مصغّرة) — هذه واجهة العرض الرئيسية
+              // للقطعة، وobject-contain يعرض الصورة كاملة دون قصّ أي جزء منها.
               <img
+                key={(sortedImages[activeImage] ?? sortedImages[0]).id}
                 src={getImageUrl((sortedImages[activeImage] ?? sortedImages[0]).storage_path)!}
                 alt={product.name}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-contain animate-in fade-in duration-200"
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-muted-foreground">
@@ -229,9 +232,10 @@ export default function ProductDetail() {
                 <button
                   key={img.id}
                   onClick={() => setActiveImage(i)}
-                  className={`aspect-square bg-muted rounded overflow-hidden border-2 ${i === activeImage ? "border-primary" : "border-transparent"}`}
+                  className={`aspect-square bg-muted rounded overflow-hidden border-2 transition-colors ${i === activeImage ? "border-primary" : "border-transparent hover:border-primary/40"}`}
                 >
-                  <img src={getImageUrl(img.storage_path)!} alt="" className="w-full h-full object-cover" />
+                  {/* مصغّرة مضغوطة بدل الصورة الكاملة — شريط الاختيار لا يحتاج الدقة الكاملة */}
+                  <img src={getThumbUrl(img)!} alt="" className="w-full h-full object-contain" loading="lazy" decoding="async" />
                 </button>
               ))}
             </div>

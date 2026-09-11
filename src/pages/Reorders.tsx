@@ -49,7 +49,7 @@ function ReorderThumb({ path }: { path: string }) {
   return (
     <div className="size-14 rounded-lg overflow-hidden bg-muted shrink-0">
       {url ? (
-        <img src={url} className="w-full h-full object-cover" alt="" />
+        <img src={url} className="w-full h-full object-contain" alt="" loading="lazy" decoding="async" />
       ) : (
         <div className="w-full h-full flex items-center justify-center text-muted-foreground">
           <ImageIcon className="size-5 opacity-40" />

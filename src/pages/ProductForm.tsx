@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowRight, Upload, X, Star, Sparkles, Loader2 } from "lucide-react";
-import { PRODUCT_STATUS, KARAT_OPTIONS, getImageUrl, normalizeDecimalInput } from "@/lib/constants";
+import { PRODUCT_STATUS, KARAT_OPTIONS, getThumbUrl, normalizeDecimalInput } from "@/lib/constants";
 import { GOLD_COLORS, STONE_TYPES, STONE_COLORS } from "@/lib/luxury";
 import { prepareForAIBase64 } from "@/lib/image-compress";
 import { toast } from "sonner";
@@ -75,7 +75,7 @@ export default function ProductForm() {
   const [hasStones, setHasStones] = useState(false);
   const [stoneType, setStoneType] = useState("");
   const [stoneColor, setStoneColor] = useState("");
-  const [existingImages, setExistingImages] = useState<{ id: string; storage_path: string; is_primary: boolean }[]>([]);
+  const [existingImages, setExistingImages] = useState<{ id: string; storage_path: string; thumb_path?: string | null; is_primary: boolean }[]>([]);
   const [newFiles, setNewFiles] = useState<File[]>([]);
   const [primaryIndex, setPrimaryIndex] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -492,10 +492,11 @@ export default function ProductForm() {
           {existingImages.length > 0 && (
             <div className="grid grid-cols-4 gap-2">
               {existingImages.map((img) => (
-                <div key={img.id} className="relative aspect-square rounded overflow-hidden bg-muted">
-                  <img src={getImageUrl(img.storage_path)!} className="w-full h-full object-cover" alt="" />
-                  {img.is_primary && <Star className="absolute top-1 right-1 size-4 fill-primary text-primary" />}
-                  <button type="button" onClick={() => removeExisting(img.id, img.storage_path)} className="absolute top-1 left-1 size-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center">
+                <div key={img.id} className="relative aspect-square rounded overflow-hidden bg-muted animate-in fade-in zoom-in-95 duration-200">
+                  {/* مصغّرة مضغوطة بدل الصورة الكاملة — تحميل أسرع بكثير في شبكة تعديل قطعة فيها صور كثيرة */}
+                  <img src={getThumbUrl(img)!} className="w-full h-full object-contain" alt="" loading="lazy" decoding="async" />
+                  {img.is_primary && <Star className="absolute top-1 right-1 size-4 fill-primary text-primary drop-shadow" />}
+                  <button type="button" onClick={() => removeExisting(img.id, img.storage_path)} className="absolute top-1 left-1 size-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center transition-transform hover:scale-110 active:scale-95">
                     <X className="size-3" />
                   </button>
                 </div>

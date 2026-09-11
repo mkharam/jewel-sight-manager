@@ -44,6 +44,38 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_chat_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["ai_chat_role"]
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["ai_chat_role"]
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["ai_chat_role"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_chat_messages_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_model_limits: {
         Row: {
           limit_value: number
@@ -359,6 +391,7 @@ export type Database = {
           sort_order: number
           source_url: string | null
           storage_path: string
+          text_embedding: string | null
           thumb_path: string | null
           uploaded_by: string | null
           width: number | null
@@ -375,6 +408,7 @@ export type Database = {
           sort_order?: number
           source_url?: string | null
           storage_path: string
+          text_embedding?: string | null
           thumb_path?: string | null
           uploaded_by?: string | null
           width?: number | null
@@ -391,6 +425,7 @@ export type Database = {
           sort_order?: number
           source_url?: string | null
           storage_path?: string
+          text_embedding?: string | null
           thumb_path?: string | null
           uploaded_by?: string | null
           width?: number | null
@@ -985,6 +1020,35 @@ export type Database = {
           },
         ]
       }
+      staff_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          sender_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          sender_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          sender_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_messages_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stock_take_items: {
         Row: {
           checked_at: string
@@ -1188,7 +1252,7 @@ export type Database = {
             foreignKeyName: "transfers_approved_by_fkey"
             columns: ["approved_by"]
             isOneToOne: false
-            referencedRelation: "branches"
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
@@ -1295,6 +1359,13 @@ export type Database = {
             referencedRelation: "customers"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "wishlist_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
         ]
       }
     }
@@ -1329,6 +1400,23 @@ export type Database = {
           similarity: number
           storage_path: string
           thumb_path: string
+        }[]
+      }
+      match_product_images_hybrid: {
+        Args: {
+          image_weight?: number
+          match_count?: number
+          query_image_embedding?: string
+          query_text_embedding?: string
+        }
+        Returns: {
+          image_id: string
+          product_id: string
+          score: number
+          storage_path: string
+          text_similarity: number
+          thumb_path: string
+          visual_similarity: number
         }[]
       }
       match_similar_products: {
@@ -1366,12 +1454,17 @@ export type Database = {
         Args: { p_product_id: string; p_weight_grams: number }
         Returns: undefined
       }
+      verify_internal_secret: {
+        Args: { _name: string; _value: string }
+        Returns: boolean
+      }
       verify_product_presence: {
         Args: { p_product_id: string }
         Returns: undefined
       }
     }
     Enums: {
+      ai_chat_role: "user" | "assistant"
       app_role: "admin" | "manager" | "employee" | "kiosk"
       inquiry_status: "pending" | "found" | "quoted" | "shown" | "sold" | "lost"
       product_status:
@@ -1522,6 +1615,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      ai_chat_role: ["user", "assistant"],
       app_role: ["admin", "manager", "employee", "kiosk"],
       inquiry_status: ["pending", "found", "quoted", "shown", "sold", "lost"],
       product_status: [

@@ -177,4 +177,23 @@
   .shadow-gold { box-shadow: var(--shadow-gold); }
   .shadow-card { box-shadow: var(--shadow-card); }
   .shadow-elevated { box-shadow: var(--shadow-elevated); }
+  /* لوح تحميل متوهّج بدل مربع رمادي ثابت — يعطي إحساساً بأن شيئاً يحدث فعلياً أثناء
+     الجلب بدل شاشة جامدة، يُستخدم في بطاقات القطع وقوائم المحادثة أثناء التحميل. */
+  .skeleton {
+    @apply bg-muted relative overflow-hidden;
+    background-image: linear-gradient(90deg, transparent, hsl(var(--foreground) / 0.07), transparent);
+    background-size: 200% 100%;
+    animation: shimmer 2.2s ease-in-out infinite;
+  }
+}
+
+/* من يفضّل تقليل الحركة (إعدادات النظام) — نحترم ذلك ونطفئ كل الحركات والانتقالات
+   بدل فرضها على الجميع. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
