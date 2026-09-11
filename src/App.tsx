@@ -16,7 +16,7 @@ import ProductSearch from "@/pages/ProductSearch";
 const ProductDetail = lazy(() => import("@/pages/ProductDetail"));
 const ProductForm = lazy(() => import("@/pages/ProductForm"));
 const Inquiries = lazy(() => import("@/pages/Inquiries"));
-const Chat = lazy(() => import("@/pages/Chat"));
+const StaffChat = lazy(() => import("@/pages/StaffChat"));
 const Upload = lazy(() => import("@/pages/Upload"));
 const ReviewUnnamed = lazy(() => import("@/pages/ReviewUnnamed"));
 const Staff = lazy(() => import("@/pages/Staff"));
@@ -68,7 +68,7 @@ const App = () => (
                 <Route path="/products/:id" element={<ProductDetail />} />
                 <Route path="/products/:id/edit" element={<ProductForm />} />
                 <Route path="/inquiries" element={<Inquiries />} />
-                <Route path="/chat" element={<Chat />} />
+                <Route path="/chat" element={<StaffChat />} />
                 <Route path="/notifications" element={<Notifications />} />
                 <Route path="/upload" element={<Upload />} />
                 <Route path="/live-add" element={<LiveAdd />} />

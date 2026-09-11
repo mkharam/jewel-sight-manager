@@ -4,7 +4,10 @@
 // كسياق قبل توليد الرد — بدل أن يخمّن المساعد أو يرفض الإجابة عن أسئلة المخزون.
 //
 // Body: { message: string }  (Authorization: Bearer <جلسة الموظف> إلزامي)
-// Response: { reply: string }
+// Response: { reply: string, products: [{ id, name, sku, karat, gold_color, weight_grams,
+//             sale_price, promo_price, status, branch, thumb_path, storage_path }] }
+// products: نفس القطع التي استُخدمت كسياق للرد — تُعرض كبطاقات صورة تحت رد المساعد بدل
+// نص فقط، حتى يستطيع الموظف رؤية القطعة والضغط عليها مباشرة من داخل المحادثة.
 
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -53,6 +56,7 @@ Deno.serve(async (req) => {
     // بحث دلالي سريع في وصف المخزون المفهرس — نفس آلية "text-search" (استخدام وصفي فقط،
     // بلا صورة). فشل البحث لا يجب أن يُسقط المحادثة، فقط تُجاب بلا سياق مخزون.
     let stockContext = "";
+    let matchedProducts: any[] = [];
     try {
       const embedding = await embedText(message);
       const { data: rows } = await admin.rpc("match_product_images_hybrid", {
@@ -77,18 +81,43 @@ Deno.serve(async (req) => {
       if (topIds.length) {
         const { data: products } = await admin
           .from("products")
-          .select("name, sku, karat, gold_color, weight_grams, sale_price, promo_price, status, description, branch:branches(name)")
+          .select(
+            "id, name, sku, karat, gold_color, weight_grams, sale_price, promo_price, status, description, branch:branches(name), images:product_images(storage_path,thumb_path,is_primary)",
+          )
           .in("id", topIds);
         if (products?.length) {
+          // نحافظ على ترتيب الصلة (topIds) لا ترتيب قاعدة البيانات العشوائي.
+          const order = new Map(topIds.map((id, i) => [id, i]));
+          const sorted = [...products].sort((a: any, b: any) => (order.get(a.id) ?? 99) - (order.get(b.id) ?? 99));
+
           stockContext =
             "\n\nنتائج من المخزون ذات صلة بسؤال الموظف (الأقرب أولاً):\n" +
-            products
+            sorted
               .map((p: any, i: number) => {
                 const price = p.promo_price ?? p.sale_price;
                 const status = p.status === "available" ? "متوفرة" : p.status === "reserved" ? "محجوزة" : p.status === "sold" ? "مباعة" : p.status;
                 return `${i + 1}. ${p.name}${p.sku ? ` (${p.sku})` : ""} — ${p.karat ?? "؟"} ${p.gold_color ?? ""} — ${p.weight_grams ? p.weight_grams + "غ" : ""} — ${price ? price + " د.ل" : "بدون سعر"} — ${status} — ${p.branch?.name ?? "؟"}${p.description ? ` — ${p.description.slice(0, 200)}` : ""}`;
               })
               .join("\n");
+
+          // بطاقات صورة تُعرض تحت رد المساعد مباشرة — نفس القطع، أول 6 فقط حتى لا تُثقل الشاشة.
+          matchedProducts = sorted.slice(0, 6).map((p: any) => {
+            const primary = p.images?.find((im: any) => im.is_primary) ?? p.images?.[0];
+            return {
+              id: p.id,
+              name: p.name,
+              sku: p.sku,
+              karat: p.karat,
+              gold_color: p.gold_color,
+              weight_grams: p.weight_grams,
+              sale_price: p.sale_price,
+              promo_price: p.promo_price,
+              status: p.status,
+              branch: p.branch?.name ?? null,
+              thumb_path: primary?.thumb_path ?? null,
+              storage_path: primary?.storage_path ?? null,
+            };
+          });
         }
       }
     } catch (e) {
@@ -102,7 +131,7 @@ Deno.serve(async (req) => {
 
     await admin.from("ai_chat_messages").insert({ user_id: userId, role: "assistant", content: reply });
 
-    return json({ reply });
+    return json({ reply, products: matchedProducts });
   } catch (e) {
     const { status, message } = friendlyError(e);
     return json({ error: message }, status);

@@ -17,13 +17,13 @@ type NavItem = { to: string; label: string; icon: any; end?: boolean; badgeKey?:
 
 const baseNav: NavItem[] = [
   { to: "/", label: "البحث", icon: Search, end: true },
-  { to: "/transfers", label: "تحويلات", icon: ArrowLeftRight, badgeKey: "transfers" },
+  { to: "/chat", label: "المحادثة", icon: MessagesSquare },
   { to: "/inquiries", label: "استفسارات", icon: MessageCircle },
   { to: "/upload", label: "رفع", icon: Upload, badgeKey: "uploads" },
 ];
 
 const desktopExtras: NavItem[] = [
-  { to: "/chat", label: "المحادثة", icon: MessagesSquare },
+  { to: "/transfers", label: "تحويلات", icon: ArrowLeftRight, badgeKey: "transfers" },
   { to: "/notifications", label: "الإشعارات", icon: Bell },
 ];
 
