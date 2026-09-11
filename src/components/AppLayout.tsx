@@ -223,7 +223,7 @@ export default function AppLayout() {
         <Outlet />
       </main>
 
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-card/95 backdrop-blur safe-area-pb">
+      <nav data-mobile-bottom-nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-card/95 backdrop-blur safe-area-pb">
         <div className="grid grid-cols-5">
           {mobileNav.map((item) => {
             const count = item.badgeKey ? badges[item.badgeKey] : 0;

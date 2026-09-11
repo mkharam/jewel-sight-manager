@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Send, Users, X } from "lucide-react";
 import { formatDate } from "@/lib/constants";
+import { useFillHeight } from "@/hooks/useFillHeight";
 import { toast } from "sonner";
 
 // محادثة داخلية حيّة بين كل موظفي المحل — قناة واحدة مشتركة، بث فوري عبر Realtime.
@@ -25,6 +26,7 @@ export default function StaffChat() {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const { ref: fillRef, height: fillHeight } = useFillHeight();
 
   const { data: messages = [], isLoading } = useQuery({
     queryKey: ["staff-chat"],
@@ -80,7 +82,11 @@ export default function StaffChat() {
         <p className="text-sm text-muted-foreground">قناة فريق واحدة، تصل فوراً لكل من يفتح هذه الصفحة.</p>
       </div>
 
-      <div className="flex flex-col h-[calc(100dvh-13.5rem)] sm:h-[calc(100dvh-11.5rem)]">
+      <div
+        ref={fillRef}
+        className="flex flex-col h-[calc(100dvh-13.5rem)] sm:h-[calc(100dvh-11.5rem)]"
+        style={fillHeight != null ? { height: fillHeight } : undefined}
+      >
         <div className="flex-1 overflow-y-auto -mx-1 px-1 space-y-2.5 py-2">
           {isLoading ? (
             <div className="space-y-3">
