@@ -1,6 +1,6 @@
 // Service worker خفيف: يجعل التطبيق يعمل كتطبيق مثبَّت على الآيفون
 // ويسرّع فتح الشاشة الأولى. لا نخزّن أي طلبات API/قاعدة بيانات.
-const CACHE = "mkharrm-shell-v3";
+const CACHE = "mkharrm-shell-v4";
 // نطاق تسجيل هذا الـ SW هو الأساس الصحيح للمسارات — يعمل سواء كان التطبيق على
 // الجذر (Lovable/نطاق مخصّص) أو تحت مسار فرعي (GitHub Pages: /jewel-sight-manager/).
 const SCOPE = self.registration.scope;
@@ -33,9 +33,11 @@ self.addEventListener("push", (event) => {
   } catch {
     /* ignore */
   }
-  // رابط الإشعار قد يصل كمسار مطلق من الجذر (مثال: "/products/123") — نحوّله دائماً
-  // إلى مسار كامل تحت نطاق هذا الـ SW حتى يعمل تحت أي مسار فرعي مستضاف عليه.
-  const targetUrl = new URL(data.url || ".", SCOPE).toString();
+  // رابط الإشعار يصل من مشغّلات قاعدة البيانات كمسار مطلق من الجذر (مثال: "/products/123").
+  // مهم: new URL("/chat", scope) يتجاهل مسار الاستضافة الفرعي كلياً ويُعطي
+  // https://mkharam.github.io/chat بدل .../jewel-sight-manager/chat — أي صفحة 404 خارج
+  // التطبيق عند كل ضغطة على إشعار. نزيل الشرطة الأولى ليُحسب المسار نسبةً لنطاق الـSW.
+  const targetUrl = new URL(String(data.url || ".").replace(/^\/+/, ""), SCOPE).toString();
   event.waitUntil(
     self.registration.showNotification(data.title, {
       body: data.body,
@@ -51,7 +53,9 @@ self.addEventListener("push", (event) => {
 // الضغط على الإشعار: يفتح التطبيق على الرابط المرتبط، أو يُركّز نافذة مفتوحة بالفعل.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = event.notification.data?.url || SCOPE;
+  // نفس الاحتياط هنا: الإشعار قد يكون مخزّناً من نسخة قديمة من الـSW تحمل مساراً مطلقاً.
+  const raw = event.notification.data?.url || SCOPE;
+  const url = new URL(String(raw).replace(/^\/+/, ""), SCOPE).toString();
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
       for (const c of clients) {
