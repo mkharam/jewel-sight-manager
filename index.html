@@ -28,13 +28,26 @@
     <div id="root"></div>
     <script>
       // Temporary mobile debug console for diagnosing the iPhone blank-screen issue.
-      // Visit the site with ?debug=1 to enable. Remove once diagnosed.
-      if (new URLSearchParams(location.search).has("debug")) {
-        var s = document.createElement("script");
-        s.src = "https://cdn.jsdelivr.net/npm/eruda";
-        s.onload = function () { eruda.init(); };
-        document.body.appendChild(s);
-      }
+      //
+      // The installed home-screen app always launches at the manifest's start_url
+      // ("."), stripping any "?debug=1" you visited before installing — so a query
+      // param alone never reaches the installed app. We persist the flag in
+      // localStorage (shared with Safari, same origin) instead: visit the site in a
+      // normal Safari tab with ?debug=1 once, then reopen the already-installed app
+      // icon — the console will load there too. ?debug=0 clears the flag again.
+      (function () {
+        var params = new URLSearchParams(location.search);
+        if (params.has("debug")) {
+          if (params.get("debug") === "0") localStorage.removeItem("mkharam_debug");
+          else localStorage.setItem("mkharam_debug", "1");
+        }
+        if (localStorage.getItem("mkharam_debug") === "1") {
+          var s = document.createElement("script");
+          s.src = "https://cdn.jsdelivr.net/npm/eruda";
+          s.onload = function () { eruda.init(); };
+          document.body.appendChild(s);
+        }
+      })();
     </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
