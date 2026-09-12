@@ -39,7 +39,7 @@ import { Camera, X, Check, Trash2, RotateCcw, ImageOff, Scale, ScanLine, Loader2
 import { useBoxedBarcodeScanner } from "@/lib/useBoxedBarcodeScanner";
 import ScanBoxOverlay from "@/components/ScanBoxOverlay";
 import { normalizeDecimalInput } from "@/lib/constants";
-import { saveCapturedPiece, updateCapturedPiece, deleteCapturedPiece } from "@/lib/uploadRunner";
+import { saveCapturedPiece, updateCapturedPiece } from "@/lib/uploadRunner";
 import { suspendWakeLock } from "@/lib/keepAwake";
 import { loadDebugConsole } from "@/lib/debugConsole";
 import { toast } from "sonner";
@@ -108,7 +108,6 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
   const weightsRef = useRef<Record<string, string>>({});
   const barcodesRef = useRef<Record<string, string>>({});
   const productIdsRef = useRef<Record<string, string>>({});
-  const pendingDeleteRef = useRef<Set<string>>(new Set());
   const weightTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const barcodeTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
@@ -226,7 +225,6 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
       weightsRef.current = {};
       barcodesRef.current = {};
       productIdsRef.current = {};
-      pendingDeleteRef.current = new Set();
       weightTimers.current = {};
       barcodeTimers.current = {};
       lastShotId.current = null;
@@ -281,11 +279,6 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
     const file = new File([blob], `capture-${id}.jpg`, { type: "image/jpeg" });
     saveCapturedPiece(file, { userId, branchId, trayMode: false }, null, barcodeForShot || null, karat)
       .then(({ productId }) => {
-        if (pendingDeleteRef.current.has(id)) {
-          pendingDeleteRef.current.delete(id);
-          void deleteCapturedPiece(productId);
-          return;
-        }
         productIdsRef.current[id] = productId;
         setShots((prev) => prev.map((s) => (s.id === id ? { ...s, saveState: "saved" } : s)));
         // إن كتب الموظف وزناً/باركوداً بينما كانت الصورة لا تزال تُرفع، نُطبّقه الآن فوراً
@@ -354,8 +347,9 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
     syncBarcode(id, barcodesRef.current[id] ?? "");
   };
 
-  /** يحذف قطعة — إن كانت محفوظة فعلاً على الخادم يحذفها هناك أيضاً، وإن كانت لا تزال قيد
-   * الرفع يُعلّمها لتُحذف فور اكتمال حفظها بدل أن تبقى يتيمة. */
+  /** يخفي قطعة من شريط هذه الجلسة فقط — لا يحذفها من الخادم. القطعة تبقى محفوظة وتُحلَّل
+   * وتُضاف للكتالوج بشكل طبيعي تماماً كأنها لم تُخفَ، فقط لا تظهر في شريط المصغّرات هنا
+   * (مفيد لو الموظف صوّر نفس القطعة مرتين ولا يريد رؤية التكرار في هذه الجلسة). */
   const removeShot = (id: string) => {
     setShots((prev) => {
       const target = prev.find((s) => s.id === id);
@@ -368,10 +362,6 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
     delete barcodeTimers.current[id];
     delete weightsRef.current[id];
     delete barcodesRef.current[id];
-    const productId = productIdsRef.current[id];
-    delete productIdsRef.current[id];
-    if (productId) void deleteCapturedPiece(productId);
-    else pendingDeleteRef.current.add(id);
   };
 
   const undoLast = () => {
