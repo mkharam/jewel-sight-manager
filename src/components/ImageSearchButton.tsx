@@ -5,6 +5,7 @@ import { Camera, Loader2, Sparkles, Upload, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { compressImage } from "@/lib/image-compress";
+import { cn } from "@/lib/utils";
 
 interface Analysis {
   name_ar?: string;
@@ -33,9 +34,12 @@ interface Props {
   categories?: { id: string; name: string }[];
   /** Called with matches (with similarity scores) ordered best first. */
   onResults: (payload: { matches: PhotoMatch[]; analysis: Analysis }) => void;
+  /** "icon" = زر دائري صغير بأيقونة الكاميرا فقط (يُستخدم ملاصقاً لمربع البحث). */
+  variant?: "button" | "icon";
+  className?: string;
 }
 
-export default function ImageSearchButton({ categories, onResults }: Props) {
+export default function ImageSearchButton({ categories, onResults, variant = "button", className }: Props) {
   const [open, setOpen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -121,17 +125,32 @@ export default function ImageSearchButton({ categories, onResults }: Props) {
 
   return (
     <>
-      <Button
-        type="button"
-        variant="outline"
-        size="lg"
-        className="h-12"
-        onClick={() => setOpen(true)}
-        title="بحث بالصورة"
-      >
-        <Camera className="size-4 ml-1" />
-        <span className="hidden sm:inline">بالصورة</span>
-      </Button>
+      {variant === "icon" ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          title="بحث بالصورة"
+          aria-label="بحث بالصورة"
+          className={cn(
+            "flex items-center justify-center rounded-xl bg-gold-gradient text-primary-foreground shadow-gold transition-transform active:scale-95",
+            className,
+          )}
+        >
+          <Camera className="size-5" />
+        </button>
+      ) : (
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
+          className={cn("h-12 w-full", className)}
+          onClick={() => setOpen(true)}
+          title="بحث بالصورة"
+        >
+          <Camera className="size-4 ml-1" />
+          <span className="hidden xs:inline">بالصورة</span>
+        </Button>
+      )}
 
       <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) reset(); }}>
         <DialogContent className="max-w-md">

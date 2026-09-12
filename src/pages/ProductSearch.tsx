@@ -37,19 +37,7 @@ const initialFilters: Filters = {
   q: "", karat: "all", goldColor: "all", stoneColor: "all", branchId: "all", categoryId: "all", status: "all", minWeight: "", maxWeight: "", tag: "", sortDir: "desc",
 };
 
-const SAVED_FILTERS_KEY = "lamaa.lastSearch.v1";
 const UNASSIGNED_BRANCH = "__unassigned__";
-
-function loadSavedFilters(): Filters {
-  try {
-    const raw = localStorage.getItem(SAVED_FILTERS_KEY);
-    if (!raw) return initialFilters;
-    const p = JSON.parse(raw);
-    return { ...initialFilters, ...p };
-  } catch {
-    return initialFilters;
-  }
-}
 
 /** تنظيف نص البحث من الرموز التي تُفسد صياغة فلتر PostgREST. */
 const sanitizeTerm = (s: string) => s.replace(/[,(){}"\\]/g, " ").trim();
@@ -59,7 +47,7 @@ const PAGE_SIZE = 48;
 export default function ProductSearch() {
   const { profile, roles } = useAuth();
   const queryClient = useQueryClient();
-  const [filters, setFilters] = useState<Filters>(loadSavedFilters);
+  const [filters, setFilters] = useState<Filters>(initialFilters);
   const [debounced, setDebounced] = useState(filters);
   const [pages, setPages] = useState(1); // كم صفحة تم تحميلها
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -156,7 +144,6 @@ export default function ProductSearch() {
     const t = setTimeout(() => {
       setDebounced(filters);
       setPages(1); // reset pagination on filter change
-      try { localStorage.setItem(SAVED_FILTERS_KEY, JSON.stringify(filters)); } catch {}
     }, 250);
     return () => clearTimeout(t);
   }, [filters]);
@@ -446,39 +433,44 @@ export default function ProductSearch() {
             <span className="text-[11px] text-on-brand-muted">{roleLabel} · مخرّم</span>
           </div>
 
-          <div className="flex gap-2 mt-4">
-            <div className="relative flex-1">
-              <SearchIcon className="absolute right-3 top-1/2 -translate-y-1/2 size-5 text-muted-foreground" />
-              <Input
-                ref={searchInputRef}
-                placeholder="ابحث: خاتم، سلسلة، 21K... (اضغط / للتركيز)"
-                value={filters.q}
-                onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
-                className="pr-10 pl-10 h-12 text-base bg-card border-0 shadow-card"
-                enterKeyHint="search"
+          <div className="flex flex-col gap-2.5 mt-4">
+            <div className="relative flex items-center gap-2">
+              <div className="relative flex-1">
+                <SearchIcon className="absolute right-4 top-1/2 -translate-y-1/2 size-5 text-muted-foreground" />
+                <Input
+                  ref={searchInputRef}
+                  placeholder="ابحث: خاتم، سلسلة، 21K... (اضغط / للتركيز)"
+                  value={filters.q}
+                  onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
+                  className="pr-11 pl-11 h-16 text-lg md:text-xl font-medium rounded-2xl bg-card text-foreground caret-primary border-0 shadow-card"
+                  enterKeyHint="search"
+                />
+                {filters.q && (
+                  <button
+                    type="button"
+                    onClick={() => setFilters((f) => ({ ...f, q: "" }))}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 p-1.5 rounded-full hover:bg-muted text-muted-foreground"
+                    aria-label="مسح البحث"
+                  >
+                    <X className="size-4" />
+                  </button>
+                )}
+              </div>
+              <ImageSearchButton
+                variant="icon"
+                className="size-16 shrink-0"
+                categories={categories ?? undefined}
+                onResults={({ matches }) => {
+                  setSimilarMatches(matches.length > 0 ? matches : []);
+                }}
               />
-              {filters.q && (
-                <button
-                  type="button"
-                  onClick={() => setFilters((f) => ({ ...f, q: "" }))}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-muted text-muted-foreground"
-                  aria-label="مسح البحث"
-                >
-                  <X className="size-4" />
-                </button>
-              )}
             </div>
-          <ImageSearchButton
-            categories={categories ?? undefined}
-            onResults={({ matches }) => {
-              setSimilarMatches(matches.length > 0 ? matches : []);
-            }}
-          />
-          <AiAssistantSheet />
+          <div className="grid grid-cols-2 gap-2">
+          <AiAssistantSheet className="h-12" />
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="outline" size="lg" className="relative h-12">
-                <SlidersHorizontal className="size-4 ml-1" />
+              <Button variant="outline" size="lg" className="relative h-12 w-full">
+                <SlidersHorizontal className="size-4 ml-1.5" />
                 فلترة
                 {activeFilterCount > 0 && (
                   <span className="absolute -top-1 -right-1 size-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
@@ -563,6 +555,7 @@ export default function ProductSearch() {
               </div>
             </SheetContent>
           </Sheet>
+          </div>
         </div>
         </div>
       </div>

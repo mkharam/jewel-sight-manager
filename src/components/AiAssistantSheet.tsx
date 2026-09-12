@@ -9,6 +9,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Bot, Send, Sparkles } from "lucide-react";
 import { formatCurrency, getThumbUrl } from "@/lib/constants";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 // مساعد ذكي مدمج في صفحة البحث — يبحث في المخزون الفعلي ويعرض القطع المطابقة كبطاقات
 // صورة داخل المحادثة نفسها، لا نصاً فقط. راجع supabase/functions/ai-chat.
@@ -84,7 +85,7 @@ function ProductChip({ p }: { p: MatchedProduct }) {
   );
 }
 
-export default function AiAssistantSheet() {
+export default function AiAssistantSheet({ className }: { className?: string }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -140,9 +141,9 @@ export default function AiAssistantSheet() {
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button type="button" variant="outline" size="lg" className="h-12" title="اسأل المساعد الذكي">
-          <Bot className="size-4 ml-1" />
-          <span className="hidden sm:inline">اسأل المساعد</span>
+        <Button type="button" variant="outline" size="lg" className={cn("h-12 w-full", className)} title="مساعد مخرّم الذكي">
+          <Bot className="size-4 ml-1.5" />
+          مساعد مخرّم
         </Button>
       </SheetTrigger>
       <SheetContent side="bottom" className="h-[85dvh] flex flex-col p-0">
