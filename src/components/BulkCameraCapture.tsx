@@ -41,6 +41,7 @@ import ScanBoxOverlay from "@/components/ScanBoxOverlay";
 import { normalizeDecimalInput } from "@/lib/constants";
 import { saveCapturedPiece, updateCapturedPiece, deleteCapturedPiece } from "@/lib/uploadRunner";
 import { suspendWakeLock } from "@/lib/keepAwake";
+import { loadDebugConsole } from "@/lib/debugConsole";
 import { toast } from "sonner";
 
 const BARCODE_SCAN_ENABLED = false;
@@ -80,6 +81,17 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
   const [karat, setKarat] = useState<"18K" | "21K">("18K");
   const weightInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const lastShotId = useRef<string | null>(null);
+  // 5 ضغطات متتالية (خلال ثانيتين) على شريط الحالة تفتح كونسول تشخيص فوراً — مفيد هنا
+  // تحديداً لأن الشاشة السودة تمنع الوصول لشعار الهيدر خلف هذه الشاشة الملء.
+  const debugTaps = useRef<number[]>([]);
+  const onDebugTap = () => {
+    const now = Date.now();
+    debugTaps.current = [...debugTaps.current.filter((t) => now - t < 2000), now];
+    if (debugTaps.current.length >= 5) {
+      debugTaps.current = [];
+      loadDebugConsole();
+    }
+  };
 
   // مراجع مرآة لقيم الوزن/الباركود ومعرّف القطعة المحفوظة — تُقرأ من مؤقّتات التزامن
   // المؤجّلة بدون الاعتماد على state قد يكون قديماً داخل closure وقت تنفيذ المؤقّت.
@@ -324,7 +336,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
             </button>
           ))}
         </div>
-        <p className="text-sm font-semibold">{shots.length > 0 ? `${shots.length} صورة مُلتقطة` : "صوّر القطع واحدة تلو الأخرى"}</p>
+        <p className="text-sm font-semibold" onClick={onDebugTap}>{shots.length > 0 ? `${shots.length} صورة مُلتقطة` : "صوّر القطع واحدة تلو الأخرى"}</p>
         <button onClick={() => setFacing((f) => (f === "environment" ? "user" : "environment"))} className="p-2 -m-2" aria-label="تبديل الكاميرا">
           <RotateCcw className="size-5" />
         </button>
