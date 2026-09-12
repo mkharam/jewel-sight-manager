@@ -44,6 +44,10 @@ export default function LiveAdd() {
 
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // النظام (iOS) بيكتم مسار الفيديو أحياناً بعد بدء الجلسة مباشرة — راجع نفس المعالجة
+  // والتعليق المفصّل في BulkCameraCapture.tsx (تأكّدنا منها بتشخيص حيّ على الجهاز).
+  const [videoMuted, setVideoMuted] = useState(false);
+  const [restartKey, setRestartKey] = useState(0);
   const [facing, setFacing] = useState<"environment" | "user">("environment");
   const [flash, setFlash] = useState(false);
 
@@ -72,6 +76,7 @@ export default function LiveAdd() {
     let cancelled = false;
     setReady(false);
     setError(null);
+    setVideoMuted(false);
 
     const start = async () => {
       try {
@@ -82,10 +87,28 @@ export default function LiveAdd() {
         });
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
+
+        const track = stream.getVideoTracks()[0];
+        if (track?.muted) setVideoMuted(true);
+        track?.addEventListener("mute", () => setVideoMuted(true));
+        track?.addEventListener("unmute", () => setVideoMuted(false));
+
+        // عنصر <video> لا يُعرض أثناء وجود خطأ، فقد لا يكون موجوداً بعد لحظة عودة
+        // getUserMedia — ننتظر ظهور العنصر بضع دورات بدل الاستسلام الصامت (شاشة سوداء
+        // بلا صورة وبلا رسالة خطأ). راجع نفس المعالجة في BulkCameraCapture.tsx.
+        for (let i = 0; i < 20 && !videoRef.current && !cancelled; i++) {
+          await new Promise((r) => setTimeout(r, 50));
         }
+        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+        if (!videoRef.current) {
+          stream.getTracks().forEach((t) => t.stop());
+          setError("تعذّر عرض الكاميرا — أغلق الشاشة وافتحها من جديد");
+          return;
+        }
+
+        videoRef.current.srcObject = stream;
+        // play() قد يُرفض على iOS إن لم تكن الإيماءة معتبرة — لا نُسقط الجلسة لأجله.
+        try { await videoRef.current.play(); } catch { /* تجاهل */ }
         setReady(true);
       } catch (e: any) {
         setError(e?.name === "NotAllowedError" ? "تم رفض إذن الكاميرا — فعّله من إعدادات المتصفح" : "تعذّر فتح الكاميرا");
@@ -98,7 +121,13 @@ export default function LiveAdd() {
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
-  }, [facing]);
+  }, [facing, restartKey]);
+
+  const retryCamera = () => {
+    setVideoMuted(false);
+    setError(null);
+    setRestartKey((k) => k + 1);
+  };
 
   // الكاميرا تعمل كقارئ باركود دائم: تفحص باستمرار طالما لم يُكتب الباركود بعد ولم
   // تُلتقط صورة القطعة بعد (بعدها لا داعي للفحص). بمجرد رؤية باركود صالح يُكتب في الحقل
@@ -394,6 +423,20 @@ export default function LiveAdd() {
           <video ref={videoRef} playsInline muted className="w-full h-full object-contain" />
         )}
         {flash && <div className="absolute inset-0 bg-white/80 animate-pulse" />}
+
+        {/* النظام كتم مسار الكاميرا بعد فتحها — راجع نفس المعالجة في BulkCameraCapture.tsx */}
+        {!error && !capturedUrl && videoMuted && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-6">
+            <div className="text-center text-white space-y-3 max-w-xs">
+              <ImageOff className="size-10 mx-auto text-white/70" />
+              <p className="font-semibold text-sm">الكاميرا توقّفت من نظام الجهاز فجأة</p>
+              <p className="text-xs text-white/60">جرّب "إعادة المحاولة"، ولو استمرت اقفل الشاشة دي وافتحها من جديد.</p>
+              <Button onClick={retryCamera} className="bg-gold-gradient text-primary-foreground shadow-gold">
+                <RotateCcw className="size-4 ml-1" /> إعادة المحاولة
+              </Button>
+            </div>
+          </div>
+        )}
 
         {(tagLoading || tagUploadLoading) && (
           <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-2 text-white">
