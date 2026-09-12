@@ -119,6 +119,21 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
 
+        // تشخيص مؤقّت للشاشة السوداء — راجع debugConsole.ts. يطبع حالة الـtrack فعلياً
+        // (muted/readyState) بدل التخمين. يُزال بمجرد تشخيص السبب الحقيقي.
+        const track = stream.getVideoTracks()[0];
+        console.info("[cam-debug] track", {
+          muted: track?.muted,
+          readyState: track?.readyState,
+          enabled: track?.enabled,
+          settings: track?.getSettings(),
+          visibilityState: document.visibilityState,
+          displayMode: window.matchMedia("(display-mode: standalone)").matches ? "standalone" : "browser",
+        });
+        track?.addEventListener("mute", () => console.info("[cam-debug] track muted event"));
+        track?.addEventListener("unmute", () => console.info("[cam-debug] track unmuted event"));
+        track?.addEventListener("ended", () => console.info("[cam-debug] track ended event"));
+
         // عنصر <video> لا يُعرض أثناء وجود خطأ، فقد لا يكون موجوداً بعد لحظة عودة
         // getUserMedia (مثلاً عند إعادة المحاولة بعد رفض الإذن، أو عند تبديل الكاميرا).
         // كنا نضع setReady(true) رغم ذلك فتظهر شاشة سوداء بلا صورة وبلا رسالة خطأ —
@@ -134,11 +149,34 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
         }
 
         videoRef.current.srcObject = stream;
+        videoRef.current.addEventListener("loadedmetadata", () =>
+          console.info("[cam-debug] video loadedmetadata", { w: videoRef.current?.videoWidth, h: videoRef.current?.videoHeight }),
+        );
+        videoRef.current.addEventListener("playing", () => console.info("[cam-debug] video playing event"));
+        videoRef.current.addEventListener("stalled", () => console.info("[cam-debug] video stalled event"));
+        videoRef.current.addEventListener("suspend", () => console.info("[cam-debug] video suspend event"));
         // play() قد يُرفض على iOS إن لم تكن الإيماءة معتبرة — لا نُسقط الجلسة لأجله،
         // العنصر playsInline/muted يبدأ العرض تلقائياً في أغلب الحالات.
-        try { await videoRef.current.play(); } catch { /* تجاهل */ }
+        try {
+          await videoRef.current.play();
+          console.info("[cam-debug] play() resolved");
+        } catch (playErr: any) {
+          console.info("[cam-debug] play() rejected", playErr?.name, playErr?.message);
+        }
         setReady(true);
+        // فحص متأخر: بعد ثانية، هل فعلاً وصلت إطارات؟ (videoWidth يبقى 0 لو لا)
+        setTimeout(() => {
+          console.info("[cam-debug] 1s later", {
+            videoWidth: videoRef.current?.videoWidth,
+            videoHeight: videoRef.current?.videoHeight,
+            paused: videoRef.current?.paused,
+            readyStateEl: videoRef.current?.readyState,
+            trackMuted: track?.muted,
+            trackReadyState: track?.readyState,
+          });
+        }, 1000);
       } catch (e: any) {
+        console.info("[cam-debug] getUserMedia threw", e?.name, e?.message);
         setError(e?.name === "NotAllowedError" ? "تم رفض إذن الكاميرا — فعّله من إعدادات المتصفح" : "تعذّر فتح الكاميرا");
       }
     };
