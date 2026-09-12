@@ -79,6 +79,9 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
   // نفسه لاحظ إنها بتنجح أحياناً) بدل حلقة تلقائية قد تُسابق النظام.
   const [videoMuted, setVideoMuted] = useState(false);
   const [restartKey, setRestartKey] = useState(0);
+  // كاميرا الجهاز الاحتياطية — راجع تعليقها المفصّل عند saveShot/capture أدناه.
+  const [useNativeCamera, setUseNativeCamera] = useState(false);
+  const nativeCameraRef = useRef<HTMLInputElement>(null);
   const [flash, setFlash] = useState(false);
   const [facing, setFacing] = useState<"environment" | "user">("environment");
   const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
@@ -227,9 +230,15 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
       weightTimers.current = {};
       barcodeTimers.current = {};
       lastShotId.current = null;
+      setUseNativeCamera(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // لا داعي لإبقاء بثّ الفيديو المباشر شغّالاً بعد التحوّل لكاميرا الجهاز الاحتياطية
+  useEffect(() => {
+    if (useNativeCamera) streamRef.current?.getTracks().forEach((t) => t.stop());
+  }, [useNativeCamera]);
 
   // تركيز تلقائي على حقل وزن آخر صورة مُلتقطة — الميزان أمام الموظف عادة فور تصوير القطعة
   useEffect(() => {
@@ -254,6 +263,52 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
     void updateCapturedPiece(productId, { barcode_value: barcode.trim() || null });
   };
 
+  // منطق الحفظ مشترك بين الالتقاط الحيّ (canvas من الفيديو المباشر) والتقاط كاميرا
+  // الجهاز الاحتياطية (input capture) — الاثنان ينتهيان بنفس Blob فيُحفَّظان بنفس
+  // الطريقة، فيظهران في نفس شريط المصغّرات وحقول الوزن بلا أي فرق. راجع useNativeCamera.
+  const saveShot = (blob: Blob) => {
+    const barcodeForShot = pendingBarcode ?? "";
+    setPendingBarcode(null);
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    lastShotId.current = id;
+    const url = URL.createObjectURL(blob);
+    weightsRef.current[id] = "";
+    barcodesRef.current[id] = barcodeForShot;
+    setShots((prev) => [...prev, { id, url, weight: "", barcode: barcodeForShot, saveState: "saving" }]);
+
+    // نرفع ونحفظ فوراً — لا ننتظر ضغط "تم"، حتى لا يُفقد التقاط سابق عند إغلاق التبويب
+    // أو قفل الهاتف قبل إنهاء الجلسة.
+    const file = new File([blob], `capture-${id}.jpg`, { type: "image/jpeg" });
+    saveCapturedPiece(file, { userId, branchId, trayMode: false }, null, barcodeForShot || null, karat)
+      .then(({ productId }) => {
+        if (pendingDeleteRef.current.has(id)) {
+          pendingDeleteRef.current.delete(id);
+          void deleteCapturedPiece(productId);
+          return;
+        }
+        productIdsRef.current[id] = productId;
+        setShots((prev) => prev.map((s) => (s.id === id ? { ...s, saveState: "saved" } : s)));
+        // إن كتب الموظف وزناً/باركوداً بينما كانت الصورة لا تزال تُرفع، نُطبّقه الآن فوراً
+        const w = weightsRef.current[id];
+        const b = barcodesRef.current[id];
+        if (w || b) {
+          const wNum = parseFloat(w || "");
+          void updateCapturedPiece(productId, {
+            weight_grams: !isNaN(wNum) && wNum > 0 ? wNum : null,
+            barcode_value: (b || "").trim() || null,
+          });
+        }
+      })
+      .catch(() => {
+        setShots((prev) => prev.map((s) => (s.id === id ? { ...s, saveState: "error" } : s)));
+        toast.error("تعذّر حفظ إحدى الصور — تحقق من الاتصال وأعد المحاولة");
+      });
+
+    setFlash(true);
+    setTimeout(() => setFlash(false), 120);
+    if (navigator.vibrate) navigator.vibrate(15);
+  };
+
   const capture = () => {
     const video = videoRef.current;
     if (!video || !ready) return;
@@ -263,52 +318,16 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const barcodeForShot = pendingBarcode ?? "";
-    setPendingBarcode(null);
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) return;
-        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        lastShotId.current = id;
-        const url = URL.createObjectURL(blob);
-        weightsRef.current[id] = "";
-        barcodesRef.current[id] = barcodeForShot;
-        setShots((prev) => [...prev, { id, url, weight: "", barcode: barcodeForShot, saveState: "saving" }]);
+    canvas.toBlob((blob) => { if (blob) saveShot(blob); }, "image/jpeg", 0.9);
+  };
 
-        // نرفع ونحفظ فوراً — لا ننتظر ضغط "تم"، حتى لا يُفقد التقاط سابق عند إغلاق التبويب
-        // أو قفل الهاتف قبل إنهاء الجلسة.
-        const file = new File([blob], `capture-${id}.jpg`, { type: "image/jpeg" });
-        saveCapturedPiece(file, { userId, branchId, trayMode: false }, null, barcodeForShot || null, karat)
-          .then(({ productId }) => {
-            if (pendingDeleteRef.current.has(id)) {
-              pendingDeleteRef.current.delete(id);
-              void deleteCapturedPiece(productId);
-              return;
-            }
-            productIdsRef.current[id] = productId;
-            setShots((prev) => prev.map((s) => (s.id === id ? { ...s, saveState: "saved" } : s)));
-            // إن كتب الموظف وزناً/باركوداً بينما كانت الصورة لا تزال تُرفع، نُطبّقه الآن فوراً
-            const w = weightsRef.current[id];
-            const b = barcodesRef.current[id];
-            if (w || b) {
-              const wNum = parseFloat(w || "");
-              void updateCapturedPiece(productId, {
-                weight_grams: !isNaN(wNum) && wNum > 0 ? wNum : null,
-                barcode_value: (b || "").trim() || null,
-              });
-            }
-          })
-          .catch(() => {
-            setShots((prev) => prev.map((s) => (s.id === id ? { ...s, saveState: "error" } : s)));
-            toast.error("تعذّر حفظ إحدى الصور — تحقق من الاتصال وأعد المحاولة");
-          });
-      },
-      "image/jpeg",
-      0.9,
-    );
-    setFlash(true);
-    setTimeout(() => setFlash(false), 120);
-    if (navigator.vibrate) navigator.vibrate(15);
+  // كاميرا الجهاز الاحتياطية: تُستخدم بدل الفيديو المباشر لما نظام آيفون يكتم مسار
+  // الكاميرا (خلل موثّق لا يُصلَح من الكود، راجع videoMuted) — كل ضغطة تفتح تطبيق
+  // الكاميرا الأصلي مرة، فتُحفَّظ الصورة الناتجة بنفس منطق saveShot أعلاه فتظهر في نفس
+  // الشريط وحقل الوزن. أبطأ قليلاً من الفيديو المباشر (فتح/إغلاق لكل صورة) لكنه موثوق
+  // مئة بالمئة لأنه لا يمرّ بـgetUserMedia إطلاقاً.
+  const onNativeCapture = (file: File | undefined) => {
+    if (file) saveShot(file);
   };
 
   const setWeight = (id: string, weight: string) => {
@@ -397,7 +416,15 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
 
       {/* عرض الكاميرا */}
       <div className="relative flex-1 overflow-hidden bg-black flex items-center justify-center">
-        {error ? (
+        {useNativeCamera ? (
+          // كاميرا الجهاز الاحتياطية — لا معاينة حيّة، فقط زر يفتح تطبيق الكاميرا الأصلي
+          // في كل مرة. راجع تعليق useNativeCamera أعلى الملف.
+          <div className="text-center text-white p-6 space-y-3">
+            <Camera className="size-10 mx-auto text-white/70" />
+            <p className="font-semibold text-sm">كاميرا الجهاز العادية</p>
+            <p className="text-xs text-white/60 max-w-xs">اضغط "التقاط" بالأسفل، صوّر القطعة من تطبيق الكاميرا، ثم ارجع هنا تلقائياً للقطعة التالية.</p>
+          </div>
+        ) : error ? (
           <div className="text-center text-white p-6 space-y-2">
             <ImageOff className="size-10 mx-auto text-white/70" />
             <p className="font-semibold">{error}</p>
@@ -409,16 +436,22 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
 
         {/* النظام كتم مسار الكاميرا بعد فتحها (خلل موثّق على بعض أجهزة آيفون داخل
             التطبيق المثبَّت) — إعادة فتح كاملة يدوياً بدل حلقة تلقائية قد تُسابق تفكيك
-            iOS غير المتزامن للجلسة القديمة. راجع تعليق videoMuted أعلى الملف. */}
-        {!error && videoMuted && (
+            iOS غير المتزامن للجلسة القديمة. راجع تعليق videoMuted أعلى الملف. إن استمر
+            العطل نعرض بديلاً موثوقاً 100%: كاميرا الجهاز العادية (لا تمرّ بـgetUserMedia). */}
+        {!useNativeCamera && !error && videoMuted && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-6">
             <div className="text-center text-white space-y-3 max-w-xs">
               <ImageOff className="size-10 mx-auto text-white/70" />
               <p className="font-semibold text-sm">الكاميرا توقّفت من نظام الجهاز فجأة</p>
-              <p className="text-xs text-white/60">جرّب "إعادة المحاولة"، ولو استمرت اقفل الشاشة دي وافتحها من جديد.</p>
-              <Button onClick={retryCamera} className="bg-gold-gradient text-primary-foreground shadow-gold">
-                <RotateCcw className="size-4 ml-1" /> إعادة المحاولة
-              </Button>
+              <p className="text-xs text-white/60">جرّب "إعادة المحاولة"، ولو استمرت استخدم كاميرا الجهاز العادية بدلاً منها.</p>
+              <div className="flex flex-col gap-2">
+                <Button onClick={retryCamera} className="bg-gold-gradient text-primary-foreground shadow-gold">
+                  <RotateCcw className="size-4 ml-1" /> إعادة المحاولة
+                </Button>
+                <Button onClick={() => setUseNativeCamera(true)} variant="outline" className="border-white/30 text-white bg-transparent hover:bg-white/10">
+                  <Camera className="size-4 ml-1" /> استخدام كاميرا الجهاز العادية
+                </Button>
+              </div>
             </div>
           </div>
         )}
@@ -497,13 +530,24 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
           تراجع
         </Button>
         <button
-          onClick={capture}
-          disabled={!ready}
+          onClick={() => (useNativeCamera ? nativeCameraRef.current?.click() : capture())}
+          disabled={!useNativeCamera && !ready}
           className="size-16 rounded-full border-4 border-white flex items-center justify-center disabled:opacity-40"
           aria-label="التقاط صورة"
         >
           <div className="size-12 rounded-full bg-white" />
         </button>
+        <input
+          ref={nativeCameraRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => {
+            onNativeCapture(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
         <Button onClick={finish} className="bg-gold-gradient text-primary-foreground shadow-gold">
           <Check className="size-4 ml-1" /> تم ({shots.length})
         </Button>
