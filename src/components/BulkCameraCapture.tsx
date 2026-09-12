@@ -72,6 +72,13 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
   const [shots, setShots] = useState<Shot[]>([]);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // النظام (iOS) بيكتم مسار الفيديو أحياناً بعد بدء الجلسة مباشرة — تأكّدنا منه فعلياً
+  // بتشخيص حيّ على الجهاز (mute event يتلوه فوراً). محاولة إعادة طلب تلقائية وسريعة
+  // (كل 2.5 ثانية) جُرِّبت قبل كده وأُزيلت لاحتمال إنها بتسابق تفكيك iOS غير المتزامن
+  // للجلسة القديمة فتزيد الطين بلة. لذلك هنا زر يدوي بس — إعادة الفتح الكاملة (المستخدم
+  // نفسه لاحظ إنها بتنجح أحياناً) بدل حلقة تلقائية قد تُسابق النظام.
+  const [videoMuted, setVideoMuted] = useState(false);
+  const [restartKey, setRestartKey] = useState(0);
   const [flash, setFlash] = useState(false);
   const [facing, setFacing] = useState<"environment" | "user">("environment");
   const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
@@ -107,6 +114,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
     let cancelled = false;
     setReady(false);
     setError(null);
+    setVideoMuted(false);
     setPendingBarcode(null);
 
     const start = async () => {
@@ -130,8 +138,9 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
           visibilityState: document.visibilityState,
           displayMode: window.matchMedia("(display-mode: standalone)").matches ? "standalone" : "browser",
         });
-        track?.addEventListener("mute", () => console.info("[cam-debug] track muted event"));
-        track?.addEventListener("unmute", () => console.info("[cam-debug] track unmuted event"));
+        if (track?.muted) setVideoMuted(true);
+        track?.addEventListener("mute", () => { console.info("[cam-debug] track muted event"); setVideoMuted(true); });
+        track?.addEventListener("unmute", () => { console.info("[cam-debug] track unmuted event"); setVideoMuted(false); });
         track?.addEventListener("ended", () => console.info("[cam-debug] track ended event"));
 
         // عنصر <video> لا يُعرض أثناء وجود خطأ، فقد لا يكون موجوداً بعد لحظة عودة
@@ -192,7 +201,13 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
-  }, [open, facing]);
+  }, [open, facing, restartKey]);
+
+  const retryCamera = () => {
+    setVideoMuted(false);
+    setError(null);
+    setRestartKey((k) => k + 1);
+  };
 
   // فحص مستمر للباركود/QR — معطَّل مؤقتاً (BARCODE_SCAN_ENABLED)، راجع التعليق أعلى الملف.
   useBoxedBarcodeScanner(videoRef, open && ready && BARCODE_SCAN_ENABLED, (text) => setPendingBarcode(text));
@@ -391,6 +406,22 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
           <video ref={videoRef} playsInline muted className="w-full h-full object-contain" />
         )}
         {flash && <div className="absolute inset-0 bg-white/80 animate-pulse" />}
+
+        {/* النظام كتم مسار الكاميرا بعد فتحها (خلل موثّق على بعض أجهزة آيفون داخل
+            التطبيق المثبَّت) — إعادة فتح كاملة يدوياً بدل حلقة تلقائية قد تُسابق تفكيك
+            iOS غير المتزامن للجلسة القديمة. راجع تعليق videoMuted أعلى الملف. */}
+        {!error && videoMuted && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-6">
+            <div className="text-center text-white space-y-3 max-w-xs">
+              <ImageOff className="size-10 mx-auto text-white/70" />
+              <p className="font-semibold text-sm">الكاميرا توقّفت من نظام الجهاز فجأة</p>
+              <p className="text-xs text-white/60">جرّب "إعادة المحاولة"، ولو استمرت اقفل الشاشة دي وافتحها من جديد.</p>
+              <Button onClick={retryCamera} className="bg-gold-gradient text-primary-foreground shadow-gold">
+                <RotateCcw className="size-4 ml-1" /> إعادة المحاولة
+              </Button>
+            </div>
+          </div>
+        )}
 
         {BARCODE_SCAN_ENABLED && (
           <>
