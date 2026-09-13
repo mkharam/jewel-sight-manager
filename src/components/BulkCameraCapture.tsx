@@ -35,7 +35,7 @@
 // هناك. لا تُضف أي طبقة جديدة بدون دليل فعلي من جهاز حقيقي.
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Camera, X, Check, Trash2, RotateCcw, ImageOff, Scale, ScanLine, Loader2, AlertCircle } from "lucide-react";
+import { Camera, X, Check, Trash2, RotateCcw, SwitchCamera, ImageOff, Scale, ScanLine, Loader2, AlertCircle } from "lucide-react";
 import { useBoxedBarcodeScanner } from "@/lib/useBoxedBarcodeScanner";
 import ScanBoxOverlay from "@/components/ScanBoxOverlay";
 import { normalizeDecimalInput } from "@/lib/constants";
@@ -125,7 +125,10 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
   // بعنصر الفيديو، مع كل تشخيص/حماية جُرِّبا سابقاً: انتظار ظهور العنصر، تجاهل رفض
   // play()، ومراقبة mute/unmute. مُشترك بين التشغيل الأول وإعادة المحاولة وتبديل الكاميرا
   // حتى لا يتكرر نفس المنطق الحسّاس في ثلاث نسخ مختلفة قد تنحرف عن بعضها بمرور الوقت.
+  const activeDiagIntervals = useRef<ReturnType<typeof setInterval>[]>([]);
   const attachStream = async (stream: MediaStream) => {
+    activeDiagIntervals.current.forEach(clearInterval);
+    activeDiagIntervals.current = [];
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = stream;
     setError(null);
@@ -158,13 +161,42 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
     // play() قد يُرفض على iOS إن لم تكن الإيماءة معتبرة — لا نُسقط الجلسة لأجله.
     try { await videoRef.current.play(); } catch { /* تجاهل */ }
     setReady(true);
-    setTimeout(() => {
-      console.info("[cam-debug] 1s later", {
-        videoWidth: videoRef.current?.videoWidth,
-        readyStateEl: videoRef.current?.readyState,
-        trackMuted: track?.muted,
-      });
+
+    // تشخيص مستمر كل ثانية: نرسم الفيديو فعلياً على canvas ونقرأ متوسط سطوع البكسلات —
+    // هذا يفصل احتمالين مختلفين قد يبدوان متطابقين ظاهرياً (شاشة سوداء): (أ) المسار
+    // فعلاً بلا بيانات إطلاقاً (سطوع صفر تماماً باستمرار)، أو (ب) البيانات موجودة فعلاً
+    // وتُقرأ عبر drawImage رغم أن <video> نفسه لا يعرضها (خلل تركيب/عرض فقط — كان هذا
+    // أول تفسير جُرِّب في هذا الملف تاريخياً قبل أن يُستبعد لصالح نظرية الكتم، دون دليل
+    // canvas فعلي في حينها يحسم الأمر). يستمر طالما الشاشة مفتوحة وليس بها خطأ صريح.
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const diagInterval = setInterval(() => {
+      const video = videoRef.current;
+      if (!video || !ctx || video.videoWidth === 0) {
+        console.info("[cam-debug] canvas-sample: no dimensions yet", { videoWidth: video?.videoWidth ?? null });
+        return;
+      }
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      try {
+        ctx.drawImage(video, 0, 0);
+        const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        let sum = 0;
+        for (let i = 0; i < data.length; i += 4 * 97) sum += data[i] + data[i + 1] + data[i + 2];
+        const sampleCount = Math.ceil(data.length / (4 * 97));
+        console.info("[cam-debug] canvas-sample", {
+          avgBrightness: Math.round(sum / sampleCount),
+          videoWidth: video.videoWidth,
+          readyStateEl: video.readyState,
+          paused: video.paused,
+          trackMuted: track?.muted,
+          trackReadyState: track?.readyState,
+        });
+      } catch (e: any) {
+        console.info("[cam-debug] canvas-sample threw", e?.name, e?.message);
+      }
     }, 1000);
+    activeDiagIntervals.current.push(diagInterval);
   };
 
   useEffect(() => {
@@ -201,6 +233,8 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
     return () => {
       cancelled = true;
       resumeWakeLock();
+      activeDiagIntervals.current.forEach(clearInterval);
+      activeDiagIntervals.current = [];
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
@@ -435,9 +469,26 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
           ))}
         </div>
         <p className="text-sm font-semibold" onClick={onDebugTap}>{shots.length > 0 ? `${shots.length} صورة مُلتقطة` : "صوّر القطع واحدة تلو الأخرى"}</p>
-        <button onClick={switchCamera} className="p-2 -m-2" aria-label="تبديل الكاميرا">
-          <RotateCcw className="size-5" />
-        </button>
+        <div className="flex items-center gap-3">
+          {!useNativeCamera && (
+            <>
+              <button onClick={retryCamera} className="p-1" aria-label="إعادة تشغيل الكاميرا" title="إعادة تشغيل الكاميرا">
+                <RotateCcw className="size-5" />
+              </button>
+              <button onClick={switchCamera} className="p-1" aria-label="تبديل الكاميرا" title="تبديل الكاميرا">
+                <SwitchCamera className="size-5" />
+              </button>
+            </>
+          )}
+          <button
+            onClick={() => setUseNativeCamera((v) => !v)}
+            className={`p-1 ${useNativeCamera ? "text-primary" : ""}`}
+            aria-label="كاميرا الجهاز العادية"
+            title="كاميرا الجهاز العادية"
+          >
+            <Camera className="size-5" />
+          </button>
+        </div>
       </div>
 
       {/* عرض الكاميرا */}
@@ -460,26 +511,14 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
         )}
         {flash && <div className="absolute inset-0 bg-white/80 animate-pulse" />}
 
-        {/* النظام كتم مسار الكاميرا بعد فتحها (خلل موثّق على بعض أجهزة آيفون داخل
-            التطبيق المثبَّت). زر "إعادة المحاولة" يطلب جلسة جديدة مباشرة من نقرته هو
-            نفسه (راجع retryCamera) — لا تأخير ولا useEffect وسيط. إن استمر العطل نعرض
-            بديلاً موثوقاً 100%: كاميرا الجهاز العادية (لا تمرّ بـgetUserMedia إطلاقاً). */}
+        {/* لا طبقة "توقّفت الكاميرا" فوق الشاشة عمداً حالياً — بطلب صريح، حتى تبقى
+            الشاشة كما هي فعلياً (سوداء لو كتمها النظام) ونراقب سلوكها الحقيقي في
+            الكونسول (راجع تشخيص canvas-sample في attachStream) بدل حجبه بواجهة تكيّف
+            معه. زر "استخدام كاميرا الجهاز العادية" لا يزال متاحاً من الشريط العلوي. */}
         {!useNativeCamera && !error && videoMuted && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-6">
-            <div className="text-center text-white space-y-3 max-w-xs">
-              <ImageOff className="size-10 mx-auto text-white/70" />
-              <p className="font-semibold text-sm">الكاميرا توقّفت من نظام الجهاز فجأة</p>
-              <p className="text-xs text-white/60">جرّب "إعادة المحاولة"، ولو استمرت استخدم كاميرا الجهاز العادية بدلاً منها.</p>
-              <div className="flex flex-col gap-2">
-                <Button onClick={retryCamera} className="bg-gold-gradient text-primary-foreground shadow-gold">
-                  <RotateCcw className="size-4 ml-1" /> إعادة المحاولة
-                </Button>
-                <Button onClick={() => setUseNativeCamera(true)} variant="outline" className="border-white/30 text-white bg-transparent hover:bg-white/10">
-                  <Camera className="size-4 ml-1" /> استخدام كاميرا الجهاز العادية
-                </Button>
-              </div>
-            </div>
-          </div>
+          <p className="absolute top-2 inset-x-3 text-center text-[11px] text-white/70 bg-black/50 rounded-full px-3 py-1">
+            النظام كتم مسار الكاميرا — راقب الكونسول (5 ضغطات على النص فوق)
+          </p>
         )}
 
         {BARCODE_SCAN_ENABLED && (
