@@ -206,10 +206,20 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
     };
   }, [open, facing, restartKey]);
 
+  // تأخير قصير عمداً قبل إعادة الطلب: محاولة سابقة (a9ecfd1) أعادت الطلب فور إيقاف
+  // البثّ القديم، واحتمال قوي إنها كانت بتُسابق تفكيك iOS غير المتزامن للجلسة القديمة
+  // فتفشل المحاولة الجديدة لنفس السبب. هنا نوقف البثّ، ننتظر فعلياً، ثم نطلب من جديد.
+  const [retrying, setRetrying] = useState(false);
   const retryCamera = () => {
-    setVideoMuted(false);
-    setError(null);
-    setRestartKey((k) => k + 1);
+    setRetrying(true);
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    setTimeout(() => {
+      setRetrying(false);
+      setVideoMuted(false);
+      setError(null);
+      setRestartKey((k) => k + 1);
+    }, 1500);
   };
 
   // فحص مستمر للباركود/QR — معطَّل مؤقتاً (BARCODE_SCAN_ENABLED)، راجع التعليق أعلى الملف.
@@ -441,14 +451,14 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
         {!useNativeCamera && !error && videoMuted && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-6">
             <div className="text-center text-white space-y-3 max-w-xs">
-              <ImageOff className="size-10 mx-auto text-white/70" />
-              <p className="font-semibold text-sm">الكاميرا توقّفت من نظام الجهاز فجأة</p>
-              <p className="text-xs text-white/60">جرّب "إعادة المحاولة"، ولو استمرت استخدم كاميرا الجهاز العادية بدلاً منها.</p>
+              {retrying ? <Loader2 className="size-10 mx-auto text-white/70 animate-spin" /> : <ImageOff className="size-10 mx-auto text-white/70" />}
+              <p className="font-semibold text-sm">{retrying ? "جارٍ إعادة المحاولة…" : "الكاميرا توقّفت من نظام الجهاز فجأة"}</p>
+              {!retrying && <p className="text-xs text-white/60">جرّب "إعادة المحاولة"، ولو استمرت استخدم كاميرا الجهاز العادية بدلاً منها.</p>}
               <div className="flex flex-col gap-2">
-                <Button onClick={retryCamera} className="bg-gold-gradient text-primary-foreground shadow-gold">
+                <Button onClick={retryCamera} disabled={retrying} className="bg-gold-gradient text-primary-foreground shadow-gold">
                   <RotateCcw className="size-4 ml-1" /> إعادة المحاولة
                 </Button>
-                <Button onClick={() => setUseNativeCamera(true)} variant="outline" className="border-white/30 text-white bg-transparent hover:bg-white/10">
+                <Button onClick={() => setUseNativeCamera(true)} disabled={retrying} variant="outline" className="border-white/30 text-white bg-transparent hover:bg-white/10">
                   <Camera className="size-4 ml-1" /> استخدام كاميرا الجهاز العادية
                 </Button>
               </div>
