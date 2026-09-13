@@ -45,7 +45,6 @@ import { loadDebugConsole } from "@/lib/debugConsole";
 import { toast } from "sonner";
 
 const BARCODE_SCAN_ENABLED = false;
-const NATIVE_CAMERA_KEY = "mkharam.cameraFallback.v1";
 
 type SaveState = "saving" | "saved" | "error";
 type Shot = { id: string; url: string; weight: string; barcode: string; saveState: SaveState };
@@ -80,16 +79,8 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
   // نفسه لاحظ إنها بتنجح أحياناً) بدل حلقة تلقائية قد تُسابق النظام.
   const [videoMuted, setVideoMuted] = useState(false);
   const [restartKey, setRestartKey] = useState(0);
-  // كاميرا الجهاز الاحتياطية — راجع تعليقها المفصّل عند saveShot/capture أدناه. نتذكّر
-  // في localStorage أول ما جهاز معيّن يحتاجها (النظام يكتم الكاميرا المباشرة عليه) —
-  // فالمرات القادمة تُستخدم مباشرة بلا أي محاولة فاشلة أو شاشة سوداء أصلاً.
-  const [useNativeCamera, setUseNativeCameraState] = useState(() => {
-    try { return localStorage.getItem(NATIVE_CAMERA_KEY) === "1"; } catch { return false; }
-  });
-  const setUseNativeCamera = (v: boolean) => {
-    setUseNativeCameraState(v);
-    if (v) { try { localStorage.setItem(NATIVE_CAMERA_KEY, "1"); } catch {} }
-  };
+  // كاميرا الجهاز الاحتياطية — راجع تعليقها المفصّل عند saveShot/capture أدناه.
+  const [useNativeCamera, setUseNativeCamera] = useState(false);
   const nativeCameraRef = useRef<HTMLInputElement>(null);
   const [flash, setFlash] = useState(false);
   const [facing, setFacing] = useState<"environment" | "user">("environment");
@@ -122,9 +113,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
   const barcodeTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(() => {
-    // هذا الجهاز اتأكّد قبل كده إن الكاميرا المباشرة بتتكتم عليه من النظام — نتخطّى
-    // المحاولة (وبالتالي الشاشة السوداء) خالص ونستخدم كاميرا الجهاز الاحتياطية مباشرة.
-    if (!open || useNativeCamera) return;
+    if (!open) return;
     let cancelled = false;
     setReady(false);
     setError(null);
@@ -152,11 +141,8 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
           visibilityState: document.visibilityState,
           displayMode: window.matchMedia("(display-mode: standalone)").matches ? "standalone" : "browser",
         });
-        // نتذكّر لهذا الجهاز فوراً (بغضّ النظر عمّا يختاره الموظف الآن) — فحتى لو
-        // كمّل بإعادة المحاولة في هذه الجلسة، المرة القادمة تبدأ بكاميرا الجهاز مباشرة.
-        const rememberNativeFallback = () => { try { localStorage.setItem(NATIVE_CAMERA_KEY, "1"); } catch {} };
-        if (track?.muted) { setVideoMuted(true); rememberNativeFallback(); }
-        track?.addEventListener("mute", () => { console.info("[cam-debug] track muted event"); setVideoMuted(true); rememberNativeFallback(); });
+        if (track?.muted) setVideoMuted(true);
+        track?.addEventListener("mute", () => { console.info("[cam-debug] track muted event"); setVideoMuted(true); });
         track?.addEventListener("unmute", () => { console.info("[cam-debug] track unmuted event"); setVideoMuted(false); });
         track?.addEventListener("ended", () => console.info("[cam-debug] track ended event"));
 
@@ -254,9 +240,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
       weightTimers.current = {};
       barcodeTimers.current = {};
       lastShotId.current = null;
-      // نُعيد الحالة لما هو محفوظ لهذا الجهاز (لا false دائماً) — إغلاق الشاشة لا يجب
-      // أن يُنسي أن هذا الجهاز يحتاج كاميرا الجهاز الاحتياطية إن كان تأكّد ذلك من قبل.
-      try { setUseNativeCameraState(localStorage.getItem(NATIVE_CAMERA_KEY) === "1"); } catch {}
+      setUseNativeCamera(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
