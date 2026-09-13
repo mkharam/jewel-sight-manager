@@ -299,6 +299,21 @@ async function analyzeAndApply(
   }
 }
 
+/**
+ * تحليل فوري لقطعة مُلتقطة من كاميرا "التصوير المتتالي" — نفس تحليل الرفع بالجملة
+ * (analyzeAndApply) لكن كنقطة دخول عامة تجلب الفئات بنفسها بدل الاعتماد على استدعاء
+ * سابق لدفعة كاملة. تُستدعى فور نجاح حفظ الصورة (راجع saveCapturedPiece وBulkCameraCapture)
+ * بدل ترك القطعة "غير مسمّاة" بانتظار مراجعة يدوية أو الطابور الخلفي.
+ */
+export async function analyzeCapturedPiece(
+  file: File,
+  saved: { productId: string; imageId: string },
+  alreadySet: { karat: boolean; itemType: boolean },
+): Promise<string | null> {
+  const categories = (await supabase.from("categories").select("id,name").eq("is_active", true)).data ?? [];
+  return analyzeAndApply(file, saved, categories, alreadySet);
+}
+
 /** وضع الصينية: التحليل معروف مسبقاً (لازم لمعرفة عدد القطع) فنحفظه كاملاً فوراً. */
 async function saveTrayPieces(
   file: File,

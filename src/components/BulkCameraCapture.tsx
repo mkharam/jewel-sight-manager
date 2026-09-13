@@ -39,7 +39,7 @@ import { Camera, X, Check, Trash2, RotateCcw, SwitchCamera, ImageOff, Scale, Sca
 import { useBoxedBarcodeScanner } from "@/lib/useBoxedBarcodeScanner";
 import ScanBoxOverlay from "@/components/ScanBoxOverlay";
 import { normalizeDecimalInput } from "@/lib/constants";
-import { saveCapturedPiece, updateCapturedPiece, deleteCapturedPiece } from "@/lib/uploadRunner";
+import { saveCapturedPiece, updateCapturedPiece, deleteCapturedPiece, analyzeCapturedPiece } from "@/lib/uploadRunner";
 import { suspendWakeLock } from "@/lib/keepAwake";
 import { loadDebugConsole } from "@/lib/debugConsole";
 import { toast } from "sonner";
@@ -341,7 +341,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
     // أو قفل الهاتف قبل إنهاء الجلسة.
     const file = new File([blob], `capture-${id}.jpg`, { type: "image/jpeg" });
     saveCapturedPiece(file, { userId, branchId, trayMode: false }, null, barcodeForShot || null, karat)
-      .then(({ productId }) => {
+      .then(({ productId, imageId }) => {
         if (pendingDeleteRef.current.has(id)) {
           pendingDeleteRef.current.delete(id);
           void deleteCapturedPiece(productId);
@@ -359,6 +359,11 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
             barcode_value: (b || "").trim() || null,
           });
         }
+        // تحليل فوري تلقائي — القطعة تخرج من هذه الشاشة مُسمّاة ومصنّفة فعلاً بدل
+        // انتظار مراجعة يدوية لاحقة. العيار مضبوط دائماً من الموظف قبل التصوير (لا
+        // يُكتب فوقه)، والنوع متروك للذكاء الاصطناعي. فشل التحليل هنا صامت تماماً —
+        // القطعة تبقى محفوظة وتلتقطها الطابور الخلفي لاحقاً كالمعتاد.
+        void analyzeCapturedPiece(file, { productId, imageId }, { karat: true, itemType: false }).catch(() => {});
       })
       .catch(() => {
         setShots((prev) => prev.map((s) => (s.id === id ? { ...s, saveState: "error" } : s)));
