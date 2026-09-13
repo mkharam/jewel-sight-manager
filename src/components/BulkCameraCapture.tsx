@@ -79,6 +79,8 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
   // نفسه لاحظ إنها بتنجح أحياناً) بدل حلقة تلقائية قد تُسابق النظام.
   const [videoMuted, setVideoMuted] = useState(false);
   const [restartKey, setRestartKey] = useState(0);
+  // محاولة تلقائية صامتة واحدة عند أول كتم في الجلسة — راجع handleMuted أدناه.
+  const autoRetriedRef = useRef(false);
   // كاميرا الجهاز الاحتياطية — راجع تعليقها المفصّل عند saveShot/capture أدناه.
   const [useNativeCamera, setUseNativeCamera] = useState(false);
   const nativeCameraRef = useRef<HTMLInputElement>(null);
@@ -141,8 +143,22 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
           visibilityState: document.visibilityState,
           displayMode: window.matchMedia("(display-mode: standalone)").matches ? "standalone" : "browser",
         });
-        if (track?.muted) setVideoMuted(true);
-        track?.addEventListener("mute", () => { console.info("[cam-debug] track muted event"); setVideoMuted(true); });
+        // أول كتم في هذه الجلسة: نعيد المحاولة تلقائياً مرة واحدة فقط بصمت (بلا أي
+        // شاشة "توقّفت") قبل ما نطلب من الموظف قراراً — بعض الأجهزة يكفيها طلب ثانٍ.
+        // مرة واحدة بس ومع نفس تأخير الـ1.5 ثانية المتعمَّد (راجع retryCamera) تفادياً
+        // لتكرار محاولات سريعة متتالية قد تُسابق تفكيك iOS للجلسة السابقة.
+        const handleMuted = () => {
+          console.info("[cam-debug] track muted event");
+          if (!autoRetriedRef.current) {
+            autoRetriedRef.current = true;
+            console.info("[cam-debug] auto-retrying once, silently");
+            retryCamera();
+          } else {
+            setVideoMuted(true);
+          }
+        };
+        if (track?.muted) handleMuted();
+        track?.addEventListener("mute", handleMuted);
         track?.addEventListener("unmute", () => { console.info("[cam-debug] track unmuted event"); setVideoMuted(false); });
         track?.addEventListener("ended", () => console.info("[cam-debug] track ended event"));
 
@@ -241,6 +257,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
       barcodeTimers.current = {};
       lastShotId.current = null;
       setUseNativeCamera(false);
+      autoRetriedRef.current = false;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
