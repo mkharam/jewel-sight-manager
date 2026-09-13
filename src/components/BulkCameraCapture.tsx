@@ -57,6 +57,16 @@ interface Props {
   userId: string;
   branchId: string | null;
   /**
+   * بثّ حصل عليه المستدعي داخل نقرة المستخدم نفسها (راجع openCamera في Upload.tsx) —
+   * يُستخدم كما هو في أول تشغيل بدل طلب جديد من useEffect. السبب موثّق بتشخيص حيّ على
+   * جهاز حقيقي: getUserMedia من useEffect (خارج نافذة "تفعيل المستخدم") يعمل في سفاري
+   * العادي لكن التطبيق المثبَّت على iOS يكتم المسار بعده بثانية تقريباً وبثبات تام —
+   * جُرِّب هذا مرتين بأدلة مطابقة (نفس التوقيت بالضبط) فلا يبدو أنه تزامن عشوائي. طلب
+   * الجلسة من نقرة مباشرة (هنا، أو من زر "إعادة المحاولة"/"تبديل الكاميرا" أدناه) هو
+   * الاحتمال الوحيد المتبقي غير المجرَّب فعلياً في هذا الملف كما هو مبنيّ الآن.
+   */
+  initialStream?: MediaStream | null;
+  /**
    * يُستدعى عند الضغط على "تم" مع معرّفات كل القطع التي حُفظت فعلاً في هذه الجلسة —
    * يُستخدم لأخذ الموظف مباشرة لمراجعتها بدل تركها تُحلَّل وتُسمّى تلقائياً في الخلفية
    * بلا أي مراجعة بشرية (كان هذا يحصل حتى لمجرد تجربة الكاميرا وضغط "تم" للخروج فقط).
@@ -66,21 +76,18 @@ interface Props {
   onFinished?: (savedProductIds: string[]) => void;
 }
 
-export default function BulkCameraCapture({ open, onClose, userId, branchId, onFinished }: Props) {
+export default function BulkCameraCapture({ open, onClose, userId, branchId, onFinished, initialStream }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [shots, setShots] = useState<Shot[]>([]);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // النظام (iOS) بيكتم مسار الفيديو أحياناً بعد بدء الجلسة مباشرة — تأكّدنا منه فعلياً
-  // بتشخيص حيّ على الجهاز (mute event يتلوه فوراً). محاولة إعادة طلب تلقائية وسريعة
-  // (كل 2.5 ثانية) جُرِّبت قبل كده وأُزيلت لاحتمال إنها بتسابق تفكيك iOS غير المتزامن
-  // للجلسة القديمة فتزيد الطين بلة. لذلك هنا زر يدوي بس — إعادة الفتح الكاملة (المستخدم
-  // نفسه لاحظ إنها بتنجح أحياناً) بدل حلقة تلقائية قد تُسابق النظام.
+  // بتشخيص حيّ على الجهاز مرتين (mute event يتلوه بثانية تقريباً وبثبات تام في المرتين).
+  // تأخير/إعادة محاولة تلقائية من useEffect جُرِّبا ولم يُغيّرا شيئاً — راجع تعليق
+  // initialStream في تعريف الـProps أعلى الملف: السبب الأرجح المتبقي غير المجرَّب هو
+  // نافذة "تفعيل المستخدم"، فكل إعادة محاولة هنا الآن مباشرة من نقرة الزر بلا أي تأخير.
   const [videoMuted, setVideoMuted] = useState(false);
-  const [restartKey, setRestartKey] = useState(0);
-  // محاولة تلقائية صامتة واحدة عند أول كتم في الجلسة — راجع handleMuted أدناه.
-  const autoRetriedRef = useRef(false);
   // كاميرا الجهاز الاحتياطية — راجع تعليقها المفصّل عند saveShot/capture أدناه.
   const [useNativeCamera, setUseNativeCamera] = useState(false);
   const nativeCameraRef = useRef<HTMLInputElement>(null);
@@ -114,6 +121,52 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
   const weightTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const barcodeTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
+  // يُوصِّل بثّاً حاصلاً عليه بالفعل (من نقرة مباشرة دائماً — راجع كل نقاط الاستدعاء)
+  // بعنصر الفيديو، مع كل تشخيص/حماية جُرِّبا سابقاً: انتظار ظهور العنصر، تجاهل رفض
+  // play()، ومراقبة mute/unmute. مُشترك بين التشغيل الأول وإعادة المحاولة وتبديل الكاميرا
+  // حتى لا يتكرر نفس المنطق الحسّاس في ثلاث نسخ مختلفة قد تنحرف عن بعضها بمرور الوقت.
+  const attachStream = async (stream: MediaStream) => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = stream;
+    setError(null);
+    setVideoMuted(false);
+
+    const track = stream.getVideoTracks()[0];
+    console.info("[cam-debug] track", {
+      muted: track?.muted,
+      readyState: track?.readyState,
+      settings: track?.getSettings(),
+      displayMode: window.matchMedia("(display-mode: standalone)").matches ? "standalone" : "browser",
+    });
+    track?.addEventListener("mute", () => { console.info("[cam-debug] track muted event"); setVideoMuted(true); });
+    track?.addEventListener("unmute", () => { console.info("[cam-debug] track unmuted event"); setVideoMuted(false); });
+    if (track?.muted) setVideoMuted(true);
+
+    // عنصر <video> لا يُعرض أثناء وجود خطأ، فقد لا يكون موجوداً بعد لحظة عودة
+    // getUserMedia — ننتظر ظهوره بضع دورات بدل الاستسلام الصامت (شاشة سوداء بلا صورة
+    // وبلا رسالة خطأ).
+    for (let i = 0; i < 20 && !videoRef.current; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    if (!videoRef.current) {
+      stream.getTracks().forEach((t) => t.stop());
+      setError("تعذّر عرض الكاميرا — أغلق الشاشة وافتحها من جديد");
+      return;
+    }
+
+    videoRef.current.srcObject = stream;
+    // play() قد يُرفض على iOS إن لم تكن الإيماءة معتبرة — لا نُسقط الجلسة لأجله.
+    try { await videoRef.current.play(); } catch { /* تجاهل */ }
+    setReady(true);
+    setTimeout(() => {
+      console.info("[cam-debug] 1s later", {
+        videoWidth: videoRef.current?.videoWidth,
+        readyStateEl: videoRef.current?.readyState,
+        trackMuted: track?.muted,
+      });
+    }, 1000);
+  };
+
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -122,93 +175,24 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
     setVideoMuted(false);
     setPendingBarcode(null);
 
-    const start = async () => {
+    (async () => {
       try {
-        streamRef.current?.getTracks().forEach((t) => t.stop());
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1920 } },
-          audio: false,
-        });
+        // بثّ جاهز من نقرة الفتح نفسها (راجع initialStream في تعريف الـProps) —
+        // نستخدمه كما هو ولا نطلب جديداً من هذا الـuseEffect (خارج نافذة الإيماءة).
+        const reusable = initialStream && initialStream.getVideoTracks().some((t) => t.readyState === "live");
+        const stream = reusable
+          ? initialStream!
+          : await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1920 } },
+              audio: false,
+            });
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
-        streamRef.current = stream;
-
-        // تشخيص مؤقّت للشاشة السوداء — راجع debugConsole.ts. يطبع حالة الـtrack فعلياً
-        // (muted/readyState) بدل التخمين. يُزال بمجرد تشخيص السبب الحقيقي.
-        const track = stream.getVideoTracks()[0];
-        console.info("[cam-debug] track", {
-          muted: track?.muted,
-          readyState: track?.readyState,
-          enabled: track?.enabled,
-          settings: track?.getSettings(),
-          visibilityState: document.visibilityState,
-          displayMode: window.matchMedia("(display-mode: standalone)").matches ? "standalone" : "browser",
-        });
-        // أول كتم في هذه الجلسة: نعيد المحاولة تلقائياً مرة واحدة فقط بصمت (بلا أي
-        // شاشة "توقّفت") قبل ما نطلب من الموظف قراراً — بعض الأجهزة يكفيها طلب ثانٍ.
-        // مرة واحدة بس ومع نفس تأخير الـ1.5 ثانية المتعمَّد (راجع retryCamera) تفادياً
-        // لتكرار محاولات سريعة متتالية قد تُسابق تفكيك iOS للجلسة السابقة.
-        const handleMuted = () => {
-          console.info("[cam-debug] track muted event");
-          if (!autoRetriedRef.current) {
-            autoRetriedRef.current = true;
-            console.info("[cam-debug] auto-retrying once, silently");
-            retryCamera();
-          } else {
-            setVideoMuted(true);
-          }
-        };
-        if (track?.muted) handleMuted();
-        track?.addEventListener("mute", handleMuted);
-        track?.addEventListener("unmute", () => { console.info("[cam-debug] track unmuted event"); setVideoMuted(false); });
-        track?.addEventListener("ended", () => console.info("[cam-debug] track ended event"));
-
-        // عنصر <video> لا يُعرض أثناء وجود خطأ، فقد لا يكون موجوداً بعد لحظة عودة
-        // getUserMedia (مثلاً عند إعادة المحاولة بعد رفض الإذن، أو عند تبديل الكاميرا).
-        // كنا نضع setReady(true) رغم ذلك فتظهر شاشة سوداء بلا صورة وبلا رسالة خطأ —
-        // ننتظر ظهور العنصر بضع دورات بدل الاستسلام الصامت.
-        for (let i = 0; i < 20 && !videoRef.current && !cancelled; i++) {
-          await new Promise((r) => setTimeout(r, 50));
-        }
-        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
-        if (!videoRef.current) {
-          stream.getTracks().forEach((t) => t.stop());
-          setError("تعذّر عرض الكاميرا — أغلق الشاشة وافتحها من جديد");
-          return;
-        }
-
-        videoRef.current.srcObject = stream;
-        videoRef.current.addEventListener("loadedmetadata", () =>
-          console.info("[cam-debug] video loadedmetadata", { w: videoRef.current?.videoWidth, h: videoRef.current?.videoHeight }),
-        );
-        videoRef.current.addEventListener("playing", () => console.info("[cam-debug] video playing event"));
-        videoRef.current.addEventListener("stalled", () => console.info("[cam-debug] video stalled event"));
-        videoRef.current.addEventListener("suspend", () => console.info("[cam-debug] video suspend event"));
-        // play() قد يُرفض على iOS إن لم تكن الإيماءة معتبرة — لا نُسقط الجلسة لأجله،
-        // العنصر playsInline/muted يبدأ العرض تلقائياً في أغلب الحالات.
-        try {
-          await videoRef.current.play();
-          console.info("[cam-debug] play() resolved");
-        } catch (playErr: any) {
-          console.info("[cam-debug] play() rejected", playErr?.name, playErr?.message);
-        }
-        setReady(true);
-        // فحص متأخر: بعد ثانية، هل فعلاً وصلت إطارات؟ (videoWidth يبقى 0 لو لا)
-        setTimeout(() => {
-          console.info("[cam-debug] 1s later", {
-            videoWidth: videoRef.current?.videoWidth,
-            videoHeight: videoRef.current?.videoHeight,
-            paused: videoRef.current?.paused,
-            readyStateEl: videoRef.current?.readyState,
-            trackMuted: track?.muted,
-            trackReadyState: track?.readyState,
-          });
-        }, 1000);
+        await attachStream(stream);
       } catch (e: any) {
         console.info("[cam-debug] getUserMedia threw", e?.name, e?.message);
         setError(e?.name === "NotAllowedError" ? "تم رفض إذن الكاميرا — فعّله من إعدادات المتصفح" : "تعذّر فتح الكاميرا");
       }
-    };
-    void start();
+    })();
 
     // نُعلّق أي قفل شاشة قائم (قد يكون الرفع شغّالاً في الخلفية) طوال فتح الكاميرا —
     // راجع التحذير أعلى الملف وتعليق suspendWakeLock. يُستعاد تلقائياً عند الإغلاق.
@@ -220,22 +204,38 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
-  }, [open, facing, restartKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
-  // تأخير قصير عمداً قبل إعادة الطلب: محاولة سابقة (a9ecfd1) أعادت الطلب فور إيقاف
-  // البثّ القديم، واحتمال قوي إنها كانت بتُسابق تفكيك iOS غير المتزامن للجلسة القديمة
-  // فتفشل المحاولة الجديدة لنفس السبب. هنا نوقف البثّ، ننتظر فعلياً، ثم نطلب من جديد.
-  const [retrying, setRetrying] = useState(false);
-  const retryCamera = () => {
-    setRetrying(true);
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-    setTimeout(() => {
-      setRetrying(false);
-      setVideoMuted(false);
-      setError(null);
-      setRestartKey((k) => k + 1);
-    }, 1500);
+  // إعادة محاولة مباشرة من نقرة الزر — بلا أي تأخير أو useEffect وسيط، حتى تبقى داخل
+  // نافذة "تفعيل المستخدم" التي يشترطها التطبيق المثبَّت على iOS. راجع تعليق
+  // initialStream في تعريف الـProps أعلى الملف لتفاصيل الدليل.
+  const retryCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1920 } },
+        audio: false,
+      });
+      await attachStream(stream);
+    } catch (e: any) {
+      setError(e?.name === "NotAllowedError" ? "تم رفض إذن الكاميرا — فعّله من إعدادات المتصفح" : "تعذّر فتح الكاميرا");
+    }
+  };
+
+  // تبديل أمامية/خلفية — طلب مباشر من نقرة الزر لنفس سبب retryCamera، بدل الاعتماد على
+  // useEffect يتفاعل مع تغيّر facing (كان هذا هو المسار غير المدعوم على iOS المثبَّت).
+  const switchCamera = async () => {
+    const next = facing === "environment" ? "user" : "environment";
+    setFacing(next);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: next, width: { ideal: 1920 }, height: { ideal: 1920 } },
+        audio: false,
+      });
+      await attachStream(stream);
+    } catch (e: any) {
+      setError(e?.name === "NotAllowedError" ? "تم رفض إذن الكاميرا — فعّله من إعدادات المتصفح" : "تعذّر فتح الكاميرا");
+    }
   };
 
   // فحص مستمر للباركود/QR — معطَّل مؤقتاً (BARCODE_SCAN_ENABLED)، راجع التعليق أعلى الملف.
@@ -257,7 +257,6 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
       barcodeTimers.current = {};
       lastShotId.current = null;
       setUseNativeCamera(false);
-      autoRetriedRef.current = false;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -436,7 +435,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
           ))}
         </div>
         <p className="text-sm font-semibold" onClick={onDebugTap}>{shots.length > 0 ? `${shots.length} صورة مُلتقطة` : "صوّر القطع واحدة تلو الأخرى"}</p>
-        <button onClick={() => setFacing((f) => (f === "environment" ? "user" : "environment"))} className="p-2 -m-2" aria-label="تبديل الكاميرا">
+        <button onClick={switchCamera} className="p-2 -m-2" aria-label="تبديل الكاميرا">
           <RotateCcw className="size-5" />
         </button>
       </div>
@@ -462,20 +461,20 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
         {flash && <div className="absolute inset-0 bg-white/80 animate-pulse" />}
 
         {/* النظام كتم مسار الكاميرا بعد فتحها (خلل موثّق على بعض أجهزة آيفون داخل
-            التطبيق المثبَّت) — إعادة فتح كاملة يدوياً بدل حلقة تلقائية قد تُسابق تفكيك
-            iOS غير المتزامن للجلسة القديمة. راجع تعليق videoMuted أعلى الملف. إن استمر
-            العطل نعرض بديلاً موثوقاً 100%: كاميرا الجهاز العادية (لا تمرّ بـgetUserMedia). */}
+            التطبيق المثبَّت). زر "إعادة المحاولة" يطلب جلسة جديدة مباشرة من نقرته هو
+            نفسه (راجع retryCamera) — لا تأخير ولا useEffect وسيط. إن استمر العطل نعرض
+            بديلاً موثوقاً 100%: كاميرا الجهاز العادية (لا تمرّ بـgetUserMedia إطلاقاً). */}
         {!useNativeCamera && !error && videoMuted && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-6">
             <div className="text-center text-white space-y-3 max-w-xs">
-              {retrying ? <Loader2 className="size-10 mx-auto text-white/70 animate-spin" /> : <ImageOff className="size-10 mx-auto text-white/70" />}
-              <p className="font-semibold text-sm">{retrying ? "جارٍ إعادة المحاولة…" : "الكاميرا توقّفت من نظام الجهاز فجأة"}</p>
-              {!retrying && <p className="text-xs text-white/60">جرّب "إعادة المحاولة"، ولو استمرت استخدم كاميرا الجهاز العادية بدلاً منها.</p>}
+              <ImageOff className="size-10 mx-auto text-white/70" />
+              <p className="font-semibold text-sm">الكاميرا توقّفت من نظام الجهاز فجأة</p>
+              <p className="text-xs text-white/60">جرّب "إعادة المحاولة"، ولو استمرت استخدم كاميرا الجهاز العادية بدلاً منها.</p>
               <div className="flex flex-col gap-2">
-                <Button onClick={retryCamera} disabled={retrying} className="bg-gold-gradient text-primary-foreground shadow-gold">
+                <Button onClick={retryCamera} className="bg-gold-gradient text-primary-foreground shadow-gold">
                   <RotateCcw className="size-4 ml-1" /> إعادة المحاولة
                 </Button>
-                <Button onClick={() => setUseNativeCamera(true)} disabled={retrying} variant="outline" className="border-white/30 text-white bg-transparent hover:bg-white/10">
+                <Button onClick={() => setUseNativeCamera(true)} variant="outline" className="border-white/30 text-white bg-transparent hover:bg-white/10">
                   <Camera className="size-4 ml-1" /> استخدام كاميرا الجهاز العادية
                 </Button>
               </div>

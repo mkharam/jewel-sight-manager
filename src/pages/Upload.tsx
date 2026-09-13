@@ -37,6 +37,7 @@ export default function Upload() {
   const cameraRef = useRef<HTMLInputElement>(null);
   const queue = useUploadQueue();
   const [bulkCameraOpen, setBulkCameraOpen] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
@@ -71,10 +72,23 @@ export default function Upload() {
     });
   };
 
-  const openCamera = () => {
+  // نطلب بثّ الكاميرا هنا، داخل نقرة الزر نفسها، بدل تركه لـuseEffect داخل شاشة
+  // التصوير — تشخيص حيّ على جهاز حقيقي أثبت مرتين أن التطبيق المثبَّت على iOS يكتم
+  // مسار الفيديو بعد نحو ثانية تحديداً حين يكون الطلب قد صدر من خارج نافذة "تفعيل
+  // المستخدم" (كما يحدث من useEffect)، رغم نجاحه دوماً في تبويب سفاري عادي. نفتح
+  // الشاشة حتى لو فشل الطلب هنا — هي تعرض السبب وتتيح إعادة محاولة من نقرة مباشرة أيضاً.
+  const openCamera = async () => {
     if (!user) return toast.error("سجّل الدخول أولاً");
-    if (supportsInAppCamera()) setBulkCameraOpen(true);
-    else cameraRef.current?.click();
+    if (!supportsInAppCamera()) return cameraRef.current?.click();
+    let stream: MediaStream | null = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1920 } },
+        audio: false,
+      });
+    } catch { /* الشاشة ستعرض الخطأ وتتيح إعادة المحاولة */ }
+    setCameraStream(stream);
+    setBulkCameraOpen(true);
   };
 
   return (
@@ -230,7 +244,8 @@ export default function Upload() {
 
       <BulkCameraCapture
         open={bulkCameraOpen}
-        onClose={() => setBulkCameraOpen(false)}
+        initialStream={cameraStream}
+        onClose={() => { setBulkCameraOpen(false); setCameraStream(null); }}
         userId={user?.id ?? ""}
         branchId={branchId === NO_BRANCH ? null : branchId}
         onFinished={(productIds) => navigate("/upload/review", { state: { productIds } })}
