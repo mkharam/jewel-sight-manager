@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams, useNavigationType } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -39,6 +39,24 @@ const initialFilters: Filters = {
 
 const UNASSIGNED_BRANCH = "__unassigned__";
 
+// نحفظ مكان الموظف في نتائج البحث (الفلاتر، عدد الصفحات المحمَّلة، موضع التمرير) قبل
+// فتح تفاصيل قطعة — بحيث لما يدوس "رجوع" يرجع لنفس مكانه بالظبط في الكتالوج، لا لأول
+// الصفحة بفلاتر فاضية من جديد. نميّز "رجوع" (POP) عن فتح جديد/رابط مباشر عبر
+// useNavigationType أدناه — فتح جديد يبقى يبدأ فاضياً كما طُلب سابقاً، فقط الرجوع
+// الفعلي بزر الرجوع/الجهاز يستعيد الحالة. sessionStorage لا localStorage: يُمحى تلقائياً
+// عند إغلاق التبويب بدل أن يبقى "عالقاً" لجلسات لاحقة غير مرتبطة.
+const SCROLL_STATE_KEY = "lamaa.searchScrollState.v1";
+type SavedScrollState = { filters: Filters; pages: number; scrollY: number };
+
+function readSavedScrollState(): SavedScrollState | null {
+  try {
+    const raw = sessionStorage.getItem(SCROLL_STATE_KEY);
+    return raw ? (JSON.parse(raw) as SavedScrollState) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** تنظيف نص البحث من الرموز التي تُفسد صياغة فلتر PostgREST. */
 const sanitizeTerm = (s: string) => s.replace(/[,(){}"\\]/g, " ").trim();
 
@@ -47,9 +65,15 @@ const PAGE_SIZE = 48;
 export default function ProductSearch() {
   const { profile, roles } = useAuth();
   const queryClient = useQueryClient();
-  const [filters, setFilters] = useState<Filters>(initialFilters);
+  // "رجوع" فعلي من صفحة تفاصيل قطعة (POP) يستعيد الفلاتر/عدد الصفحات المحفوظة؛ أي دخول
+  // آخر (فتح جديد، رابط مباشر) يبدأ فاضياً كالمعتاد. راجع SCROLL_STATE_KEY أعلى الملف.
+  const navigationType = useNavigationType();
+  const restoredState = useRef(navigationType === "POP" ? readSavedScrollState() : null).current;
+  const [filters, setFilters] = useState<Filters>(restoredState?.filters ?? initialFilters);
   const [debounced, setDebounced] = useState(filters);
-  const [pages, setPages] = useState(1); // كم صفحة تم تحميلها
+  const [pages, setPages] = useState(restoredState?.pages ?? 1); // كم صفحة تم تحميلها
+  // موضع التمرير المطلوب استعادته بعد اكتمال تحميل نفس عدد الصفحات — يُستهلك مرة واحدة.
+  const pendingScrollRestore = useRef(restoredState?.scrollY ?? null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -140,7 +164,15 @@ export default function ProductSearch() {
   }, []);
   const roleLabel = roles.includes("admin") ? "مدير عام" : roles.includes("manager") ? "مدير فرع" : "موظف";
 
+  // أول تشغيل بعد استعادة حالة "رجوع" لا يجب أن يصفّر pages إلى 1 — debounced وpages
+  // مضبوطان مسبقاً من restoredState في التهيئة، فتصفيرهما هنا كان سيُبطل الاستعادة
+  // بعد 250ms فقط من الوصول.
+  const isFirstFilterRun = useRef(true);
   useEffect(() => {
+    if (isFirstFilterRun.current) {
+      isFirstFilterRun.current = false;
+      return;
+    }
     const t = setTimeout(() => {
       setDebounced(filters);
       setPages(1); // reset pagination on filter change
@@ -353,6 +385,32 @@ export default function ProductSearch() {
     placeholderData: (prev) => prev,
   });
 
+
+  // نحفظ الفلاتر/عدد الصفحات/موضع التمرير باستمرار (خفيف: مجرّد كتابة sessionStorage)
+  // حتى يكون آخر موضع فعلي قبل فتح أي قطعة جاهزاً للاستعادة عند "رجوع". راجع
+  // SCROLL_STATE_KEY أعلى الملف وتعليق readSavedScrollState عند تهيئة الحالة.
+  useEffect(() => {
+    const save = () => {
+      try {
+        sessionStorage.setItem(SCROLL_STATE_KEY, JSON.stringify({ filters, pages, scrollY: window.scrollY }));
+      } catch {}
+    };
+    save();
+    window.addEventListener("scroll", save, { passive: true });
+    return () => window.removeEventListener("scroll", save);
+  }, [filters, pages]);
+
+  // استعادة موضع التمرير مرة واحدة فقط بعد أن يحمّل عدد الصفحات المستعاد فعلياً (وإلا
+  // نُمرّر لمكان لم يُحمَّل بعد المحتوى الذي يشغله). تُستهلك (تُصفَّر) فور التنفيذ.
+  useEffect(() => {
+    if (pendingScrollRestore.current == null) return;
+    // isFetching (لا isLoading فقط) يغطي أيضاً استكمال تحميل الصفحات الإضافية
+    // المستعادة (pages > 1)، لا الصفحة الأولى فقط.
+    if (isLoading || isFetching || !products) return;
+    const y = pendingScrollRestore.current;
+    pendingScrollRestore.current = null;
+    requestAnimationFrame(() => window.scrollTo(0, y));
+  }, [isLoading, isFetching, products]);
 
   // هل يمكن تحميل المزيد؟ (يقتصر على البحث العادي، ليس على بحث الصورة)
   const hasMore = !similarIds && !sanitizeTerm(debounced.q) && (products?.length ?? 0) >= pages * PAGE_SIZE;
