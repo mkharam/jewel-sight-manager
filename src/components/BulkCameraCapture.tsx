@@ -168,18 +168,19 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
     // وتُقرأ عبر drawImage رغم أن <video> نفسه لا يعرضها (خلل تركيب/عرض فقط — كان هذا
     // أول تفسير جُرِّب في هذا الملف تاريخياً قبل أن يُستبعد لصالح نظرية الكتم، دون دليل
     // canvas فعلي في حينها يحسم الأمر). يستمر طالما الشاشة مفتوحة وليس بها خطأ صريح.
+    // أبعاد ثابتة من إعدادات الـtrack نفسه (لا من video.videoWidth الذي رأيناه يبقى 0
+    // باستمرار في آخر تشخيص) — إن كانت نظرية "التركيب/العرض فقط" صحيحة فقد تُقرأ صورة
+    // حقيقية عبر drawImage رغم أن video.videoWidth يُبلَّغ صفراً طوال الوقت.
+    const settings = track?.getSettings();
     const canvas = document.createElement("canvas");
+    canvas.width = settings?.width || 1280;
+    canvas.height = settings?.height || 1280;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     const diagInterval = setInterval(() => {
       const video = videoRef.current;
-      if (!video || !ctx || video.videoWidth === 0) {
-        console.info("[cam-debug] canvas-sample: no dimensions yet", { videoWidth: video?.videoWidth ?? null });
-        return;
-      }
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      if (!video || !ctx) return;
       try {
-        ctx.drawImage(video, 0, 0);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
         let sum = 0;
         for (let i = 0; i < data.length; i += 4 * 97) sum += data[i] + data[i + 1] + data[i + 2];
