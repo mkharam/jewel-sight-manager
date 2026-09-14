@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { UserPlus, Trash2, KeyRound, Users, Package, Tag, ArrowLeftRight, MessageCircle, Activity, Trophy, Coins, Medal } from "lucide-react";
-import { formatDate, formatCurrency } from "@/lib/constants";
+import { formatDate, formatCurrency, type Period, PERIOD_LABEL, periodStartISO } from "@/lib/constants";
 import { Link } from "react-router-dom";
 
 type Branch = { id: string; name: string };
@@ -444,22 +444,6 @@ function Stat({ icon: Icon, label, value }: { icon: any; label: string; value: n
     </div>
   );
 }
-
-type Period = "today" | "week" | "month";
-
-/** بداية الفترة كـISO — "اليوم" منتصف الليل المحلي، والأسبوع/الشهر نافذة متدحرجة
- * (آخر 7/30 يوماً) بدل حدود تقويمية، تفادياً لالتباس "بداية الأسبوع" بين السبت والأحد. */
-function periodStartISO(period: Period): string {
-  const now = new Date();
-  if (period === "today") {
-    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    return midnight.toISOString();
-  }
-  const days = period === "week" ? 7 : 30;
-  return new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
-}
-
-const PERIOD_LABEL: Record<Period, string> = { today: "اليوم", week: "آخر 7 أيام", month: "آخر 30 يوماً" };
 
 type SellerStat = { id: string; full_name: string; count: number; total: number };
 

@@ -44,6 +44,20 @@ export type InquiryStatus = keyof typeof INQUIRY_STATUS;
 
 export const KARAT_OPTIONS = ["18K", "21K"];
 
+// فترات زمنية مشتركة (لوحة صدارة المبيعات في Staff.tsx وبطاقة "مبيعاتي" الشخصية) — نافذة
+// متدحرجة (آخر 7/30 يوماً) بدل حدود تقويمية، تفادياً لالتباس "بداية الأسبوع" بين السبت
+// والأحد. "اليوم" وحدها منتصف الليل المحلي لأنها الأوضح بلا لبس.
+export type Period = "today" | "week" | "month";
+export const PERIOD_LABEL: Record<Period, string> = { today: "اليوم", week: "آخر 7 أيام", month: "آخر 30 يوماً" };
+export function periodStartISO(period: Period): string {
+  const now = new Date();
+  if (period === "today") {
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+  }
+  const days = period === "week" ? 7 : 30;
+  return new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
 // اللغة العربية (ar-LY/ar) تستخدم افتراضياً الأرقام الهندية الشرقية (١٢٣) في Intl —
 // نطلب صراحةً "latn" (الأرقام اللاتينية 123) لأن الموظفين يقرؤون ويكتبون بالأرقام
 // العادية، والأرقام الهندية تبطئ القراءة السريعة للأسعار والتواريخ.

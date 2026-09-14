@@ -10,6 +10,7 @@ import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store, Chec
 import ProductCard from "@/components/ProductCard";
 import ImageSearchButton from "@/components/ImageSearchButton";
 import AiAssistantSheet from "@/components/AiAssistantSheet";
+import MySalesCard from "@/components/MySalesCard";
 import { PRODUCT_STATUS, KARAT_OPTIONS, ProductStatus } from "@/lib/constants";
 import { GOLD_COLORS, STONE_COLORS } from "@/lib/luxury";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -617,6 +618,8 @@ export default function ProductSearch() {
         </div>
         </div>
       </div>
+
+      <MySalesCard />
 
       {/* فلاتر سريعة Chips */}
       <div className="flex gap-2 overflow-x-auto -mx-3 px-3 pb-1 scrollbar-none">
