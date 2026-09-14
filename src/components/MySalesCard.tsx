@@ -9,7 +9,10 @@ import { Coins, Package, TrendingUp } from "lucide-react";
 import { formatCurrency, periodStartISO, PERIOD_LABEL, type Period } from "@/lib/constants";
 
 export default function MySalesCard() {
-  const { user } = useAuth();
+  const { user, roles } = useAuth();
+  // القيمة المالية للمبيعات معلومة إدارية — الموظف يشوف عدد القطع اللي باعها (تحفيز/تتبّع
+  // ذاتي) بس مش قيمتها بالدينار؛ المدير والمدير العام يشوفوا الاتنين زي لوحة الصدارة.
+  const canSeeValue = roles.includes("admin") || roles.includes("manager");
   const [period, setPeriod] = useState<Period>("today");
   const [stats, setStats] = useState<{ count: number; total: number } | null>(null);
 
@@ -60,10 +63,12 @@ export default function MySalesCard() {
           <span className="font-bold">{stats?.count ?? "—"}</span>
           <span className="text-xs text-muted-foreground">قطعة</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <Coins className="size-4 text-muted-foreground" />
-          <span className="font-bold text-primary">{stats ? formatCurrency(stats.total) : "—"}</span>
-        </div>
+        {canSeeValue && (
+          <div className="flex items-center gap-1.5">
+            <Coins className="size-4 text-muted-foreground" />
+            <span className="font-bold text-primary">{stats ? formatCurrency(stats.total) : "—"}</span>
+          </div>
+        )}
       </div>
     </Card>
   );
