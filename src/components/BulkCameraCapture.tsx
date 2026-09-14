@@ -66,9 +66,15 @@ interface Props {
    * الاحتمال الوحيد المتبقي غير المجرَّب فعلياً في هذا الملف كما هو مبنيّ الآن.
    */
   initialStream?: MediaStream | null;
+  /**
+   * يُستدعى عند الضغط على "تم" مع معرّفات كل القطع التي حُفظت فعلاً في هذه الجلسة —
+   * يُستخدم لعرض ملخّص الجلسة (الصور + نتيجة التحليل) في صفحة الرفع، تأكيداً بصرياً
+   * أن العملية تمّت فعلاً، بدل الاكتفاء برسالة toast عابرة تختفي بسرعة.
+   */
+  onFinished?: (savedProductIds: string[]) => void;
 }
 
-export default function BulkCameraCapture({ open, onClose, userId, branchId, initialStream }: Props) {
+export default function BulkCameraCapture({ open, onClose, userId, branchId, initialStream, onFinished }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [shots, setShots] = useState<Shot[]>([]);
@@ -438,10 +444,13 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
   };
 
   // كل قطعة تُحلَّل وتُسمّى تلقائياً فور رفعها (راجع analyzeCapturedPiece في saveShot)،
-  // فلم تعد هناك حاجة لأخذ الموظف لمراجعة يدوية بعد "تم" — يرجع مباشرة لصفحة الرفع.
+  // فلم تعد هناك حاجة لأخذ الموظف لمراجعة يدوية بعد "تم" — يرجع مباشرة لصفحة الرفع، وتظهر
+  // هناك بطاقات هذه الجلسة (راجع onFinished) كتأكيد بصري أن كل قطعة حُفظت وتحلّلت فعلاً.
   const finish = () => {
+    const savedIds = Object.values(productIdsRef.current);
     if (shots.length) toast.success(`تم حفظ ${shots.length} قطعة`);
     onClose();
+    if (savedIds.length) onFinished?.(savedIds);
   };
 
   if (!open) return null;

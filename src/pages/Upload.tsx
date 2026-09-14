@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { runUploadBatch } from "@/lib/uploadRunner";
 import { useUploadQueue, uploadQueue } from "@/lib/uploadQueue";
 import BulkCameraCapture from "@/components/BulkCameraCapture";
+import ProductCard from "@/components/ProductCard";
 
 const supportsInAppCamera = () =>
   typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
@@ -37,6 +38,9 @@ export default function Upload() {
   const queue = useUploadQueue();
   const [bulkCameraOpen, setBulkCameraOpen] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  // معرّفات آخر جلسة "تصوير متتالي" — تُعرض كبطاقات ملخّص فور الرجوع لهذه الصفحة، تأكيداً
+  // بصرياً أن كل قطعة حُفظت وتحلّلت فعلاً (لا مجرّد toast عابر). راجع onFinished أدناه.
+  const [lastSessionIds, setLastSessionIds] = useState<string[]>([]);
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
@@ -53,6 +57,26 @@ export default function Upload() {
       return count ?? 0;
     },
     refetchInterval: 15_000,
+  });
+
+  // بطاقات ملخّص آخر جلسة تصوير — نفس أعمدة ProductCard حتى تظهر الحالة الحقيقية
+  // (الاسم/الفئة بعد التحليل). تتحدّث كل 3 ثوانٍ طالما توجد قطعة لسه باسمها المؤقت،
+  // وتتوقف تلقائياً فور تسمية الكل (analyzeCapturedPiece قد يتأخر ثوانٍ قليلة).
+  const { data: lastSessionProducts } = useQuery({
+    queryKey: ["last-session-products", lastSessionIds],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("products")
+        .select(
+          "id,name,sku,barcode_value,karat,gold_color,weight_grams,ring_size,sale_price,promo_price,status,branch_id,branch:branches(name),category:categories(name),images:product_images(storage_path,thumb_path,is_primary)",
+        )
+        .in("id", lastSessionIds);
+      // نحافظ على ترتيب التصوير نفسه بدل ترتيب عودة القاعدة العشوائي
+      const byId = new Map((data ?? []).map((p: any) => [p.id, p]));
+      return lastSessionIds.map((id) => byId.get(id)).filter(Boolean) as any[];
+    },
+    enabled: lastSessionIds.length > 0,
+    refetchInterval: (query) => (query.state.data?.some((p: any) => p.name === PLACEHOLDER_NAME) ? 3_000 : false),
   });
 
   const handleFiles = (files: FileList | File[] | null) => {
@@ -192,6 +216,35 @@ export default function Upload() {
         </div>
       </Card>
 
+      {/* ملخّص آخر جلسة "تصوير متتالي" — تأكيد بصري إن كل قطعة اتحفظت واتحلّلت فعلاً،
+          والضغط على أي بطاقة يفتح صفحة القطعة للتعديل لو فيه غلطة تحتاج تصحيح. */}
+      {lastSessionIds.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold flex items-center gap-1.5">
+              <CheckCircle2 className="size-4 text-primary" />
+              آخر جلسة تصوير — {lastSessionIds.length} قطعة
+            </p>
+            <Button variant="ghost" size="sm" onClick={() => setLastSessionIds([])}>
+              إخفاء
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {(lastSessionProducts ?? lastSessionIds.map(() => null)).map((p, i) =>
+              p ? (
+                <ProductCard key={p.id} product={p} />
+              ) : (
+                <div key={i} className="aspect-square rounded-xl skeleton" />
+              ),
+            )}
+          </div>
+          <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+            <Loader2 className={`size-3 ${lastSessionProducts?.some((p: any) => p.name === PLACEHOLDER_NAME) ? "animate-spin" : "opacity-0"}`} />
+            اضغط أي قطعة لتعديلها — الأسماء تكتمل تلقائياً خلال ثوانٍ من التحليل
+          </p>
+        </div>
+      )}
+
       {queue.length > 0 && (
         <div className="flex items-center justify-between">
           <p className="text-sm font-semibold">{queue.length} عنصر في هذه الجلسة</p>
@@ -245,6 +298,7 @@ export default function Upload() {
         open={bulkCameraOpen}
         initialStream={cameraStream}
         onClose={() => { setBulkCameraOpen(false); setCameraStream(null); }}
+        onFinished={setLastSessionIds}
         userId={user?.id ?? ""}
         branchId={branchId === NO_BRANCH ? null : branchId}
       />
