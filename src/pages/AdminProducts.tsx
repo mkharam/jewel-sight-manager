@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ConfirmDialogProvider";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +43,7 @@ export default function AdminProducts() {
   const { roles, loading, rolesLoading } = useAuth();
   const isAdmin = roles.includes("admin");
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
 
   const [q, setQ] = useState("");
   const [branchFilter, setBranchFilter] = useState("all");
@@ -154,7 +156,13 @@ export default function AdminProducts() {
 
   const bulkDelete = async () => {
     if (selectedIds.size === 0) return;
-    if (!confirm(`حذف ${selectedIds.size} قطعة نهائياً؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
+    const ok = await confirm({
+      title: `حذف ${selectedIds.size} قطعة نهائياً؟`,
+      description: "لا يمكن التراجع عن هذا الإجراء.",
+      confirmLabel: "حذف نهائي",
+      destructive: true,
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       const ids = Array.from(selectedIds);

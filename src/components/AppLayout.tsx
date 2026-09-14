@@ -12,7 +12,6 @@ import InstallPrompt from "@/components/InstallPrompt";
 import { useUploadQueuePendingCount } from "@/lib/uploadQueue";
 import { ensurePushEnabled } from "@/lib/push";
 import { resumePendingUploads } from "@/lib/uploadRunner";
-import { loadDebugConsole } from "@/lib/debugConsole";
 
 type NavItem = { to: string; label: string; icon: any; end?: boolean; badgeKey?: "transfers" | "uploads" | "reorders" };
 
@@ -143,19 +142,6 @@ export default function AppLayout() {
 
   const [moreOpen, setMoreOpen] = useState(false);
 
-  // 5 ضغطات متتالية على الشعار (خلال ثانيتين) تفتح كونسول تشخيص فوراً — لا يعتمد على
-  // أي تخزين، فيعمل حتى داخل التطبيق المثبَّت الذي بدا أن له تخزيناً منفصلاً عن سفاري.
-  const logoTaps = useRef<number[]>([]);
-  const onLogoTap = (e: React.MouseEvent) => {
-    const now = Date.now();
-    logoTaps.current = [...logoTaps.current.filter((t) => now - t < 2000), now];
-    if (logoTaps.current.length >= 5) {
-      e.preventDefault();
-      logoTaps.current = [];
-      loadDebugConsole();
-    }
-  };
-
   // الشريط السفلي: 4 أساسية + زر «المزيد» يفتح بقية الصفحات (منها الاستيراد)
   const mobileNav: NavItem[] = baseNav;
   const moreItems: NavItem[] = [
@@ -183,7 +169,7 @@ export default function AppLayout() {
     <div className="min-h-screen bg-background flex flex-col">
       <header className="sticky top-0 z-30 border-b border-border bg-card/95 backdrop-blur shadow-card safe-area-pt">
         <div className="container mx-auto px-3 sm:px-4 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-4">
-          <Link to="/" className="flex items-center gap-2" onClick={onLogoTap}>
+          <Link to="/" className="flex items-center gap-2">
             {/* شعار المتجر الفعلي بدل أيقونة عامة — نفس النقش الذهبي على الحقل الزمرّدي */}
             <img
               src={`${import.meta.env.BASE_URL}brand-logo.webp`}

@@ -20,11 +20,13 @@ import SellDialog from "@/components/SellDialog";
 import ReserveDialog from "@/components/ReserveDialog";
 import ReorderRequestDialog from "@/components/ReorderRequestDialog";
 import ImageLightbox from "@/components/ImageLightbox";
+import { useConfirm } from "@/components/ConfirmDialogProvider";
 
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const { user, roles, profile } = useAuth();
   const canEdit = !!user;
   const isAdmin = roles.includes("admin");
@@ -123,7 +125,13 @@ export default function ProductDetail() {
   const canEditProduct = isAdmin || (isManager && product.branch_id === profile?.branch_id);
 
   const onDelete = async () => {
-    if (!confirm("حذف هذه القطعة نهائياً؟")) return;
+    const ok = await confirm({
+      title: "حذف هذه القطعة نهائياً؟",
+      description: "ستُحذف القطعة وصورها ولا يمكن التراجع.",
+      confirmLabel: "حذف نهائي",
+      destructive: true,
+    });
+    if (!ok) return;
     const { error } = await supabase.from("products").delete().eq("id", id!);
     if (error) return toast.error(error.message);
     await supabase.from("activity_log").insert({

@@ -41,7 +41,6 @@ import ScanBoxOverlay from "@/components/ScanBoxOverlay";
 import { normalizeDecimalInput } from "@/lib/constants";
 import { saveCapturedPiece, updateCapturedPiece, deleteCapturedPiece, analyzeCapturedPiece } from "@/lib/uploadRunner";
 import { suspendWakeLock } from "@/lib/keepAwake";
-import { loadDebugConsole } from "@/lib/debugConsole";
 import { toast } from "sonner";
 
 const BARCODE_SCAN_ENABLED = false;
@@ -98,17 +97,6 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
   const [karat, setKarat] = useState<"18K" | "21K">("18K");
   const weightInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const lastShotId = useRef<string | null>(null);
-  // 5 ضغطات متتالية (خلال ثانيتين) على شريط الحالة تفتح كونسول تشخيص فوراً — مفيد هنا
-  // تحديداً لأن الشاشة السودة تمنع الوصول لشعار الهيدر خلف هذه الشاشة الملء.
-  const debugTaps = useRef<number[]>([]);
-  const onDebugTap = () => {
-    const now = Date.now();
-    debugTaps.current = [...debugTaps.current.filter((t) => now - t < 2000), now];
-    if (debugTaps.current.length >= 5) {
-      debugTaps.current = [];
-      loadDebugConsole();
-    }
-  };
 
   // مراجع مرآة لقيم الوزن/الباركود ومعرّف القطعة المحفوظة — تُقرأ من مؤقّتات التزامن
   // المؤجّلة بدون الاعتماد على state قد يكون قديماً داخل closure وقت تنفيذ المؤقّت.
@@ -123,24 +111,17 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
   // بعنصر الفيديو، مع كل تشخيص/حماية جُرِّبا سابقاً: انتظار ظهور العنصر، تجاهل رفض
   // play()، ومراقبة mute/unmute. مُشترك بين التشغيل الأول وإعادة المحاولة وتبديل الكاميرا
   // حتى لا يتكرر نفس المنطق الحسّاس في ثلاث نسخ مختلفة قد تنحرف عن بعضها بمرور الوقت.
-  const activeDiagIntervals = useRef<ReturnType<typeof setInterval>[]>([]);
   const attachStream = async (stream: MediaStream) => {
-    activeDiagIntervals.current.forEach(clearInterval);
-    activeDiagIntervals.current = [];
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = stream;
     setError(null);
     setVideoMuted(false);
 
+    // كتم المسار من النظام هو إشارتنا الوحيدة الموثوقة لعطل كاميرا iOS (تأكّد بتشخيص حيّ
+    // على الجهاز) — عليه يظهر تنبيه الشاشة وبديل كاميرا الجهاز أدناه.
     const track = stream.getVideoTracks()[0];
-    console.info("[cam-debug] track", {
-      muted: track?.muted,
-      readyState: track?.readyState,
-      settings: track?.getSettings(),
-      displayMode: window.matchMedia("(display-mode: standalone)").matches ? "standalone" : "browser",
-    });
-    track?.addEventListener("mute", () => { console.info("[cam-debug] track muted event"); setVideoMuted(true); });
-    track?.addEventListener("unmute", () => { console.info("[cam-debug] track unmuted event"); setVideoMuted(false); });
+    track?.addEventListener("mute", () => setVideoMuted(true));
+    track?.addEventListener("unmute", () => setVideoMuted(false));
     if (track?.muted) setVideoMuted(true);
 
     // عنصر <video> لا يُعرض أثناء وجود خطأ، فقد لا يكون موجوداً بعد لحظة عودة
@@ -159,43 +140,6 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
     // play() قد يُرفض على iOS إن لم تكن الإيماءة معتبرة — لا نُسقط الجلسة لأجله.
     try { await videoRef.current.play(); } catch { /* تجاهل */ }
     setReady(true);
-
-    // تشخيص مستمر كل ثانية: نرسم الفيديو فعلياً على canvas ونقرأ متوسط سطوع البكسلات —
-    // هذا يفصل احتمالين مختلفين قد يبدوان متطابقين ظاهرياً (شاشة سوداء): (أ) المسار
-    // فعلاً بلا بيانات إطلاقاً (سطوع صفر تماماً باستمرار)، أو (ب) البيانات موجودة فعلاً
-    // وتُقرأ عبر drawImage رغم أن <video> نفسه لا يعرضها (خلل تركيب/عرض فقط — كان هذا
-    // أول تفسير جُرِّب في هذا الملف تاريخياً قبل أن يُستبعد لصالح نظرية الكتم، دون دليل
-    // canvas فعلي في حينها يحسم الأمر). يستمر طالما الشاشة مفتوحة وليس بها خطأ صريح.
-    // أبعاد ثابتة من إعدادات الـtrack نفسه (لا من video.videoWidth الذي رأيناه يبقى 0
-    // باستمرار في آخر تشخيص) — إن كانت نظرية "التركيب/العرض فقط" صحيحة فقد تُقرأ صورة
-    // حقيقية عبر drawImage رغم أن video.videoWidth يُبلَّغ صفراً طوال الوقت.
-    const settings = track?.getSettings();
-    const canvas = document.createElement("canvas");
-    canvas.width = settings?.width || 1280;
-    canvas.height = settings?.height || 1280;
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    const diagInterval = setInterval(() => {
-      const video = videoRef.current;
-      if (!video || !ctx) return;
-      try {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        let sum = 0;
-        for (let i = 0; i < data.length; i += 4 * 97) sum += data[i] + data[i + 1] + data[i + 2];
-        const sampleCount = Math.ceil(data.length / (4 * 97));
-        console.info("[cam-debug] canvas-sample", {
-          avgBrightness: Math.round(sum / sampleCount),
-          videoWidth: video.videoWidth,
-          readyStateEl: video.readyState,
-          paused: video.paused,
-          trackMuted: track?.muted,
-          trackReadyState: track?.readyState,
-        });
-      } catch (e: any) {
-        console.info("[cam-debug] canvas-sample threw", e?.name, e?.message);
-      }
-    }, 1000);
-    activeDiagIntervals.current.push(diagInterval);
   };
 
   useEffect(() => {
@@ -220,7 +164,6 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
         await attachStream(stream);
       } catch (e: any) {
-        console.info("[cam-debug] getUserMedia threw", e?.name, e?.message);
         setError(e?.name === "NotAllowedError" ? "تم رفض إذن الكاميرا — فعّله من إعدادات المتصفح" : "تعذّر فتح الكاميرا");
       }
     })();
@@ -232,8 +175,6 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
     return () => {
       cancelled = true;
       resumeWakeLock();
-      activeDiagIntervals.current.forEach(clearInterval);
-      activeDiagIntervals.current = [];
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
@@ -473,7 +414,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
             </button>
           ))}
         </div>
-        <p className="text-sm font-semibold" onClick={onDebugTap}>{shots.length > 0 ? `${shots.length} صورة مُلتقطة` : "صوّر القطع واحدة تلو الأخرى"}</p>
+        <p className="text-sm font-semibold">{shots.length > 0 ? `${shots.length} صورة مُلتقطة` : "صوّر القطع واحدة تلو الأخرى"}</p>
         <div className="flex items-center gap-3">
           {!useNativeCamera && (
             <>
@@ -516,13 +457,12 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
         )}
         {flash && <div className="absolute inset-0 bg-white/80 animate-pulse" />}
 
-        {/* لا طبقة "توقّفت الكاميرا" فوق الشاشة عمداً حالياً — بطلب صريح، حتى تبقى
-            الشاشة كما هي فعلياً (سوداء لو كتمها النظام) ونراقب سلوكها الحقيقي في
-            الكونسول (راجع تشخيص canvas-sample في attachStream) بدل حجبه بواجهة تكيّف
-            معه. زر "استخدام كاميرا الجهاز العادية" لا يزال متاحاً من الشريط العلوي. */}
+        {/* شريط رفيع لا طبقة تحجب الشاشة — عطل كاميرا iOS (كتم المسار من النظام) لا حلّ
+            له من الكود، فنكتفي بإخبار الموظف ونوجّهه لزر كاميرا الجهاز في الشريط العلوي
+            وهو البديل الوحيد الذي يعمل فعلاً على الأجهزة المتأثرة. */}
         {!useNativeCamera && !error && videoMuted && (
-          <p className="absolute top-2 inset-x-3 text-center text-[11px] text-white/70 bg-black/50 rounded-full px-3 py-1">
-            النظام كتم مسار الكاميرا — راقب الكونسول (5 ضغطات على النص فوق)
+          <p className="absolute top-2 inset-x-3 text-center text-[11px] text-white/80 bg-black/60 rounded-full px-3 py-1">
+            الكاميرا توقّفت من نظام الجهاز — استخدم زر كاميرا الجهاز بالأعلى
           </p>
         )}
 

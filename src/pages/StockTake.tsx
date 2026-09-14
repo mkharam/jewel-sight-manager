@@ -11,10 +11,12 @@ import { ClipboardCheck, Check, X, Play, Lock, Search } from "lucide-react";
 import { formatDate } from "@/lib/constants";
 import { normalizeAr } from "@/lib/arabic-search";
 import { toast } from "sonner";
+import { useConfirm } from "@/components/ConfirmDialogProvider";
 
 export default function StockTake() {
   const { user, profile, roles } = useAuth();
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const isAdmin = roles.includes("admin");
   const [branchId, setBranchId] = useState<string>("");
   const [q, setQ] = useState("");
@@ -95,7 +97,13 @@ export default function StockTake() {
 
   const closeSession = async () => {
     if (!session) return;
-    if (!confirm("إغلاق جلسة الجرد؟ لا يمكن التعديل بعدها.")) return;
+    const ok = await confirm({
+      title: "إغلاق جلسة الجرد؟",
+      description: "لا يمكن تعديل نتائج الجرد بعد الإغلاق.",
+      confirmLabel: "إغلاق الجلسة",
+      destructive: true,
+    });
+    if (!ok) return;
     const { error } = await supabase.from("stock_take_sessions")
       .update({ status: "closed", closed_by: user?.id ?? null, closed_at: new Date().toISOString() })
       .eq("id", session.id);

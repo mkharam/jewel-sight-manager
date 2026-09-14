@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { BarChart3, Download, TrendingUp, ArrowLeftRight, Package, DollarSign, Clock, AlertTriangle, Receipt, Undo2, Wallet, Plus, Trash2 } from "lucide-react";
 import ReindexImagesCard from "@/components/ReindexImagesCard";
 import GenerateThumbsCard from "@/components/GenerateThumbsCard";
+import { useConfirm } from "@/components/ConfirmDialogProvider";
 import { toast } from "sonner";
 
 type Branch = { id: string; name: string; code: string | null };
@@ -552,6 +553,7 @@ function ExpensesCard({
 }: { month: string; expenses: any[]; branches: Branch[]; fmt: (n: number) => string }) {
   const { user } = useAuth();
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const [open, setOpen] = useState(false);
   const [category, setCategory] = useState(EXPENSE_CATEGORIES[0]);
   const [amount, setAmount] = useState("");
@@ -581,7 +583,8 @@ function ExpensesCard({
   };
 
   const deleteExpense = async (id: string) => {
-    if (!confirm("حذف هذا المصروف؟")) return;
+    const ok = await confirm({ title: "حذف هذا المصروف؟", confirmLabel: "حذف", destructive: true });
+    if (!ok) return;
     const { error } = await supabase.from("expenses").delete().eq("id", id);
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["report-expenses", month] });

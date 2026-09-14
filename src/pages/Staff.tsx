@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { useConfirm } from "@/components/ConfirmDialogProvider";
 import { UserPlus, Trash2, KeyRound, Users, Package, Tag, ArrowLeftRight, MessageCircle, Activity, Trophy, Coins, Medal } from "lucide-react";
 import { formatDate, formatCurrency, type Period, PERIOD_LABEL, periodStartISO } from "@/lib/constants";
 import { Link } from "react-router-dom";
@@ -30,6 +31,7 @@ const ROLE_LABEL = { admin: "مدير عام", manager: "مدير فرع", emplo
 
 export default function Staff() {
   const { user, roles, loading, rolesLoading } = useAuth();
+  const confirm = useConfirm();
   const isAdmin = roles.includes("admin");
 
   const [users, setUsers] = useState<StaffUser[]>([]);
@@ -123,7 +125,13 @@ export default function Staff() {
 
   const deleteUser = async (u: StaffUser) => {
     if (u.id === user?.id) { toast.error("لا يمكنك حذف حسابك"); return; }
-    if (!confirm(`حذف الحساب ${u.email} نهائياً؟`)) return;
+    const ok = await confirm({
+      title: `حذف حساب ${u.full_name || u.email}؟`,
+      description: "سيفقد الموظف الوصول للتطبيق نهائياً ولا يمكن التراجع.",
+      confirmLabel: "حذف الحساب",
+      destructive: true,
+    });
+    if (!ok) return;
     const { data, error } = await supabase.functions.invoke("admin-manage-users", {
       body: { action: "delete", user_id: u.id },
     });

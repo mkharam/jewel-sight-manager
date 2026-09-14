@@ -12,6 +12,7 @@ import ImageSearchButton from "@/components/ImageSearchButton";
 import AiAssistantSheet from "@/components/AiAssistantSheet";
 import MySalesCard from "@/components/MySalesCard";
 import MyWorkCard from "@/components/MyWorkCard";
+import { useConfirm } from "@/components/ConfirmDialogProvider";
 import { PRODUCT_STATUS, KARAT_OPTIONS, ProductStatus } from "@/lib/constants";
 import { GOLD_COLORS, STONE_COLORS } from "@/lib/luxury";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -67,6 +68,7 @@ const PAGE_SIZE = 48;
 export default function ProductSearch() {
   const { profile, roles } = useAuth();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   // "رجوع" فعلي من صفحة تفاصيل قطعة (POP) يستعيد الفلاتر/عدد الصفحات المحفوظة؛ أي دخول
   // آخر (فتح جديد، رابط مباشر) يبدأ فاضياً كالمعتاد. راجع SCROLL_STATE_KEY أعلى الملف.
   const navigationType = useNavigationType();
@@ -141,7 +143,13 @@ export default function ProductSearch() {
 
   const bulkDelete = async () => {
     if (selectedIds.size === 0) return;
-    if (!confirm(`حذف ${selectedIds.size} قطعة نهائياً؟ لا يمكن التراجع.`)) return;
+    const ok = await confirm({
+      title: `حذف ${selectedIds.size} قطعة نهائياً؟`,
+      description: "لا يمكن التراجع عن هذا الإجراء.",
+      confirmLabel: "حذف نهائي",
+      destructive: true,
+    });
+    if (!ok) return;
     setBulkBusy(true);
     try {
       const ids = Array.from(selectedIds);

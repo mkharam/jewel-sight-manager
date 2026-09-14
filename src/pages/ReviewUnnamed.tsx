@@ -13,6 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowRight, Loader2, RotateCw, Save, Sparkles, ExternalLink, Trash2, ArrowUpDown, CheckCheck } from "lucide-react";
 import { toast } from "sonner";
+import { useConfirm } from "@/components/ConfirmDialogProvider";
 import { KARAT_OPTIONS, getImageUrl, getThumbUrl } from "@/lib/constants";
 import { prepareForAIBase64 } from "@/lib/image-compress";
 
@@ -32,6 +33,7 @@ export default function ReviewUnnamed() {
   const navigate = useNavigate();
   const location = useLocation();
   const qc = useQueryClient();
+  const confirm = useConfirm();
 
   // مراجعة جلسة تصوير محدَّدة: قادمة من "تصوير متتالي" فور الضغط على "تم" — تعرض فقط
   // القطع التي صُوّرت في هذه الجلسة بدل كل القطع غير المسمّاة في المتجر، حتى تُراجع
@@ -195,7 +197,12 @@ export default function ReviewUnnamed() {
   // حذف سريع لقطعة واحدة بلا تحديد مسبق — أهم في مراجعة الجلسة تحديداً حيث الهدف
   // الأساسي هو حذف لقطات التجربة بأقل عدد ضغطات ممكن قبل أن تُحلَّل تلقائياً.
   const deleteOne = async (row: Row) => {
-    if (!confirm(`حذف "${draftFor(row).name || PLACEHOLDER_NAME}" نهائياً؟`)) return;
+    const ok = await confirm({
+      title: `حذف «${draftFor(row).name || PLACEHOLDER_NAME}» نهائياً؟`,
+      confirmLabel: "حذف نهائي",
+      destructive: true,
+    });
+    if (!ok) return;
     setSavingIds((s) => new Set(s).add(row.id));
     try {
       const { error } = await supabase.from("products").delete().eq("id", row.id);
@@ -210,7 +217,13 @@ export default function ReviewUnnamed() {
 
   const bulkDelete = async () => {
     if (!selected.size) return;
-    if (!confirm(`حذف ${selected.size} قطعة نهائياً؟ لا يمكن التراجع.`)) return;
+    const ok = await confirm({
+      title: `حذف ${selected.size} قطعة نهائياً؟`,
+      description: "لا يمكن التراجع عن هذا الإجراء.",
+      confirmLabel: "حذف نهائي",
+      destructive: true,
+    });
+    if (!ok) return;
     setBulkBusy(true);
     try {
       const ids = Array.from(selected);

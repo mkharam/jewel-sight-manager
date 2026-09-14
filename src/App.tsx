@@ -7,6 +7,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import AppLayout from "@/components/AppLayout";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { ConfirmDialogProvider } from "@/components/ConfirmDialogProvider";
 import { AuthProvider } from "@/hooks/useAuth";
 import Auth from "@/pages/Auth";
 import ProductSearch from "@/pages/ProductSearch";
@@ -58,6 +59,7 @@ const App = () => (
       />
       <BrowserRouter basename={import.meta.env.BASE_URL}>
         <AuthProvider>
+          <ConfirmDialogProvider>
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/auth" element={<Auth />} />
@@ -89,6 +91,7 @@ const App = () => (
               <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
+          </ConfirmDialogProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

@@ -15,6 +15,7 @@ import { PRODUCT_STATUS, KARAT_OPTIONS, getThumbUrl, normalizeDecimalInput } fro
 import { GOLD_COLORS, STONE_TYPES, STONE_COLORS } from "@/lib/luxury";
 import { prepareForAIBase64 } from "@/lib/image-compress";
 import { toast } from "sonner";
+import { useConfirm } from "@/components/ConfirmDialogProvider";
 
 type AiSuggestion = {
   name_ar?: string;
@@ -55,6 +56,7 @@ export default function ProductForm() {
   const { id } = useParams<{ id: string }>();
   const editing = id && id !== "new";
   const navigate = useNavigate();
+  const confirm = useConfirm();
   const { user, profile, roles } = useAuth();
   const isAdmin = roles.includes("admin");
   const isManager = roles.includes("manager");
@@ -311,7 +313,8 @@ export default function ProductForm() {
   };
 
   const removeExisting = async (imgId: string, path: string) => {
-    if (!confirm("حذف هذه الصورة؟")) return;
+    const ok = await confirm({ title: "حذف هذه الصورة؟", confirmLabel: "حذف", destructive: true });
+    if (!ok) return;
     await supabase.storage.from("product-images").remove([path]);
     await supabase.from("product_images").delete().eq("id", imgId);
     setExistingImages((arr) => arr.filter((i) => i.id !== imgId));
