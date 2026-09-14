@@ -250,17 +250,27 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
     }
   }, [shots.length]);
 
+  // فشل حفظ الوزن/الباركود يجب أن يظهر للموظف فوراً: الوزن أساس تسعير الذهب، وبلعه بصمت
+  // كان يعني قطعة محفوظة بوزن فارغ بينما الرقم ظاهر أمامه في الحقل. نُعلّم القطعة بعلامة
+  // حمراء في الشريط (saveState: error) إضافة للتنبيه، فيبقى الأثر ظاهراً بعد اختفاء التنبيه.
+  const markShotFailed = (id: string, message: string) => {
+    setShots((prev) => prev.map((s) => (s.id === id ? { ...s, saveState: "error" } : s)));
+    toast.error(message);
+  };
+
   const syncWeight = (id: string, weight: string) => {
     const productId = productIdsRef.current[id];
     if (!productId) return; // سيُطبَّق تلقائياً فور اكتمال الحفظ (راجع capture)
     const w = parseFloat(weight);
-    void updateCapturedPiece(productId, { weight_grams: !isNaN(w) && w > 0 ? w : null });
+    updateCapturedPiece(productId, { weight_grams: !isNaN(w) && w > 0 ? w : null })
+      .catch(() => markShotFailed(id, "تعذّر حفظ الوزن — تحقق من الاتصال وأعد كتابته"));
   };
 
   const syncBarcode = (id: string, barcode: string) => {
     const productId = productIdsRef.current[id];
     if (!productId) return;
-    void updateCapturedPiece(productId, { barcode_value: barcode.trim() || null });
+    updateCapturedPiece(productId, { barcode_value: barcode.trim() || null })
+      .catch(() => markShotFailed(id, "تعذّر حفظ الباركود — تحقق من الاتصال وأعد كتابته"));
   };
 
   // منطق الحفظ مشترك بين الالتقاط الحيّ (canvas من الفيديو المباشر) والتقاط كاميرا
@@ -283,7 +293,9 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
       .then(({ productId, imageId }) => {
         if (pendingDeleteRef.current.has(id)) {
           pendingDeleteRef.current.delete(id);
-          void deleteCapturedPiece(productId);
+          deleteCapturedPiece(productId).catch(() =>
+            toast.error("تعذّر حذف القطعة التي تراجعت عنها — ستجدها في «مراجعة غير المسمّاة»"),
+          );
           return;
         }
         productIdsRef.current[id] = productId;
@@ -293,10 +305,10 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
         const b = barcodesRef.current[id];
         if (w || b) {
           const wNum = parseFloat(w || "");
-          void updateCapturedPiece(productId, {
+          updateCapturedPiece(productId, {
             weight_grams: !isNaN(wNum) && wNum > 0 ? wNum : null,
             barcode_value: (b || "").trim() || null,
-          });
+          }).catch(() => markShotFailed(id, "تعذّر حفظ الوزن — تحقق من الاتصال وأعد كتابته"));
         }
         // تحليل فوري تلقائي — القطعة تخرج من هذه الشاشة مُسمّاة ومصنّفة فعلاً بدل
         // انتظار مراجعة يدوية لاحقة. العيار مضبوط دائماً من الموظف قبل التصوير (لا
@@ -375,8 +387,15 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
     delete barcodesRef.current[id];
     const productId = productIdsRef.current[id];
     delete productIdsRef.current[id];
-    if (productId) void deleteCapturedPiece(productId);
-    else pendingDeleteRef.current.add(id);
+    if (productId) {
+      // فشل الحذف كان يُبلع بصمت: المصغّرة تختفي من الشاشة بينما تبقى القطعة في المخزون
+      // بلا أي أثر يدل عليها. نُخبر الموظف أين يجدها ليحذفها يدوياً.
+      deleteCapturedPiece(productId).catch(() =>
+        toast.error("تعذّر حذف القطعة — لا تزال في الكتالوج، احذفها من «مراجعة غير المسمّاة»"),
+      );
+    } else {
+      pendingDeleteRef.current.add(id);
+    }
   };
 
   const undoLast = () => {

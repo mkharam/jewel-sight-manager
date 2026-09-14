@@ -396,18 +396,35 @@ export default function ProductSearch() {
   });
 
 
-  // نحفظ الفلاتر/عدد الصفحات/موضع التمرير باستمرار (خفيف: مجرّد كتابة sessionStorage)
-  // حتى يكون آخر موضع فعلي قبل فتح أي قطعة جاهزاً للاستعادة عند "رجوع". راجع
-  // SCROLL_STATE_KEY أعلى الملف وتعليق readSavedScrollState عند تهيئة الحالة.
+  // نحفظ الفلاتر/عدد الصفحات/موضع التمرير حتى يكون آخر موضع فعلي قبل فتح أي قطعة جاهزاً
+  // للاستعادة عند "رجوع". راجع SCROLL_STATE_KEY أعلى الملف.
+  //
+  // مهم: الكتابة مخنوقة بـrequestAnimationFrame لا مع كل حدث تمرير. الكتابة المباشرة
+  // (JSON.stringify + sessionStorage.setItem وكلاهما متزامن) كانت تعمل عشرات المرات في
+  // الثانية على أكثر صفحة استخداماً في التطبيق، فتُسبّب تهنيجاً محسوساً أثناء التمرير على
+  // هواتف متوسطة. rAF يضمن كتابة واحدة كحد أقصى لكل إطار رسم، والقيمة المحفوظة تبقى
+  // محدَّثة لحظة مغادرة الصفحة وهو كل ما يهم للاستعادة.
   useEffect(() => {
-    const save = () => {
+    let frame = 0;
+    const write = () => {
+      frame = 0;
       try {
         sessionStorage.setItem(SCROLL_STATE_KEY, JSON.stringify({ filters, pages, scrollY: window.scrollY }));
       } catch {}
     };
-    save();
-    window.addEventListener("scroll", save, { passive: true });
-    return () => window.removeEventListener("scroll", save);
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(write);
+    };
+    write();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+      // كتابة أخيرة عند التفكيك: الإطار المعلَّق يُلغى أعلاه، فبدون هذه الكتابة قد تضيع
+      // آخر حركة تمرير قبل فتح القطعة مباشرة — وهي بالضبط الحالة التي نستعيدها.
+      write();
+    };
   }, [filters, pages]);
 
   // استعادة موضع التمرير مرة واحدة فقط بعد أن يحمّل عدد الصفحات المستعاد فعلياً (وإلا

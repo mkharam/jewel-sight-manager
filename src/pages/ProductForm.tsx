@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
@@ -79,6 +79,11 @@ export default function ProductForm() {
   const [stoneColor, setStoneColor] = useState("");
   const [existingImages, setExistingImages] = useState<{ id: string; storage_path: string; thumb_path?: string | null; is_primary: boolean }[]>([]);
   const [newFiles, setNewFiles] = useState<File[]>([]);
+  // روابط المعاينة تُنشأ مرة واحدة لكل ملف لا داخل الرسم: كان URL.createObjectURL يُستدعى
+  // في JSX مباشرة، أي رابط blob جديد لكل صورة مع كل إعادة رسم (كل حرف يُكتب في النموذج)
+  // وبلا تحرير أبداً — وصور الكاميرا عدة ميغابايت، فيتراكم الضغط على ذاكرة الهاتف.
+  const newFilePreviews = useMemo(() => newFiles.map((f) => URL.createObjectURL(f)), [newFiles]);
+  useEffect(() => () => newFilePreviews.forEach((url) => URL.revokeObjectURL(url)), [newFilePreviews]);
   const [primaryIndex, setPrimaryIndex] = useState(0);
   const [saving, setSaving] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
@@ -508,9 +513,9 @@ export default function ProductForm() {
           )}
           {newFiles.length > 0 && (
             <div className="grid grid-cols-4 gap-2">
-              {newFiles.map((f, i) => (
+              {newFiles.map((_file, i) => (
                 <div key={i} className={`relative aspect-square rounded overflow-hidden bg-muted ring-2 ${i === primaryIndex ? "ring-primary" : "ring-transparent"}`}>
-                  <img src={URL.createObjectURL(f)} className="w-full h-full object-cover" alt="" />
+                  <img src={newFilePreviews[i]} className="w-full h-full object-cover" alt="" />
                   <button type="button" onClick={() => setPrimaryIndex(i)} className="absolute top-1 right-1 size-6 rounded-full bg-card flex items-center justify-center" title="جعلها رئيسية">
                     <Star className={`size-3 ${i === primaryIndex ? "fill-primary text-primary" : ""}`} />
                   </button>

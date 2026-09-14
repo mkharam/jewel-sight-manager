@@ -230,21 +230,29 @@ export async function saveCapturedPiece(
  * على الجدول، لأن صلاحية UPDATE المباشرة أصبحت مقتصرة على المدير العام والمشرف على فرعه —
  * الموظف يحتاج فقط تعديل هذين الحقلين تحديداً على قطعة أضافها للتو، لا القطعة كاملة.
  */
+// مهم: supabase-js لا يرمي استثناءً عند فشل الطلب — يُرجع { error } عادياً. كانت هذه
+// الدالة تتجاهل error تماماً، فيكتب الموظف الوزن ويراه في الحقل ويظهر له "تم حفظ N قطعة"
+// بينما القطعة محفوظة بوزن فارغ (رفض صلاحية أو انقطاع شبكة). الوزن أساس تسعير الذهب،
+// فالفشل الصامت هنا أخطر ما في الشاشة — نرمي الخطأ ليعرضه المستدعي للموظف.
 export async function updateCapturedPiece(
   productId: string,
   patch: { weight_grams?: number | null; barcode_value?: string | null },
 ): Promise<void> {
   if ("weight_grams" in patch) {
-    await supabase.rpc("update_product_weight", { p_product_id: productId, p_weight_grams: patch.weight_grams ?? null });
+    const { error } = await supabase.rpc("update_product_weight", { p_product_id: productId, p_weight_grams: patch.weight_grams ?? null });
+    if (error) throw error;
   }
   if ("barcode_value" in patch) {
-    await supabase.rpc("update_product_barcode", { p_product_id: productId, p_barcode_value: patch.barcode_value ?? null });
+    const { error } = await supabase.rpc("update_product_barcode", { p_product_id: productId, p_barcode_value: patch.barcode_value ?? null });
+    if (error) throw error;
   }
 }
 
-/** تراجع عن قطعة سبق حفظها فعلاً (خطأ تصوير) — يحذفها نهائياً مع صورتها. */
+/** تراجع عن قطعة سبق حفظها فعلاً (خطأ تصوير) — يحذفها نهائياً مع صورتها. يرمي عند الفشل
+ *  حتى لا تختفي من الشاشة بينما تبقى في المخزون فعلياً بلا أي أثر يدل عليها. */
 export async function deleteCapturedPiece(productId: string): Promise<void> {
-  await supabase.from("products").delete().eq("id", productId);
+  const { error } = await supabase.from("products").delete().eq("id", productId);
+  if (error) throw error;
 }
 
 /**
