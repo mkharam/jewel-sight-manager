@@ -25,12 +25,39 @@ export default function ReserveDialog({
   const [expires, setExpires] = useState(isoDatePlusDays(7));
   const [notes, setNotes] = useState("");
 
+  // نفس منطق SellDialog: بحث بالهاتف عن عميل موجود وإلا إنشاء عميل جديد، حتى يظهر
+  // الحجز في تاريخ العميل بصفحة العملاء لا كنص حر منفصل.
+  const resolveCustomerId = async (): Promise<string | null> => {
+    const trimmedPhone = phone.trim();
+    const trimmedName = name.trim();
+    if (!trimmedPhone && !trimmedName) return null;
+    if (trimmedPhone) {
+      const { data: existing } = await supabase
+        .from("customers")
+        .select("id")
+        .eq("phone", trimmedPhone)
+        .limit(1)
+        .maybeSingle();
+      if (existing) return existing.id;
+    }
+    if (!trimmedName) return null;
+    const { data: created, error: custErr } = await supabase
+      .from("customers")
+      .insert({ full_name: trimmedName, phone: trimmedPhone || null, branch_id: branchId, created_by: user?.id ?? null })
+      .select("id")
+      .single();
+    if (custErr) { console.warn("تعذّر إنشاء سجل العميل", custErr); return null; }
+    return created?.id ?? null;
+  };
+
   const submit = async () => {
     if (!name.trim()) return toast.error("اكتب اسم الزبون");
     if (!deposit || Number(deposit) <= 0) return toast.error("اكتب مبلغ العربون");
     setSaving(true);
+    const customerId = await resolveCustomerId();
     const { error } = await supabase.from("reservations").insert({
       product_id: productId,
+      customer_id: customerId,
       customer_name: name.trim(),
       customer_phone: phone.trim() || null,
       deposit: Number(deposit),

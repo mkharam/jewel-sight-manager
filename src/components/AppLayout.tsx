@@ -31,6 +31,7 @@ const desktopExtras: NavItem[] = [
 // مفيد للعمل اليومي — يراه المشرف والموظف بلا فرق بينهما (بضاعة كل الفروع، طلبات إعادة
 // الطلب، الجرد الميداني)، بخلاف أمور إدارية/حسابية بحتة أدناه.
 const sharedExtras: NavItem[] = [
+  { to: "/customers", label: "العملاء", icon: Users },
   { to: "/stock-take", label: "جرد ميداني", icon: ClipboardCheck },
   { to: "/reorders", label: "طلبات إعادة الطلب", icon: PackagePlus, badgeKey: "reorders" },
 ];

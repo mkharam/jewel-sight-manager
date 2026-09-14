@@ -14,6 +14,27 @@ export type Database = {
   }
   public: {
     Tables: {
+      _karat_backup_20260911: {
+        Row: {
+          backed_up_at: string | null
+          id: string | null
+          old_karat: string | null
+          sku: string | null
+        }
+        Insert: {
+          backed_up_at?: string | null
+          id?: string | null
+          old_karat?: string | null
+          sku?: string | null
+        }
+        Update: {
+          backed_up_at?: string | null
+          id?: string | null
+          old_karat?: string | null
+          sku?: string | null
+        }
+        Relationships: []
+      }
       activity_log: {
         Row: {
           action: string
@@ -150,6 +171,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          low_stock_threshold: number | null
           name: string
           name_en: string | null
           sort_order: number
@@ -158,6 +180,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          low_stock_threshold?: number | null
           name: string
           name_en?: string | null
           sort_order?: number
@@ -166,6 +189,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          low_stock_threshold?: number | null
           name?: string
           name_en?: string | null
           sort_order?: number
@@ -292,6 +316,54 @@ export type Database = {
           },
           {
             foreignKeyName: "customers_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      expenses: {
+        Row: {
+          amount: number
+          branch_id: string | null
+          category: string
+          created_at: string
+          created_by: string | null
+          expense_date: string
+          id: string
+          note: string | null
+        }
+        Insert: {
+          amount: number
+          branch_id?: string | null
+          category: string
+          created_at?: string
+          created_by?: string | null
+          expense_date?: string
+          id?: string
+          note?: string | null
+        }
+        Update: {
+          amount?: number
+          branch_id?: string | null
+          category?: string
+          created_at?: string
+          created_by?: string | null
+          expense_date?: string
+          id?: string
+          note?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expenses_branch_id_fkey"
+            columns: ["branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_created_by_fkey"
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -1438,6 +1510,7 @@ export type Database = {
         Args: {
           p_body: string
           p_branch_id: string
+          p_exclude_user_id?: string
           p_extra_user_ids: string[]
           p_title: string
           p_url: string

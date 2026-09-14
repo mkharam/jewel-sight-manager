@@ -32,9 +32,36 @@ export default function SellDialog({ product }: { product: Product }) {
   const [notes, setNotes] = useState("");
   const [amarInvoice, setAmarInvoice] = useState("");
 
+  // يربط البيع بعميل فعلي في جدول customers (بحث بالهاتف، وإلا إنشاء عميل جديد) بدل
+  // الاكتفاء باسم/هاتف كنص حر — بدون هذا الربط لا يظهر البيع أبداً في تاريخ شراء أي
+  // عميل بصفحة العملاء الجديدة، حتى لو الاسم والهاتف مكتوبين هنا.
+  const resolveCustomerId = async (): Promise<string | null> => {
+    const trimmedPhone = phone.trim();
+    const trimmedName = name.trim();
+    if (!trimmedPhone && !trimmedName) return null;
+    if (trimmedPhone) {
+      const { data: existing } = await supabase
+        .from("customers")
+        .select("id")
+        .eq("phone", trimmedPhone)
+        .limit(1)
+        .maybeSingle();
+      if (existing) return existing.id;
+    }
+    if (!trimmedName) return null;
+    const { data: created, error: custErr } = await supabase
+      .from("customers")
+      .insert({ full_name: trimmedName, phone: trimmedPhone || null, branch_id: product.branch_id, created_by: user?.id ?? null })
+      .select("id")
+      .single();
+    if (custErr) { console.warn("تعذّر إنشاء سجل العميل", custErr); return null; }
+    return created?.id ?? null;
+  };
+
   const submit = async () => {
     if (!price || Number(price) <= 0) return toast.error("اكتب السعر النهائي");
     setSaving(true);
+    const customerId = await resolveCustomerId();
     const { error } = await supabase.from("sales").insert({
       product_id: product.id,
       product_name_snapshot: product.name,
@@ -42,6 +69,7 @@ export default function SellDialog({ product }: { product: Product }) {
       weight_grams: product.weight_grams,
       karat: product.karat,
       branch_id: product.branch_id,
+      customer_id: customerId,
       customer_name: name.trim() || null,
       customer_phone: phone.trim() || null,
       final_price: Number(price),

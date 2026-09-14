@@ -26,6 +26,7 @@ const Reorders = lazy(() => import("@/pages/Reorders"));
 const GoldPrice = lazy(() => import("@/pages/GoldPrice"));
 const StockTake = lazy(() => import("@/pages/StockTake"));
 const Sales = lazy(() => import("@/pages/Sales"));
+const Customers = lazy(() => import("@/pages/Customers"));
 const LiveAdd = lazy(() => import("@/pages/LiveAdd"));
 const AdminProducts = lazy(() => import("@/pages/AdminProducts"));
 const Notifications = lazy(() => import("@/pages/Notifications"));
@@ -82,6 +83,7 @@ const App = () => (
                 <Route path="/gold-price" element={<GoldPrice />} />
                 <Route path="/stock-take" element={<StockTake />} />
                 <Route path="/sales" element={<Sales />} />
+                <Route path="/customers" element={<Customers />} />
                 <Route path="/admin/products" element={<AdminProducts />} />
               </Route>
               <Route path="*" element={<NotFound />} />
