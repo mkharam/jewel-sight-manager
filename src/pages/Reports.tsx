@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { BarChart3, Download, TrendingUp, ArrowLeftRight, Package, DollarSign, Clock, AlertTriangle, Receipt, Undo2 } from "lucide-react";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { BarChart3, Download, TrendingUp, ArrowLeftRight, Package, DollarSign, Clock, AlertTriangle, Receipt, Undo2, Wallet, Plus, Trash2 } from "lucide-react";
 import ReindexImagesCard from "@/components/ReindexImagesCard";
 import GenerateThumbsCard from "@/components/GenerateThumbsCard";
+import { toast } from "sonner";
 
 type Branch = { id: string; name: string; code: string | null };
 
@@ -67,14 +71,32 @@ export default function Reports() {
 
   // المبيعات الفعلية المكتملة (وليست عروض الأسعار فقط) — هذا هو الإيراد الحقيقي.
   // نستبعد المُرجعة من الإيراد لكن نُبقيها في العدد الإجمالي لتظهر في السجل التفصيلي.
+  // نجلب cost_price الحالي للقطعة المرتبطة لحساب هامش الربح (الإيراد - تكلفة البضاعة
+  // المباعة) — تقريب معقول لا سعر التكلفة وقت البيع بالضبط (غير محفوظ كلقطة)، لكنه
+  // أدق بكثير من الاكتفاء بالإيراد وحده.
   const { data: sales = [] } = useQuery({
     queryKey: ["report-sales", month],
     queryFn: async () => {
       const { data } = await supabase
         .from("sales")
-        .select("id, branch_id, final_price, discount, returned_at, sold_at, product_name_snapshot, customer_name")
+        .select("id, branch_id, final_price, discount, returned_at, sold_at, product_name_snapshot, customer_name, product:products(cost_price)")
         .gte("sold_at", startISO)
         .lt("sold_at", endISO);
+      return data ?? [];
+    },
+  });
+
+  // مصاريف المحل خلال نفس الشهر — إيجار/رواتب/صيانة... لحساب صافي الربح الحقيقي لا
+  // الإيراد فقط. راجع بطاقة "المصاريف" أسفل الصفحة لإضافة/حذف مصروف.
+  const { data: expenses = [] } = useQuery({
+    queryKey: ["report-expenses", month],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("expenses")
+        .select("id, branch_id, category, amount, note, expense_date, created_at")
+        .gte("expense_date", startISO.slice(0, 10))
+        .lt("expense_date", endISO.slice(0, 10))
+        .order("expense_date", { ascending: false });
       return data ?? [];
     },
   });
@@ -123,6 +145,7 @@ export default function Reports() {
       salesCount: number;
       returnsCount: number;
       revenue: number;
+      cogs: number;
       transfersOut: number;
       transfersIn: number;
       transfersReceived: number;
@@ -136,6 +159,7 @@ export default function Reports() {
         salesCount: 0,
         returnsCount: 0,
         revenue: 0,
+        cogs: 0,
         transfersOut: 0,
         transfersIn: 0,
         transfersReceived: 0,
@@ -160,6 +184,7 @@ export default function Reports() {
       } else {
         row.salesCount += 1;
         row.revenue += Number(s.final_price ?? 0);
+        row.cogs += Number(s.product?.cost_price ?? 0);
       }
     }
     for (const t of transfers) {
@@ -180,18 +205,24 @@ export default function Reports() {
   }, [branches, quotes, sales, transfers, newProducts]);
 
   const totals = useMemo(() => {
-    return summary.reduce(
+    const base = summary.reduce(
       (acc, r) => ({
         quotes: acc.quotes + r.quotes,
         salesCount: acc.salesCount + r.salesCount,
         returnsCount: acc.returnsCount + r.returnsCount,
         revenue: acc.revenue + r.revenue,
+        cogs: acc.cogs + r.cogs,
         transfersOut: acc.transfersOut + r.transfersOut,
         newProducts: acc.newProducts + r.newProducts,
       }),
-      { quotes: 0, salesCount: 0, returnsCount: 0, revenue: 0, transfersOut: 0, newProducts: 0 },
+      { quotes: 0, salesCount: 0, returnsCount: 0, revenue: 0, cogs: 0, transfersOut: 0, newProducts: 0 },
     );
-  }, [summary]);
+    const totalExpenses = expenses.reduce((sum, e: any) => sum + Number(e.amount ?? 0), 0);
+    // صافي الربح = الإيراد - تكلفة البضاعة المباعة - مصاريف الشهر. ملاحظة: cost_price
+    // هو التكلفة الحالية للقطعة لا لحظة بيعها بالضبط (غير محفوظة كلقطة وقت البيع).
+    const netProfit = base.revenue - base.cogs - totalExpenses;
+    return { ...base, totalExpenses, netProfit };
+  }, [summary, expenses]);
 
   // Inventory value + aging (available stock only)
   const inventoryByBranch = useMemo(() => {
@@ -309,6 +340,19 @@ export default function Reports() {
         </div>
       </header>
 
+      {/* صافي الربح الحقيقي = الإيراد - تكلفة البضاعة المباعة - مصاريف الشهر، لا الإيراد
+          وحده. بطاقة منفصلة أعلى البقية عمداً لأنها الرقم اللي المالك فعلاً محتاجه. */}
+      <div className="rounded-2xl bg-gold-gradient p-4 flex items-center justify-between gap-3 shadow-gold">
+        <div>
+          <p className="text-xs text-primary-foreground/80 mb-0.5">صافي الربح الحقيقي هذا الشهر</p>
+          <p className="text-2xl font-extrabold text-primary-foreground">{fmt(totals.netProfit)} د.ل</p>
+          <p className="text-[11px] text-primary-foreground/70 mt-1">
+            الإيراد {fmt(totals.revenue)} − تكلفة البضاعة {fmt(totals.cogs)} − المصاريف {fmt(totals.totalExpenses)}
+          </p>
+        </div>
+        <TrendingUp className="size-10 text-primary-foreground/50 shrink-0" />
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard icon={<DollarSign className="size-4" />} label="إجمالي الإيراد (مبيعات فعلية)" value={`${fmt(totals.revenue)} د.ل`} />
         <StatCard icon={<Receipt className="size-4" />} label="عدد المبيعات" value={fmt(totals.salesCount)} />
@@ -319,6 +363,8 @@ export default function Reports() {
         <StatCard icon={<ArrowLeftRight className="size-4" />} label="تحويلات بين الفروع" value={fmt(totals.transfersOut)} />
         <StatCard icon={<Package className="size-4" />} label="قطع جديدة أُضيفت" value={fmt(totals.newProducts)} />
       </div>
+
+      <ExpensesCard month={month} expenses={expenses as any[]} branches={branches} fmt={fmt} />
 
       {/* Live inventory snapshot — قيمة المخزون الحالية + القطع الراكدة */}
       <div className="rounded-2xl bg-gold-soft border border-primary/20 p-4 space-y-3">
@@ -496,6 +542,121 @@ export default function Reports() {
         </Card>
       </div>
     </div>
+  );
+}
+
+const EXPENSE_CATEGORIES = ["إيجار", "رواتب", "صيانة", "كهرباء وماء", "تسويق", "نقل", "أخرى"];
+
+function ExpensesCard({
+  month, expenses, branches, fmt,
+}: { month: string; expenses: any[]; branches: Branch[]; fmt: (n: number) => string }) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [category, setCategory] = useState(EXPENSE_CATEGORIES[0]);
+  const [amount, setAmount] = useState("");
+  const [branchId, setBranchId] = useState<string>("none");
+  const [note, setNote] = useState("");
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+
+  const total = expenses.reduce((s, e) => s + Number(e.amount ?? 0), 0);
+
+  const resetForm = () => { setCategory(EXPENSE_CATEGORIES[0]); setAmount(""); setBranchId("none"); setNote(""); setDate(new Date().toISOString().slice(0, 10)); };
+
+  const addExpense = async () => {
+    if (!amount || Number(amount) <= 0) return toast.error("اكتب المبلغ");
+    const { error } = await supabase.from("expenses").insert({
+      category,
+      amount: Number(amount),
+      branch_id: branchId === "none" ? null : branchId,
+      note: note.trim() || null,
+      expense_date: date,
+      created_by: user?.id ?? null,
+    });
+    if (error) return toast.error(error.message);
+    toast.success("تم تسجيل المصروف");
+    setOpen(false);
+    resetForm();
+    qc.invalidateQueries({ queryKey: ["report-expenses", month] });
+  };
+
+  const deleteExpense = async (id: string) => {
+    if (!confirm("حذف هذا المصروف؟")) return;
+    const { error } = await supabase.from("expenses").delete().eq("id", id);
+    if (error) return toast.error(error.message);
+    qc.invalidateQueries({ queryKey: ["report-expenses", month] });
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between space-y-0">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Wallet className="size-4 text-primary" /> المصاريف — {fmt(total)} د.ل
+        </CardTitle>
+        <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) resetForm(); }}>
+          <DialogTrigger asChild>
+            <Button size="sm" variant="outline"><Plus className="size-3.5 ml-1" /> مصروف جديد</Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader><DialogTitle>تسجيل مصروف</DialogTitle></DialogHeader>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>النوع</Label>
+                  <Select value={category} onValueChange={setCategory}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {EXPENSE_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5"><Label>المبلغ (د.ل) *</Label><Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" /></div>
+                <div className="space-y-1.5">
+                  <Label>الفرع (اختياري)</Label>
+                  <Select value={branchId} onValueChange={setBranchId}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">عام (كل الفروع)</SelectItem>
+                      {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5"><Label>التاريخ</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+              </div>
+              <div className="space-y-1.5"><Label>ملاحظة</Label><Input value={note} onChange={(e) => setNote(e.target.value)} /></div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
+              <Button onClick={addExpense} className="bg-gold-gradient text-primary-foreground">حفظ</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </CardHeader>
+      <CardContent>
+        {expenses.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">لا مصاريف مسجّلة هذا الشهر</p>
+        ) : (
+          <ul className="space-y-2 text-sm max-h-72 overflow-y-auto">
+            {expenses.map((e: any) => (
+              <li key={e.id} className="flex justify-between items-center border-b border-border/60 pb-1.5">
+                <div className="min-w-0">
+                  <p className="font-medium">{e.category}{e.note ? ` — ${e.note}` : ""}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {e.expense_date} · {branches.find((b) => b.id === e.branch_id)?.name ?? "عام"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="font-mono text-destructive">-{fmt(Number(e.amount))}</span>
+                  <button onClick={() => deleteExpense(e.id)} aria-label="حذف" className="text-muted-foreground hover:text-destructive">
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
