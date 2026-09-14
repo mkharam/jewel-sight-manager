@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { PackagePlus, Clock, ShoppingCart, PackageCheck, X, ImageIcon } from "lucide-react";
+import { PackagePlus, Clock, ShoppingCart, PackageCheck, X, ImageIcon, AlertTriangle, Settings2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Label } from "@/components/ui/label";
 import { formatDate } from "@/lib/constants";
 import { toast } from "sonner";
 
@@ -54,6 +57,84 @@ function ReorderThumb({ path }: { path: string }) {
         <div className="w-full h-full flex items-center justify-center text-muted-foreground">
           <ImageIcon className="size-5 opacity-40" />
         </div>
+      )}
+    </div>
+  );
+}
+
+type CategoryStock = { id: string; name: string; low_stock_threshold: number | null; available: number };
+
+/** تنبيهات نقص المخزون: لكل فئة حدّ أدنى اختياري (low_stock_threshold على categories)،
+ * ونقارنه بعدد القطع "متوفرة" فعلياً في هذه الفئة الآن. القطع فريدة (مش SKU بكمية)، فالنقص
+ * هنا معناه "الفئة دي قربت تخلص" لا نفاد صنف بعينه. */
+function LowStockAlerts({ canEdit }: { canEdit: boolean }) {
+  const qc = useQueryClient();
+  const { data: rows } = useQuery({
+    queryKey: ["category-stock-levels"],
+    queryFn: async (): Promise<CategoryStock[]> => {
+      const [{ data: categories }, { data: products }] = await Promise.all([
+        supabase.from("categories").select("id,name,low_stock_threshold").eq("is_active", true),
+        supabase.from("products").select("category_id").eq("status", "available"),
+      ]);
+      const counts = new Map<string, number>();
+      for (const p of products ?? []) {
+        if (!p.category_id) continue;
+        counts.set(p.category_id, (counts.get(p.category_id) ?? 0) + 1);
+      }
+      return (categories ?? []).map((c) => ({ ...c, available: counts.get(c.id) ?? 0 }));
+    },
+  });
+
+  const setThreshold = async (categoryId: string, value: string) => {
+    const n = value.trim() === "" ? null : Math.max(0, parseInt(value, 10) || 0);
+    const { error } = await supabase.from("categories").update({ low_stock_threshold: n }).eq("id", categoryId);
+    if (error) return toast.error(error.message);
+    qc.invalidateQueries({ queryKey: ["category-stock-levels"] });
+  };
+
+  const low = (rows ?? []).filter((r) => r.low_stock_threshold != null && r.available < r.low_stock_threshold);
+  const configured = (rows ?? []).filter((r) => r.low_stock_threshold != null);
+
+  if (!rows?.length) return null;
+
+  return (
+    <div className="space-y-2">
+      {low.length > 0 && (
+        <div className="space-y-1.5">
+          {low.map((c) => (
+            <Card key={c.id} className="p-3 flex items-center gap-2 border-destructive/30 bg-destructive/5">
+              <AlertTriangle className="size-4 text-destructive shrink-0" />
+              <p className="text-sm flex-1">
+                <span className="font-bold">{c.name}</span> — {c.available} قطعة متوفرة فقط (الحد الأدنى {c.low_stock_threshold})
+              </p>
+            </Card>
+          ))}
+        </div>
+      )}
+      {canEdit && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" size="sm" className="text-muted-foreground">
+              <Settings2 className="size-3.5 ml-1" /> إعداد حدود تنبيه النقص{configured.length ? ` (${configured.length})` : ""}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-72 space-y-2">
+            <p className="text-xs text-muted-foreground mb-1">أقل عدد قطع "متوفرة" لكل فئة قبل ظهور تنبيه. اتركه فارغاً لإلغاء التنبيه.</p>
+            {(rows ?? []).map((c) => (
+              <div key={c.id} className="flex items-center justify-between gap-2">
+                <Label className="text-xs flex-1 truncate">{c.name} <span className="text-muted-foreground">({c.available})</span></Label>
+                <Input
+                  type="number"
+                  min={0}
+                  defaultValue={c.low_stock_threshold ?? ""}
+                  onBlur={(e) => setThreshold(c.id, e.target.value)}
+                  className="w-16 h-8 text-xs"
+                  placeholder="—"
+                />
+              </div>
+            ))}
+          </PopoverContent>
+        </Popover>
       )}
     </div>
   );
@@ -108,6 +189,8 @@ export default function Reorders() {
         <PackagePlus className="size-5 text-primary" />
         <h1 className="text-xl font-bold">طلبات إعادة الطلب</h1>
       </div>
+
+      <LowStockAlerts canEdit={canManage} />
 
       <Tabs value={tab} onValueChange={(v: any) => setTab(v)}>
         <TabsList className="w-full grid grid-cols-3">
