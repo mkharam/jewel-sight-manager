@@ -12,8 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { UserPlus, Trash2, KeyRound, Users, Package, Tag, ArrowLeftRight, MessageCircle, Activity } from "lucide-react";
-import { formatDate } from "@/lib/constants";
+import { UserPlus, Trash2, KeyRound, Users, Package, Tag, ArrowLeftRight, MessageCircle, Activity, Trophy, Coins, Medal } from "lucide-react";
+import { formatDate, formatCurrency } from "@/lib/constants";
 import { Link } from "react-router-dom";
 
 type Branch = { id: string; name: string };
@@ -208,8 +208,9 @@ export default function Staff() {
       </div>
 
       <Tabs defaultValue="list" className="w-full">
-        <TabsList className="w-full grid grid-cols-2">
+        <TabsList className="w-full grid grid-cols-3">
           <TabsTrigger value="list"><Users className="size-4 ml-1" /> الحسابات</TabsTrigger>
+          <TabsTrigger value="leaderboard"><Trophy className="size-4 ml-1" /> المبيعات</TabsTrigger>
           <TabsTrigger value="activity"><Activity className="size-4 ml-1" /> نشاط الموظفين</TabsTrigger>
         </TabsList>
 
@@ -272,6 +273,10 @@ export default function Staff() {
               </TableBody>
             </Table>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="leaderboard" className="mt-3">
+          <SalesLeaderboard />
         </TabsContent>
 
         <TabsContent value="activity" className="mt-3">
@@ -436,6 +441,108 @@ function Stat({ icon: Icon, label, value }: { icon: any; label: string; value: n
       <Icon className="size-3.5 mx-auto text-muted-foreground" />
       <p className="text-base font-bold leading-tight mt-0.5">{value}</p>
       <p className="text-[10px] text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
+type Period = "today" | "week" | "month";
+
+/** بداية الفترة كـISO — "اليوم" منتصف الليل المحلي، والأسبوع/الشهر نافذة متدحرجة
+ * (آخر 7/30 يوماً) بدل حدود تقويمية، تفادياً لالتباس "بداية الأسبوع" بين السبت والأحد. */
+function periodStartISO(period: Period): string {
+  const now = new Date();
+  if (period === "today") {
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return midnight.toISOString();
+  }
+  const days = period === "week" ? 7 : 30;
+  return new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+const PERIOD_LABEL: Record<Period, string> = { today: "اليوم", week: "آخر 7 أيام", month: "آخر 30 يوماً" };
+
+type SellerStat = { id: string; full_name: string; count: number; total: number };
+
+/** لوحة صدارة المبيعات — من جدول sales مباشرة (sold_by/final_price/sold_at)، لا تخمين من
+ * حالة القطعة. المرتجعات (returned_at) تُستبعد من العدّ والقيمة، مطابقةً لمنطق Reports.tsx. */
+function SalesLeaderboard() {
+  const [period, setPeriod] = useState<Period>("month");
+  const [stats, setStats] = useState<SellerStat[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setStats(null);
+      const { data, error } = await supabase
+        .from("sales")
+        .select("sold_by, final_price, seller:profiles!sales_sold_by_fkey(full_name)")
+        .gte("sold_at", periodStartISO(period))
+        .is("returned_at", null);
+      if (cancelled) return;
+      if (error) { toast.error(error.message); setStats([]); return; }
+
+      const map = new Map<string, SellerStat>();
+      for (const r of (data ?? []) as any[]) {
+        if (!r.sold_by) continue;
+        const cur = map.get(r.sold_by) ?? { id: r.sold_by, full_name: r.seller?.full_name ?? "—", count: 0, total: 0 };
+        cur.count += 1;
+        cur.total += Number(r.final_price) || 0;
+        map.set(r.sold_by, cur);
+      }
+      const sorted = Array.from(map.values()).sort((a, b) => b.total - a.total);
+      setStats(sorted);
+    })();
+    return () => { cancelled = true; };
+  }, [period]);
+
+  const medalCls = ["bg-gold-gradient text-primary-foreground", "bg-slate-300 text-slate-900", "bg-amber-700 text-white"];
+
+  return (
+    <div className="space-y-3">
+      <div className="flex rounded-lg border overflow-hidden w-fit">
+        {(Object.keys(PERIOD_LABEL) as Period[]).map((p) => (
+          <button
+            key={p}
+            onClick={() => setPeriod(p)}
+            className={`px-3 h-9 text-xs font-semibold transition-colors ${
+              period === p ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"
+            }`}
+          >
+            {PERIOD_LABEL[p]}
+          </button>
+        ))}
+      </div>
+
+      {stats === null ? (
+        <div className="text-center py-8 text-muted-foreground">جارٍ التحميل...</div>
+      ) : stats.length === 0 ? (
+        <Card className="p-8 text-center text-muted-foreground">لا توجد مبيعات في هذه الفترة</Card>
+      ) : (
+        <div className="space-y-2">
+          {stats.map((s, i) => (
+            <Card key={s.id} className="p-3 flex items-center gap-3">
+              <div
+                className={`size-9 rounded-full flex items-center justify-center shrink-0 font-bold text-sm ${
+                  i < 3 ? medalCls[i] : "bg-muted text-muted-foreground"
+                }`}
+              >
+                {i < 3 ? <Medal className="size-4" /> : i + 1}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold truncate">{s.full_name}</p>
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Package className="size-3" /> {s.count} قطعة مباعة
+                </p>
+              </div>
+              <div className="text-left shrink-0">
+                <p className="font-bold text-primary flex items-center gap-1 justify-end">
+                  <Coins className="size-3.5" /> {formatCurrency(s.total)}
+                </p>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
