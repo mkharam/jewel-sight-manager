@@ -66,17 +66,9 @@ interface Props {
    * الاحتمال الوحيد المتبقي غير المجرَّب فعلياً في هذا الملف كما هو مبنيّ الآن.
    */
   initialStream?: MediaStream | null;
-  /**
-   * يُستدعى عند الضغط على "تم" مع معرّفات كل القطع التي حُفظت فعلاً في هذه الجلسة —
-   * يُستخدم لأخذ الموظف مباشرة لمراجعتها بدل تركها تُحلَّل وتُسمّى تلقائياً في الخلفية
-   * بلا أي مراجعة بشرية (كان هذا يحصل حتى لمجرد تجربة الكاميرا وضغط "تم" للخروج فقط).
-   * لا تشمل صوراً ما زالت قيد الرفع لحظة الضغط على "تم" — تبقى تلك ظاهرة في صفحة
-   * "مراجعة غير المسمّاة" العامة حتى تكتمل.
-   */
-  onFinished?: (savedProductIds: string[]) => void;
 }
 
-export default function BulkCameraCapture({ open, onClose, userId, branchId, onFinished, initialStream }: Props) {
+export default function BulkCameraCapture({ open, onClose, userId, branchId, initialStream }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [shots, setShots] = useState<Shot[]>([]);
@@ -445,13 +437,11 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, onF
     removeShot(shots[shots.length - 1].id);
   };
 
+  // كل قطعة تُحلَّل وتُسمّى تلقائياً فور رفعها (راجع analyzeCapturedPiece في saveShot)،
+  // فلم تعد هناك حاجة لأخذ الموظف لمراجعة يدوية بعد "تم" — يرجع مباشرة لصفحة الرفع.
   const finish = () => {
-    const savedIds = Object.values(productIdsRef.current);
     if (shots.length) toast.success(`تم حفظ ${shots.length} قطعة`);
     onClose();
-    // نأخذ الموظف لمراجعة ما صوّره في هذه الجلسة بالتحديد — بدل تركه يُحلَّل ويُسمَّى
-    // تلقائياً في الخلفية بلا مراجعة، حتى لو كان مجرّد تجربة للكاميرا وضغط "تم" للخروج.
-    if (savedIds.length) onFinished?.(savedIds);
   };
 
   if (!open) return null;

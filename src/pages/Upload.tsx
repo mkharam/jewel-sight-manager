@@ -5,7 +5,7 @@
 // - الرفع والحفظ يعملان في src/lib/uploadRunner.ts بمعزل عن هذا المكوّن، فالتنقّل لصفحة
 //   أخرى داخل التطبيق لا يوقفهما — فقط إغلاق التبويب نفسه يوقفهما.
 import { useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -26,7 +26,6 @@ const NO_BRANCH = "__none__";
 const PLACEHOLDER_NAME = "قطعة جديدة";
 
 export default function Upload() {
-  const navigate = useNavigate();
   const { user, profile } = useAuth();
   const [trayMode, setTrayMode] = useState(false);
   // العيار يُختار قبل الرفع بدل ترك الذكاء الاصطناعي يخمّنه من الصورة فقط — أغلب المخزون
@@ -248,7 +247,6 @@ export default function Upload() {
         onClose={() => { setBulkCameraOpen(false); setCameraStream(null); }}
         userId={user?.id ?? ""}
         branchId={branchId === NO_BRANCH ? null : branchId}
-        onFinished={(productIds) => navigate("/upload/review", { state: { productIds } })}
       />
     </div>
   );
