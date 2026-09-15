@@ -35,6 +35,9 @@ const PRODUCT_STATUS_AR: Record<string, string> = {
   transferred: "محوّلة",
   damaged: "تالفة",
   lost: "مفقودة",
+  archived: "مؤرشفة",
+  in_repair: "في الصيانة",
+  stock_discrepancy: "فرق جرد",
 };
 
 const money = (n: any) => (typeof n === "number" ? n.toLocaleString("en-US") : n);
@@ -162,6 +165,10 @@ function branchesOf(a: ActivityItem): (string | null | undefined)[] {
  * بفعل قام به هو بنفسه.
  */
 export function isRelevant(a: ActivityItem, ctx: RelevanceContext): boolean {
+  // حدث بلا فاعل: أثر عملية صيانة/دفعة على قاعدة البيانات لا فعلَ موظف — أرشفة دفعة
+  // الاختبار وحدها ولّدت مئات الأسطر عبر مُشغِّل تغيّر الحالة، فتدفن كل ما سواها.
+  // لا أحد يحتاج إشعاراً بها.
+  if (!a.actor_id) return false;
   if (ctx.userId && a.actor_id === ctx.userId) return false;
   if (ctx.isAdmin) return true;
 

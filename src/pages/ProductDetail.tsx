@@ -129,27 +129,24 @@ export default function ProductDetail() {
   // لا يملك هذه الصلاحية إطلاقاً، فقط إضافة صور وتحديث الوزن (أزرار منفصلة أدناه).
   const canEditProduct = isAdmin || (isManager && product.branch_id === profile?.branch_id);
 
-  // الحذف يبقى لمن رفع القطعة وحده: إخراج قطعة من المخزون قرار أثقل من تصحيح اسمها.
-  // القطعة المحجوزة أو المبيعة مستثناة لأن لها أثراً في سجلات أخرى — والسياسة في قاعدة
-  // البيانات تفرض الشرطين نفسيهما، فهذا الزر إظهار لما هو مسموح لا تخويل له.
-  const canDeleteOwnUpload =
-    !canEditProduct && product.created_by === user?.id && product.status === "available";
-  const canDeleteProduct = canEditProduct || canDeleteOwnUpload;
-
-  // أما التعديل الوصفي فمعياره الفرع لا من صوّر القطعة: الموظف يرى اسماً خاطئاً على قطعة
-  // في درجه فيصحّحه، ولو كان زميله هو من صوّرها. هذا يطابق تحديث الوزن المسموح له أصلاً
-  // على كل بضاعة فرعه (update_product_weight). راجع update_own_product_details.
-  const canEditBranchProduct =
+  // التعديل والحذف كلاهما معياره الفرع لا من صوّر القطعة: الموظف يرى خطأً أو قطعة مكرّرة
+  // في درجه فيتصرّف، ولو كان زميله هو من صوّرها. هذا يطابق تحديث الوزن المسموح له أصلاً
+  // على كل بضاعة فرعه. القطعة غير المتوفّرة (محجوزة/مبيعة) مستثناة لأن لها أثراً في
+  // سجلات أخرى. السياسة والدالة في قاعدة البيانات تفرضان الشروط نفسها — فهذه الأزرار
+  // إظهار لما هو مسموح لا تخويل له.
+  const canManageBranchProduct =
     !canEditProduct &&
     product.status === "available" &&
     ((!!product.branch_id && product.branch_id === profile?.branch_id) || product.created_by === user?.id);
 
+  const canEditBranchProduct = canManageBranchProduct;
+  const canDeleteOwnUpload = canManageBranchProduct;
+  const canDeleteProduct = canEditProduct || canManageBranchProduct;
+
   const onDelete = async () => {
     const ok = await confirm({
       title: "حذف هذه القطعة نهائياً؟",
-      description: canDeleteOwnUpload
-        ? "هذه قطعة رفعتها أنت. ستُحذف هي وصورها ولا يمكن التراجع."
-        : "ستُحذف القطعة وصورها ولا يمكن التراجع.",
+      description: "ستُحذف القطعة وصورها نهائياً ولا يمكن التراجع.",
       confirmLabel: "حذف نهائي",
       destructive: true,
     });
@@ -233,7 +230,7 @@ export default function ProductDetail() {
           {canDeleteProduct && (
             <Button variant="ghost" size="sm" onClick={onDelete} className="text-destructive">
               <Trash2 className="size-4 ml-1" />
-              {canDeleteOwnUpload && <span className="text-xs">حذف قطعتي</span>}
+              {canManageBranchProduct && <span className="text-xs">حذف</span>}
             </Button>
           )}
         </div>

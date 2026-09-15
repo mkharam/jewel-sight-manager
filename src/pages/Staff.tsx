@@ -3,6 +3,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { attachStaffNames } from "@/lib/staffNames";
+import { describe } from "@/lib/notifications";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -325,6 +326,8 @@ function ActivityPanel({ branches }: { branches: Branch[] }) {
   const [stats, setStats] = useState<EmpStat[]>([]);
   const [recent, setRecent] = useState<any[]>([]);
   const [loading, setLoadingState] = useState(true);
+  // الضغط على بطاقة موظف يقصر الشريط على أفعاله هو — «كل واحد شن دار».
+  const [focusId, setFocusId] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -373,43 +376,63 @@ function ActivityPanel({ branches }: { branches: Branch[] }) {
       );
       setStats(sorted);
 
-      // Build a recent activity feed combining the four sources
+      // شريط النشاط من activity_log لا من الجداول الأربعة الخام: السجل يغطّي الحذف
+      // والتعديل والبيع والإرجاع أيضاً — وهي بالضبط ما يحتاج المالك رؤيته الآن بعد أن
+      // صار الموظف يحذف ويعدّل بضاعة فرعه. describe() هي نفسها المستعملة في الإشعارات.
       const profMap = new Map((profs ?? []).map((p: any) => [p.id, p.full_name]));
+      // الاستبعاد في الاستعلام لا بعده: أرشفة دفعة الاختبار ولّدت مئات الأسطر بلا فاعل
+      // تتصدّر السجل، فلو صفّيناها بعد الجلب لعاد الشريط فارغاً وخلفها نشاط حقيقي أقدم.
+      const { data: log } = await supabase
+        .from("activity_log")
+        .select("*")
+        .not("actor_id", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(300);
+
       const feed: any[] = [];
-      (products ?? []).slice(0, 20).forEach((r: any) => feed.push({
-        kind: "product", at: r.created_at, who: profMap.get(r.created_by) ?? "—",
-        text: `أضاف قطعة جديدة: ${r.name}`, link: `/products/${r.id}`, icon: Package,
-      }));
-      (quotes ?? []).slice(0, 20).forEach((r: any) => feed.push({
-        kind: "quote", at: r.created_at, who: profMap.get(r.quoted_by) ?? "—",
-        text: `سجّل سعر ${r.price} د.ل لـ ${r.product?.name ?? "قطعة"}${r.customer_name ? ` (${r.customer_name})` : ""}`,
-        link: r.product?.id ? `/products/${r.product.id}` : null, icon: Tag,
-      }));
-      (transfers ?? []).slice(0, 20).forEach((r: any) => feed.push({
-        kind: "transfer", at: r.created_at, who: profMap.get(r.requested_by) ?? "—",
-        text: `طلب تحويل ${r.product_name_snapshot ?? "قطعة"} من ${r.from_branch?.name} إلى ${r.to_branch?.name}`,
-        link: `/transfers`, icon: ArrowLeftRight,
-      }));
-      (inquiries ?? []).slice(0, 20).forEach((r: any) => feed.push({
-        kind: "inquiry", at: r.created_at, who: profMap.get(r.created_by) ?? "—",
-        text: `سجّل استفسار من ${r.customer_name ?? "عميل"}`,
-        link: `/inquiries`, icon: MessageCircle,
-      }));
-      feed.sort((a, b) => +new Date(b.at) - +new Date(a.at));
-      setRecent(feed.slice(0, 30));
+      for (const row of (log ?? []) as any[]) {
+        // السؤال هنا «كل واحد شن دار» — فالأسطر بلا فاعل (عمليات دفعة على قاعدة
+        // البيانات) لا تُنسب لأحد ولا محلّ لها في سجل الموظفين.
+        if (!row.actor_id) continue;
+        const item = { ...row, actor_name: profMap.get(row.actor_id) };
+        const d = describe(item);
+        if (!d) continue;
+        feed.push({
+          at: row.created_at,
+          actorId: row.actor_id,
+          who: profMap.get(row.actor_id) ?? "—",
+          // describe() تبدأ النص باسم الفاعل، والاسم يُعرض منفصلاً هنا — نحذفه من النص.
+          text: d.text.startsWith(`${profMap.get(row.actor_id) ?? ""} `)
+            ? d.text.slice((profMap.get(row.actor_id) ?? "").length + 1)
+            : d.text,
+          link: d.href,
+          icon: d.icon,
+        });
+      }
+      setRecent(feed);
       setLoadingState(false);
     })();
   }, [branches]);
 
   if (loading) return <div className="text-center py-8 text-muted-foreground">جارٍ التحميل...</div>;
 
+  const focusName = focusId ? stats.find((s) => s.id === focusId)?.full_name ?? null : null;
+  const shown = (focusId ? recent.filter((r: any) => r.actorId === focusId) : recent).slice(0, 40);
+
   return (
     <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">اضغط على أي موظف لعرض ما قام به وحده.</p>
       <div className="grid gap-2 sm:grid-cols-2">
         {stats.map((s) => {
           const total = s.products + s.quotes + s.transfers + s.inquiries;
           return (
-            <Card key={s.id} className="p-3">
+            <Card
+              key={s.id}
+              onClick={() => setFocusId((cur) => (cur === s.id ? null : s.id))}
+              className={`p-3 cursor-pointer transition-colors ${
+                focusId === s.id ? "ring-2 ring-primary bg-gold-soft" : "hover:bg-muted/40"
+              }`}
+            >
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <p className="font-bold truncate">{s.full_name}</p>
@@ -429,10 +452,24 @@ function ActivityPanel({ branches }: { branches: Branch[] }) {
       </div>
 
       <Card className="p-3">
-        <h3 className="font-bold mb-2 flex items-center gap-2"><Activity className="size-4 text-primary" /> آخر النشاطات</h3>
+        <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+          <h3 className="font-bold flex items-center gap-2">
+            <Activity className="size-4 text-primary" />
+            {focusName ? `نشاط ${focusName}` : "آخر النشاطات"}
+          </h3>
+          {focusId && (
+            <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setFocusId(null)}>
+              عرض الجميع
+            </Button>
+          )}
+        </div>
         <div className="divide-y divide-border">
-          {recent.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">لا توجد نشاطات بعد</p>}
-          {recent.map((r, i) => {
+          {shown.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-6">
+              {focusName ? `لا نشاط مسجّل لـ${focusName}` : "لا توجد نشاطات بعد"}
+            </p>
+          )}
+          {shown.map((r: any, i: number) => {
             const Icon = r.icon;
             const Inner = (
               <div className="flex items-start gap-2 py-2">

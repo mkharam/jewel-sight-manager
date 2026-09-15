@@ -50,9 +50,13 @@ export function useActivityFeed(limit: number) {
     queryKey: ["activity-feed", user?.id, branchId, isAdmin, limit],
     enabled: !!user,
     queryFn: async (): Promise<FeedEntry[]> => {
+      // الأسطر بلا فاعل (عمليات دفعة على قاعدة البيانات) تُستبعد في الاستعلام نفسه:
+      // تصفيتها بعد الجلب كانت ستستهلك حصّة الجلب كلها وتترك الجرس فارغاً. راجع
+      // isRelevant التي تُسقطها أيضاً.
       const { data, error } = await supabase
         .from("activity_log")
         .select("*")
+        .not("actor_id", "is", null)
         .order("created_at", { ascending: false })
         .limit(Math.min(limit * FETCH_MULTIPLIER, MAX_FETCH));
       if (error) throw error;
