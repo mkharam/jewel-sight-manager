@@ -11,7 +11,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ImageIcon, MapPin, MoreVertical, Check, Barcode } from "lucide-react";
+import { ImageIcon, MapPin, MoreVertical, Check, Barcode, Tag } from "lucide-react";
+import type { LatestQuote } from "@/hooks/useLatestQuotes";
 import { PRODUCT_STATUS, formatCurrency, formatWeight, getThumbUrl, ProductStatus } from "@/lib/constants";
 import { GOLD_COLORS } from "@/lib/luxury";
 import { supabase } from "@/integrations/supabase/client";
@@ -47,6 +48,8 @@ interface ProductCardProps {
   onStatusChanged?: () => void;
   /** نسبة تشابه البحث بالصورة (0..1) — تُعرض كشارة منفصلة عن شارة العيار لتفادي التراكب. */
   similarity?: number;
+  /** آخر سعر أُعطي لزبون في هذه القطعة (راجع useLatestQuotes) — يُعرض حين لا سعر بيع مثبّت. */
+  lastQuote?: LatestQuote | null;
 }
 
 const QUICK_STATUSES: ProductStatus[] = ["available", "reserved", "sold"];
@@ -56,6 +59,7 @@ export default function ProductCard({
   selectable,
   selected,
   similarity,
+  lastQuote,
   onToggleSelect,
   onStatusChanged,
 }: ProductCardProps) {
@@ -144,20 +148,40 @@ export default function ProductCard({
           {product.ring_size && <span>· مقاس {product.ring_size}</span>}
         </div>
         <div className="flex items-end justify-between pt-1.5 border-t border-border/60 mt-1">
-          <div>
+          <div className="min-w-0">
             {product.promo_price ? (
               <>
                 <p className="text-xs text-muted-foreground line-through">{formatCurrency(product.sale_price)}</p>
                 <p className="text-base font-bold text-primary">{formatCurrency(product.promo_price)}</p>
               </>
-            ) : (
+            ) : product.sale_price != null ? (
               <p className="text-base font-bold text-primary">{formatCurrency(product.sale_price)}</p>
+            ) : lastQuote ? (
+              /* لا سعر بيع مثبّت على القطعة (وهذا حال البضاعة كلها اليوم) — نعرض آخر
+                 سعر أُعطي لزبون بدل شرطة فارغة، فيعرف الموظف بكم سُعِّرت من قبل قبل أن
+                 يفتحها. مكتوب أنه «آخر سعر» لا سعرَ القطعة حتى لا يُقرأ كسعر رسمي. */
+              <>
+                <p className="text-[10px] text-muted-foreground flex items-center gap-0.5 leading-none">
+                  <Tag className="size-2.5" /> آخر سعر
+                  {lastQuote.branch_name && <span className="truncate">· {lastQuote.branch_name}</span>}
+                </p>
+                <p className="text-base font-bold text-primary leading-tight">{formatCurrency(lastQuote.price)}</p>
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">لم يُسعَّر بعد</p>
             )}
           </div>
-          {product.branch?.name && (
+          {/* القطعة بلا فرع تترك الخانة فارغة فيبدو الأمر عطلاً — والموظف يُسأل «وين
+              القطعة؟» فلا يجد جواباً. نقولها صراحةً: وصلت ولم تُوزَّع على محل بعد. */}
+          {product.branch?.name ? (
             <div className="flex items-center gap-0.5 text-[11px] text-muted-foreground">
               <MapPin className="size-3" />
               {product.branch.name}
+            </div>
+          ) : (
+            <div className="flex items-center gap-0.5 text-[11px] text-muted-foreground/70">
+              <MapPin className="size-3" />
+              لم تُوزَّع
             </div>
           )}
         </div>

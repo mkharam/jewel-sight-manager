@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store, CheckSquare, Trash2, Loader2, ArrowUpDown, ChevronDown } from "lucide-react";
 import ProductCard from "@/components/ProductCard";
+import { useLatestQuotes } from "@/hooks/useLatestQuotes";
 import ImageSearchButton from "@/components/ImageSearchButton";
 import AiAssistantSheet from "@/components/AiAssistantSheet";
 import MySalesCard from "@/components/MySalesCard";
@@ -457,6 +458,11 @@ export default function ProductSearch() {
     return () => io.disconnect();
   }, [hasMore, isFetching]);
 
+  // آخر سعر أُعطي لزبون في كل قطعة معروضة — استعلام واحد للصفحة كلها، يغطّي النتائج
+  // العادية ونتائج البحث بالصورة معاً لأن كليهما يخرج من نفس مصفوفة products.
+  const visibleIds = useMemo(() => (products ?? []).map((p: any) => p.id), [products]);
+  const { data: latestQuotes } = useLatestQuotes(visibleIds);
+
   // Group products by similarity bucket when in photo-search mode
   const similarityBuckets = useMemo(() => {
     if (!similarMatches || !products) return null;
@@ -832,6 +838,7 @@ export default function ProductSearch() {
               subtitle="نفس القطعة موجودة في مخزون آخر"
               tone="success"
               products={similarityBuckets.exact}
+              quotes={latestQuotes}
             />
           )}
           {similarityBuckets.veryHigh.length > 0 && (
@@ -840,6 +847,7 @@ export default function ProductSearch() {
               subtitle="تصميم قريب جداً — قد يهم العميل"
               tone="primary"
               products={similarityBuckets.veryHigh}
+              quotes={latestQuotes}
             />
           )}
           {similarityBuckets.similar.length > 0 && (
@@ -848,6 +856,7 @@ export default function ProductSearch() {
               subtitle="تشترك في لون الحجر أو النوع أو الشكل — بدائل تُعرض على الزبون"
               tone="muted"
               products={similarityBuckets.similar}
+              quotes={latestQuotes}
             />
           )}
           {similarityBuckets.exact.length === 0 && similarityBuckets.veryHigh.length === 0 && similarityBuckets.similar.length === 0 && (
@@ -867,6 +876,7 @@ export default function ProductSearch() {
                 selected={selectedIds.has(p.id)}
                 onToggleSelect={toggleSelect}
                 onStatusChanged={refreshProducts}
+                lastQuote={latestQuotes?.get(p.id) ?? null}
               />
             ))}
           </div>
@@ -893,11 +903,13 @@ function SimilaritySection({
   subtitle,
   tone,
   products,
+  quotes,
 }: {
   title: string;
   subtitle: string;
   tone: "success" | "primary" | "muted";
   products: any[];
+  quotes?: Map<string, import("@/hooks/useLatestQuotes").LatestQuote>;
 }) {
   const badgeCls =
     tone === "success"
@@ -917,7 +929,11 @@ function SimilaritySection({
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
         {products.map((p: any) => (
           <div key={p.id}>
-            <ProductCard product={p} similarity={typeof p._sim === "number" ? p._sim : undefined} />
+            <ProductCard
+              product={p}
+              similarity={typeof p._sim === "number" ? p._sim : undefined}
+              lastQuote={quotes?.get(p.id) ?? null}
+            />
           </div>
         ))}
       </div>
