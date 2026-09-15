@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { attachStaffNames } from "@/lib/staffNames";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -49,13 +50,15 @@ export default function ProductDetail() {
           *,
           branch:branches(id,name),
           category:categories(id,name),
-          images:product_images(id,storage_path,thumb_path,is_primary,sort_order),
-          creator:profiles!products_created_by_fkey(full_name)
+          images:product_images(id,storage_path,thumb_path,is_primary,sort_order)
         `)
         .eq("id", id!)
         .maybeSingle();
       if (error) throw error;
-      return data;
+      if (!data) return data;
+      // اسم من رفع القطعة — يُجلب على حدة حتى يظهر للموظف أيضاً (راجع attachStaffNames).
+      const [withName] = await attachStaffNames([data as any], "created_by", "creator");
+      return withName;
     },
     enabled: !!id,
   });
@@ -74,10 +77,10 @@ export default function ProductDetail() {
     queryFn: async () => {
       const { data } = await supabase
         .from("product_quotes")
-        .select("*, branch:branches(name), staff:profiles!product_quotes_quoted_by_fkey(full_name)")
+        .select("*, branch:branches(name)")
         .eq("product_id", id!)
         .order("created_at", { ascending: false });
-      return data ?? [];
+      return attachStaffNames((data ?? []) as any[], "quoted_by", "staff");
     },
     enabled: !!id,
   });
@@ -87,10 +90,10 @@ export default function ProductDetail() {
     queryFn: async () => {
       const { data } = await supabase
         .from("customer_inquiries")
-        .select("*, branch:branches(name), staff:profiles!customer_inquiries_created_by_fkey(full_name)")
+        .select("*, branch:branches(name)")
         .eq("product_id", id!)
         .order("created_at", { ascending: false });
-      return data ?? [];
+      return attachStaffNames((data ?? []) as any[], "created_by", "staff");
     },
     enabled: !!id,
   });
@@ -125,10 +128,20 @@ export default function ProductDetail() {
   // لا يملك هذه الصلاحية إطلاقاً، فقط إضافة صور وتحديث الوزن (أزرار منفصلة أدناه).
   const canEditProduct = isAdmin || (isManager && product.branch_id === profile?.branch_id);
 
+  // الموظف يحذف ما رفعه هو بنفسه ما دامت القطعة «متوفرة»: صورة مكرّرة أو قطعة دخلت
+  // بالغلط أثناء التصوير المتتالي كانت تبقى في الكتالوق حتى ينتبه لها مدير. القطعة
+  // المحجوزة أو المبيعة مستثناة لأن لها أثراً في سجلات أخرى — والسياسة في قاعدة
+  // البيانات تفرض الشرطين نفسيهما، فهذا الزر إظهار لما هو مسموح لا تخويل له.
+  const canDeleteOwnUpload =
+    !canEditProduct && product.created_by === user?.id && product.status === "available";
+  const canDeleteProduct = canEditProduct || canDeleteOwnUpload;
+
   const onDelete = async () => {
     const ok = await confirm({
       title: "حذف هذه القطعة نهائياً؟",
-      description: "ستُحذف القطعة وصورها ولا يمكن التراجع.",
+      description: canDeleteOwnUpload
+        ? "هذه قطعة رفعتها أنت. ستُحذف هي وصورها ولا يمكن التراجع."
+        : "ستُحذف القطعة وصورها ولا يمكن التراجع.",
       confirmLabel: "حذف نهائي",
       destructive: true,
     });
@@ -209,9 +222,10 @@ export default function ProductDetail() {
               <Button variant="outline" size="sm"><Edit className="size-4 ml-1" /> تعديل</Button>
             </Link>
           )}
-          {canEditProduct && (
+          {canDeleteProduct && (
             <Button variant="ghost" size="sm" onClick={onDelete} className="text-destructive">
-              <Trash2 className="size-4" />
+              <Trash2 className="size-4 ml-1" />
+              {canDeleteOwnUpload && <span className="text-xs">حذف قطعتي</span>}
             </Button>
           )}
         </div>

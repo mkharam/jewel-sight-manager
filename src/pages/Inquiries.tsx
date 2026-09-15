@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
+import { attachStaffNames } from "@/lib/staffNames";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -59,10 +60,10 @@ export default function Inquiries() {
     queryFn: async () => {
       const { data } = await supabase
         .from("product_quotes")
-        .select("*, branch:branches(name), staff:profiles!product_quotes_quoted_by_fkey(full_name), product:products(id,name,images:product_images(storage_path,thumb_path,is_primary))")
+        .select("*, branch:branches(name), product:products(id,name,images:product_images(storage_path,thumb_path,is_primary))")
         .order("created_at", { ascending: false })
         .limit(100);
-      return data ?? [];
+      return attachStaffNames((data ?? []) as any[], "quoted_by", "staff");
     },
   });
 
@@ -71,11 +72,11 @@ export default function Inquiries() {
     queryFn: async () => {
       let q = supabase
         .from("customer_inquiries")
-        .select("*, branch:branches(name), staff:profiles!customer_inquiries_created_by_fkey(full_name), product:products(name)")
+        .select("*, branch:branches(name), product:products(name)")
         .order("created_at", { ascending: false })
         .limit(200);
       if (filter !== "all") q = q.eq("status", filter);
-      return (await q).data ?? [];
+      return attachStaffNames(((await q).data ?? []) as any[], "created_by", "staff");
     },
   });
 
