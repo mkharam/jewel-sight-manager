@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { BookmarkPlus } from "lucide-react";
 import { isoDatePlusDays } from "@/lib/luxury";
+import { invalidateInventoryAndSales } from "@/lib/queryInvalidation";
 import { toast } from "sonner";
 
 export default function ReserveDialog({
@@ -74,6 +75,8 @@ export default function ReserveDialog({
     setName(""); setPhone(""); setDeposit(""); setNotes("");
     qc.invalidateQueries({ queryKey: ["product", productId] });
     qc.invalidateQueries({ queryKey: ["reservations", productId] });
+    // القطعة صارت "محجوزة" — الكتالوج وتنبيه نقص المخزون يجب أن يعكسا ذلك فوراً.
+    invalidateInventoryAndSales(qc);
   };
 
   return (

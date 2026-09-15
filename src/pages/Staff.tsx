@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -459,19 +460,20 @@ type SellerStat = { id: string; full_name: string; count: number; total: number 
  * حالة القطعة. المرتجعات (returned_at) تُستبعد من العدّ والقيمة، مطابقةً لمنطق Reports.tsx. */
 function SalesLeaderboard() {
   const [period, setPeriod] = useState<Period>("month");
-  const [stats, setStats] = useState<SellerStat[] | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setStats(null);
+  // ضمن الكاش المشترك: أي بيع يُسجَّل في التطبيق يُبطل ["sales-leaderboard"] فتتحدّث
+  // اللوحة فوراً بلا إعادة تحميل. keepPreviousData يُبقي الترتيب ظاهراً أثناء تبديل
+  // الفترة بدل إفراغ القائمة وإظهار "جارٍ التحميل" في كل ضغطة.
+  const { data: stats } = useQuery({
+    queryKey: ["sales-leaderboard", period],
+    placeholderData: keepPreviousData,
+    queryFn: async (): Promise<SellerStat[]> => {
       const { data, error } = await supabase
         .from("sales")
         .select("sold_by, final_price, seller:profiles!sales_sold_by_fkey(full_name)")
         .gte("sold_at", periodStartISO(period))
         .is("returned_at", null);
-      if (cancelled) return;
-      if (error) { toast.error(error.message); setStats([]); return; }
+      if (error) { toast.error(error.message); throw error; }
 
       const map = new Map<string, SellerStat>();
       for (const r of (data ?? []) as any[]) {
@@ -481,11 +483,9 @@ function SalesLeaderboard() {
         cur.total += Number(r.final_price) || 0;
         map.set(r.sold_by, cur);
       }
-      const sorted = Array.from(map.values()).sort((a, b) => b.total - a.total);
-      setStats(sorted);
-    })();
-    return () => { cancelled = true; };
-  }, [period]);
+      return Array.from(map.values()).sort((a, b) => b.total - a.total);
+    },
+  });
 
   const medalCls = ["bg-gold-gradient text-primary-foreground", "bg-slate-300 text-slate-900", "bg-amber-700 text-white"];
 

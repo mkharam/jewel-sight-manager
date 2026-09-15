@@ -15,8 +15,10 @@ import { ImageIcon, MapPin, MoreVertical, Check, Barcode } from "lucide-react";
 import { PRODUCT_STATUS, formatCurrency, formatWeight, getThumbUrl, ProductStatus } from "@/lib/constants";
 import { GOLD_COLORS } from "@/lib/luxury";
 import { supabase } from "@/integrations/supabase/client";
+import { invalidateInventoryAndSales } from "@/lib/queryInvalidation";
 import { toast } from "sonner";
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 
 export interface ProductCardData {
@@ -61,6 +63,7 @@ export default function ProductCard({
   const imgUrl = getThumbUrl(primary);
   const status = PRODUCT_STATUS[product.status];
   const [pending, setPending] = useState<ProductStatus | null>(null);
+  const qc = useQueryClient();
   const { roles, profile } = useAuth();
   const isAdmin = roles.includes("admin");
   const isManager = roles.includes("manager");
@@ -74,6 +77,10 @@ export default function ProductCard({
       const { error } = await supabase.from("products").update({ status: next }).eq("id", product.id);
       if (error) throw error;
       toast.success(`تم التحديث إلى: ${PRODUCT_STATUS[next].label}`);
+      // البطاقة تظهر في أكثر من شاشة (بحث/إدارة قطع/ملخّص جلسة التصوير)، وكل شاشة كانت
+      // تُمرّر onStatusChanged خاصاً بها أو لا تُمرّره أصلاً — فنُبطل المفاتيح المشتركة هنا
+      // مرة واحدة بدل الاعتماد على كل مستدعٍ أن يتذكّر ذلك.
+      invalidateInventoryAndSales(qc);
       onStatusChanged?.();
     } catch (e: any) {
       toast.error(e.message ?? "تعذّر تحديث الحالة");

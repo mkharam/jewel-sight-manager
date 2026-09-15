@@ -13,6 +13,7 @@ import AiAssistantSheet from "@/components/AiAssistantSheet";
 import MySalesCard from "@/components/MySalesCard";
 import MyWorkCard from "@/components/MyWorkCard";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
+import { invalidateInventoryAndSales } from "@/lib/queryInvalidation";
 import { PRODUCT_STATUS, KARAT_OPTIONS, ProductStatus } from "@/lib/constants";
 import { GOLD_COLORS, STONE_COLORS } from "@/lib/luxury";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -102,7 +103,9 @@ export default function ProductSearch() {
   const clearSelection = () => setSelectedIds(new Set());
   const exitSelection = () => { setSelectionMode(false); clearSelection(); };
 
-  const refreshProducts = () => queryClient.invalidateQueries({ queryKey: ["products"] });
+  // التعديل الجماعي يغيّر حالة/فرع عدة قطع دفعة واحدة — يستدعي نفس التحديث الشامل حتى
+  // تنعكس النتيجة على تنبيه نقص المخزون وبقية الشاشات لا على هذه القائمة وحدها.
+  const refreshProducts = () => invalidateInventoryAndSales(queryClient);
 
   const applyBulkStatus = async () => {
     if (!bulkStatus || selectedIds.size === 0) return;

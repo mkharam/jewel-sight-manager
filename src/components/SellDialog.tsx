@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { BadgeCheck } from "lucide-react";
 import { PAYMENT_METHODS } from "@/lib/luxury";
+import { invalidateInventoryAndSales } from "@/lib/queryInvalidation";
 import { toast } from "sonner";
 
 type Product = {
@@ -85,6 +86,9 @@ export default function SellDialog({ product }: { product: Product }) {
     setOpen(false);
     qc.invalidateQueries({ queryKey: ["product", product.id] });
     qc.invalidateQueries({ queryKey: ["sales", product.id] });
+    // الكتالوج وبطاقة "مبيعاتي" ولوحة الصدارة وتنبيه نقص المخزون — كانت كلها تبقى على
+    // بياناتها القديمة بعد البيع حتى إعادة تحميل الصفحة. راجع lib/queryInvalidation.
+    invalidateInventoryAndSales(qc);
   };
 
   return (

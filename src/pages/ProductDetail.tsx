@@ -21,6 +21,7 @@ import ReserveDialog from "@/components/ReserveDialog";
 import ReorderRequestDialog from "@/components/ReorderRequestDialog";
 import ImageLightbox from "@/components/ImageLightbox";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
+import { invalidateInventoryAndSales } from "@/lib/queryInvalidation";
 
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
@@ -139,6 +140,8 @@ export default function ProductDetail() {
       details: { name: product.name },
     });
     toast.success("تم الحذف");
+    // بدونها يعود الموظف للكتالوج فيجد القطعة المحذوفة لا تزال معروضة من الكاش.
+    invalidateInventoryAndSales(qc);
     navigate("/");
   };
 
@@ -161,6 +164,8 @@ export default function ProductDetail() {
       if (error) throw error;
       toast.success("تم تحديث الوزن");
       qc.invalidateQueries({ queryKey: ["product", id] });
+      // الوزن يظهر على بطاقة القطعة في الكتالوج أيضاً.
+      qc.invalidateQueries({ queryKey: ["products"] });
     } catch (e: any) {
       toast.error(e.message ?? "تعذّر تحديث الوزن");
     } finally {

@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
+import { invalidateInventoryAndSales } from "@/lib/queryInvalidation";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
@@ -113,7 +114,8 @@ export default function AdminProducts() {
   };
   const clearSelection = () => setSelectedIds(new Set());
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+  // التعديل/الحذف الجماعي هنا يغيّر نفس القطع التي يعرضها الكتالوج وتنبيه نقص المخزون.
+  const refresh = () => invalidateInventoryAndSales(queryClient);
 
   const openEditDialog = () => {
     setEditCategory(NO_CHANGE);

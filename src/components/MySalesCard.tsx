@@ -1,7 +1,8 @@
 // بطاقة "مبيعاتي" — كل موظف يشوف أداءه الشخصي (عدد القطع + القيمة) بدون حاجة يسأل
 // المدير، عكس لوحة الصدارة في Staff.tsx اللي مقصورة على المدير العام. تعتمد على سياسة
 // RLS "read own sales" (sold_by = auth.uid()) فيبقى كل موظف يشوف مبيعاته هو فقط.
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
@@ -14,26 +15,26 @@ export default function MySalesCard() {
   // ذاتي) بس مش قيمتها بالدينار؛ المدير والمدير العام يشوفوا الاتنين زي لوحة الصدارة.
   const canSeeValue = roles.includes("admin") || roles.includes("manager");
   const [period, setPeriod] = useState<Period>("today");
-  const [stats, setStats] = useState<{ count: number; total: number } | null>(null);
 
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-    (async () => {
-      setStats(null);
+  // react-query لا useEffect يدوي: البطاقة بهذا تدخل ضمن الكاش المشترك، فتتحدّث تلقائياً
+  // فور تسجيل أي بيع (راجع invalidateInventoryAndSales) بدل أن تبقى على رقمها القديم حتى
+  // إعادة تحميل الصفحة. keepPreviousData يمنع وميض "—" عند تبديل الفترة أو إعادة الجلب.
+  const { data: stats } = useQuery({
+    queryKey: ["my-sales", user?.id, period],
+    enabled: !!user,
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
       const { data, error } = await supabase
         .from("sales")
         .select("final_price")
-        .eq("sold_by", user.id)
+        .eq("sold_by", user!.id)
         .gte("sold_at", periodStartISO(period))
         .is("returned_at", null);
-      if (cancelled) return;
-      if (error) { setStats({ count: 0, total: 0 }); return; }
+      if (error) throw error;
       const rows = data ?? [];
-      setStats({ count: rows.length, total: rows.reduce((s, r) => s + (Number(r.final_price) || 0), 0) });
-    })();
-    return () => { cancelled = true; };
-  }, [user, period]);
+      return { count: rows.length, total: rows.reduce((s, r) => s + (Number(r.final_price) || 0), 0) };
+    },
+  });
 
   if (!user) return null;
 

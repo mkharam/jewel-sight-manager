@@ -2,7 +2,7 @@
 // وصفحة التحويلات ويدوّر بينهم كل مرة. لا يوجد عمود "assigned_to" فعلي في القاعدة، فنعتمد
 // أقرب تقريب متاح: استفساراته هو (سجّلها بنفسه) المعلّقة، وتحويلات واردة لفرعه بانتظار
 // استلام (أي موظف في الفرع يقدر يستلمها، فهي "شغل الفرع" لا شغل شخص بعينه بالضبط).
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -11,34 +11,39 @@ import { MessageCircle, ArrowLeftRight, ListChecks } from "lucide-react";
 
 export default function MyWorkCard() {
   const { user, profile } = useAuth();
-  const [pendingInquiries, setPendingInquiries] = useState<number | null>(null);
-  const [awaitingTransfers, setAwaitingTransfers] = useState<number | null>(null);
 
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-    (async () => {
-      const inquiriesQ = supabase
-        .from("customer_inquiries")
-        .select("id", { count: "exact", head: true })
-        .eq("created_by", user.id)
-        .eq("status", "pending");
-      const transfersQ = profile?.branch_id
-        ? supabase
-            .from("transfers")
-            .select("id", { count: "exact", head: true })
-            .eq("to_branch_id", profile.branch_id)
-            .in("status", ["approved", "in_transit"])
-        : null;
-      const [inqRes, trRes] = await Promise.all([inquiriesQ, transfersQ ?? Promise.resolve({ count: 0 })]);
-      if (cancelled) return;
-      setPendingInquiries(inqRes.count ?? 0);
-      setAwaitingTransfers((trRes as any).count ?? 0);
-    })();
-    return () => { cancelled = true; };
-  }, [user, profile?.branch_id]);
+  // ضمن الكاش المشترك (لا useEffect يدوي) حتى تتحدّث البطاقة تلقائياً مع بقية الشاشات —
+  // الاستفسارات والتحويلات لهما بثّ realtime في صفحتيهما، ونعيد الجلب عند العودة للنافذة
+  // فلا يبقى الموظف أمام رقم قديم بعد أن يتصرّف زميله في نفس الفرع.
+  const { data } = useQuery({
+    queryKey: ["my-work", user?.id, profile?.branch_id],
+    enabled: !!user,
+    refetchOnWindowFocus: true,
+    queryFn: async () => {
+      const [inqRes, trRes] = await Promise.all([
+        supabase
+          .from("customer_inquiries")
+          .select("id", { count: "exact", head: true })
+          .eq("created_by", user!.id)
+          .eq("status", "pending"),
+        profile?.branch_id
+          ? supabase
+              .from("transfers")
+              .select("id", { count: "exact", head: true })
+              .eq("to_branch_id", profile.branch_id)
+              .in("status", ["approved", "in_transit"])
+          : Promise.resolve({ count: 0 }),
+      ]);
+      return {
+        pendingInquiries: inqRes.count ?? 0,
+        awaitingTransfers: (trRes as { count: number | null }).count ?? 0,
+      };
+    },
+  });
 
-  const total = (pendingInquiries ?? 0) + (awaitingTransfers ?? 0);
+  const pendingInquiries = data?.pendingInquiries ?? 0;
+  const awaitingTransfers = data?.awaitingTransfers ?? 0;
+  const total = pendingInquiries + awaitingTransfers;
   if (!user || total === 0) return null;
 
   return (

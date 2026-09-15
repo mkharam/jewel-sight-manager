@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { invalidateInventoryAndSales } from "@/lib/queryInvalidation";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -37,6 +39,7 @@ interface Sale {
 }
 
 export default function Sales() {
+  const qc = useQueryClient();
   const { profile, roles } = useAuth();
   const isAdmin = roles.includes("admin");
   const isManager = roles.includes("manager");
@@ -105,6 +108,9 @@ export default function Sales() {
     setReturnTarget(null);
     setReturnReason("");
     load();
+    // الإرجاع يُعيد القطعة للمخزون ويُنقص مبيعات البائع — الكتالوج وبطاقة "مبيعاتي"
+    // ولوحة الصدارة كانت تبقى على أرقامها السابقة حتى إعادة التحميل.
+    invalidateInventoryAndSales(qc);
   };
 
   return (
