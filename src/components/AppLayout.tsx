@@ -23,11 +23,11 @@ const baseNav: NavItem[] = [
 ];
 
 // الشريط السفلي للموظف: عمله اليومي هو تسجيل سعر لزبون، وطلب إعادة قطعة، وتسجيل
-// استفسار — وكان «إعادة الطلب» مدفوناً داخل «المزيد» بينما تحتلّ «المحادثة» مكاناً
-// ثابتاً. تسجيل السعر يبدأ من القطعة نفسها فمكانه البحث (وله زر مباشر على بطاقة
-// القطعة الآن)، والمحادثة تنتقل إلى «المزيد» مع بقاء تنبيهها ظاهراً كنقطة عليه.
+// استفسار — وكان «إعادة الطلب» مدفوناً داخل «المزيد». تسجيل السعر يبدأ من القطعة
+// نفسها (داخل صفحتها) فمكانه البحث. المحادثة تبقى في الشريط فيصير ستة أعمدة.
 const employeeMobileNav: NavItem[] = [
   { to: "/", label: "البحث", icon: Search, end: true },
+  { to: "/chat", label: "المحادثة", icon: MessagesSquare },
   { to: "/inquiries", label: "استفسارات", icon: MessageCircle },
   { to: "/reorders", label: "إعادة طلب", icon: PackagePlus, badgeKey: "reorders" },
   { to: "/upload", label: "رفع", icon: Upload, badgeKey: "uploads" },
@@ -158,8 +158,6 @@ export default function AppLayout() {
   const isStaff = !isAdmin && !isManager;
   const mobileNav: NavItem[] = isStaff ? employeeMobileNav : baseNav;
   const moreItems: NavItem[] = [
-    // ما خرج من الشريط السفلي للموظف يدخل هنا حتى لا يضيع
-    ...(isStaff ? [{ to: "/chat", label: "المحادثة", icon: MessagesSquare }] : []),
     ...desktopExtras,
     // «إعادة الطلب» صار في الشريط السفلي للموظف فلا نكرّره هنا
     ...sharedExtras.filter((i) => !(isStaff && i.to === "/reorders")),
@@ -245,7 +243,8 @@ export default function AppLayout() {
       </main>
 
       <nav data-mobile-bottom-nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-card/95 backdrop-blur safe-area-pb">
-        <div className="grid grid-cols-5">
+        {/* عدد الأعمدة يتبع طول الشريط: خمسة للمدير، ستة للموظف (بند إضافي: إعادة الطلب) */}
+        <div className={cn("grid", mobileNav.length >= 5 ? "grid-cols-6" : "grid-cols-5")}>
           {mobileNav.map((item) => {
             const count = item.badgeKey ? badges[item.badgeKey] : 0;
             return (
@@ -267,7 +266,7 @@ export default function AppLayout() {
                         </span>
                       )}
                     </div>
-                    <span>{item.label}</span>
+                    <span className={cn("leading-none", mobileNav.length >= 5 && "text-[10px]")}>{item.label}</span>
                   </>
                 )}
               </NavLink>

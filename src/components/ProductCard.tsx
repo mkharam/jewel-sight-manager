@@ -11,8 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ImageIcon, MapPin, MoreVertical, Check, Barcode, Tag } from "lucide-react";
-import QuickQuoteSheet from "@/components/QuickQuoteSheet";
+import { ImageIcon, MapPin, MoreVertical, Check, Barcode } from "lucide-react";
 import { PRODUCT_STATUS, formatCurrency, formatWeight, getThumbUrl, ProductStatus } from "@/lib/constants";
 import { GOLD_COLORS } from "@/lib/luxury";
 import { supabase } from "@/integrations/supabase/client";
@@ -197,32 +196,6 @@ export default function ProductCard({
       {/* Quick-actions row (hidden in selectable mode to keep interaction simple) */}
       {!selectable && (
         <>
-          {/* تسجيل السعر المعروض على عميل — أكثر ما يفعله الموظف يومياً، وكان يتطلّب فتح
-              صفحة القطعة ثم النزول لأسفلها. من هنا يُسجَّل والزبون واقف أمامه. للقطع
-              المتوفّرة فقط (المبيعة/المحجوزة لا يُعرض سعرها لزبون جديد). */}
-          {product.status === "available" && (
-            <div
-              className="absolute bottom-2 left-2 z-10"
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-            >
-              <QuickQuoteSheet
-                productId={product.id}
-                productName={product.name}
-                branchId={product.branch_id ?? null}
-                trigger={
-                  <Button
-                    size="icon"
-                    variant="secondary"
-                    className="size-9 rounded-full bg-card/95 backdrop-blur shadow-md"
-                    aria-label="تسجيل سعر معروض"
-                  >
-                    <Tag className="size-4 text-primary" />
-                  </Button>
-                }
-              />
-            </div>
-          )}
-
           {/* Quick status menu — bottom-right of body (المدير/المشرف على فرعه فقط) */}
           {canEditStatus && (
           <div

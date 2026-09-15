@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Bell, ArrowLeftRight, Tag, MessageCircle, Package, BellRing, BellOff, PackagePlus } from "lucide-react";
+import { Bell, BellRing, BellOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useActivityFeed } from "@/hooks/useActivityFeed";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -10,76 +11,11 @@ import { cn } from "@/lib/utils";
 import { enablePush, disablePush, currentPushStatus, type PushStatus } from "@/lib/push";
 import { toast } from "sonner";
 
-export interface ActivityItem {
-  id: string;
-  action: string;
-  entity_type: string;
-  entity_id: string | null;
-  details: any;
-  created_at: string;
-  actor_id: string | null;
-  actor_name?: string;
-}
-
-const STATUS_LABEL: Record<string, string> = {
-  status_approved: "وافق على التحويل",
-  status_in_transit: "أرسل التحويل",
-  status_received: "استلم التحويل",
-  status_rejected: "رفض التحويل",
-  status_cancelled: "ألغى التحويل",
-  created: "أنشأ",
-};
-
-const PRODUCT_STATUS_AR: Record<string, string> = {
-  available: "متوفرة",
-  reserved: "محجوزة",
-  sold: "مباعة",
-  transferred: "محوّلة",
-};
-
-export function describe(a: ActivityItem): { text: string; icon: any; href: string } | null {
-  const actor = a.actor_name ?? "موظف";
-  if (a.entity_type === "transfers") {
-    const product = a.details?.product ?? "قطعة";
-    if (a.action === "created") return { text: `${actor} طلب تحويل: ${product}`, icon: ArrowLeftRight, href: "/transfers" };
-    if (STATUS_LABEL[a.action]) return { text: `${actor} ${STATUS_LABEL[a.action]}: ${product}`, icon: ArrowLeftRight, href: "/transfers" };
-    return null;
-  }
-  if (a.entity_type === "products") {
-    const name = a.details?.name ?? "قطعة";
-    const href = a.entity_id ? `/products/${a.entity_id}` : "/";
-    if (a.action === "created") return { text: `${actor} أضاف قطعة: ${name}`, icon: Package, href };
-    if (a.action?.startsWith("status_")) {
-      const next = a.action.replace("status_", "");
-      const label = PRODUCT_STATUS_AR[next] ?? next;
-      if (next === "sold") return { text: `${actor} باع القطعة: ${name} 🎉`, icon: Tag, href };
-      return { text: `${actor} حدّث حالة ${name} إلى ${label}`, icon: Package, href };
-    }
-    return null;
-  }
-  if (a.entity_type === "product_quotes") {
-    const price = a.details?.price;
-    return { text: `${actor} أضاف سعر ${price?.toLocaleString?.() ?? price} د.ل${a.details?.customer ? ` للزبون ${a.details.customer}` : ""}`, icon: Tag, href: a.details?.product_id ? `/products/${a.details.product_id}` : "/" };
-  }
-  if (a.entity_type === "customer_inquiries") {
-    return { text: `${actor} سجّل استفسار${a.details?.customer ? ` من ${a.details.customer}` : ""}`, icon: MessageCircle, href: "/inquiries" };
-  }
-  if (a.entity_type === "product_reorder_requests") {
-    const product = a.details?.product ?? "قطعة";
-    if (a.action === "reorder_requested") return { text: `${actor} طلب إعادة طلب: ${product}`, icon: PackagePlus, href: "/reorders" };
-    if (a.action === "reorder_ordered") return { text: `تم طلب «${product}» من المورد`, icon: PackagePlus, href: "/reorders" };
-    if (a.action === "reorder_received") return { text: `وصلت «${product}» من المورد 🎉`, icon: PackagePlus, href: "/reorders" };
-    if (a.action === "reorder_cancelled") return { text: `أُلغي طلب إعادة طلب: ${product}`, icon: PackagePlus, href: "/reorders" };
-    return null;
-  }
-  return null;
-}
-
 const LS_KEY = "lamaa.notifs.lastSeen";
 
 export default function NotificationsBell() {
-  const { user } = useAuth();
-  const [items, setItems] = useState<ActivityItem[]>([]);
+  const { user, roles } = useAuth();
+  const { data: entries = [] } = useActivityFeed(30);
   const [open, setOpen] = useState(false);
   const [lastSeen, setLastSeen] = useState<string>(() => localStorage.getItem(LS_KEY) ?? "1970-01-01");
   const [pushStatus, setPushStatus] = useState<PushStatus>("unsubscribed");
@@ -112,37 +48,12 @@ export default function NotificationsBell() {
     }
   };
 
-  const load = async () => {
-    const { data } = await supabase
-      .from("activity_log")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(30);
-    const list = (data ?? []) as ActivityItem[];
-    const ids = Array.from(new Set(list.map((i) => i.actor_id).filter(Boolean))) as string[];
-    if (ids.length) {
-      const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", ids);
-      const map = new Map((profs ?? []).map((p: any) => [p.id, p.full_name]));
-      list.forEach((i) => { i.actor_name = i.actor_id ? map.get(i.actor_id) ?? undefined : undefined; });
-    }
-    setItems(list);
-  };
-
-  useEffect(() => {
-    load();
-    const ch = supabase
-      .channel("activity-live")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "activity_log" }, () => load())
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, []);
-
-  const unread = items.filter((i) => i.created_at > lastSeen).length;
+  const unread = entries.filter((e) => e.item.created_at > lastSeen).length;
 
   const onOpenChange = (o: boolean) => {
     setOpen(o);
-    if (o && items.length) {
-      const newest = items[0].created_at;
+    if (o && entries.length) {
+      const newest = entries[0].item.created_at;
       localStorage.setItem(LS_KEY, newest);
       setLastSeen(newest);
     }
@@ -163,8 +74,10 @@ export default function NotificationsBell() {
       <PopoverContent align="end" className="w-[92vw] max-w-sm p-0 max-h-[70vh] overflow-y-auto">
         <div className="px-3 py-2 border-b border-border bg-muted/40 sticky top-0 flex items-center justify-between gap-2">
           <div>
-            <p className="text-sm font-bold">آخر النشاطات</p>
-            <p className="text-[11px] text-muted-foreground">مباشر — يتحدث تلقائياً</p>
+            <p className="text-sm font-bold">{roles.includes("admin") ? "آخر النشاطات" : "ما يخصّك"}</p>
+            <p className="text-[11px] text-muted-foreground">
+              {roles.includes("admin") ? "كل الفروع — مباشر" : "فرعك وما يهمّك — مباشر"}
+            </p>
           </div>
           {pushStatus !== "unsupported" && pushStatus !== "denied" && (
             <Button
@@ -179,19 +92,16 @@ export default function NotificationsBell() {
             </Button>
           )}
         </div>
-        {items.length === 0 ? (
-          <div className="p-6 text-center text-sm text-muted-foreground">لا توجد نشاطات بعد</div>
+        {entries.length === 0 ? (
+          <div className="p-6 text-center text-sm text-muted-foreground">لا توجد نشاطات تخصّك بعد</div>
         ) : (
           <ul className="divide-y divide-border">
-            {items.map((it) => {
-              const d = describe(it);
-              if (!d) return null;
-              const Icon = d.icon;
+            {entries.map(({ item: it, text, icon: Icon, href }) => {
               const isNew = it.created_at > lastSeen;
               return (
                 <li key={it.id}>
                   <Link
-                    to={d.href}
+                    to={href}
                     onClick={() => setOpen(false)}
                     className={cn(
                       "flex gap-2 p-3 hover:bg-muted/40 transition-colors",
@@ -202,7 +112,7 @@ export default function NotificationsBell() {
                       <Icon className="size-4 text-primary" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm leading-snug">{d.text}</p>
+                      <p className="text-sm leading-snug">{text}</p>
                       <p className="text-[10px] text-muted-foreground mt-0.5">{formatDate(it.created_at)}</p>
                     </div>
                     {isNew && <span className="size-2 rounded-full bg-primary self-center" />}

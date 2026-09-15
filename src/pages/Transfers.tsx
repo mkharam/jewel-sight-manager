@@ -75,7 +75,7 @@ export default function Transfers() {
     const list = (tr ?? []) as any[];
     const ids = Array.from(new Set(list.map((t) => t.requested_by).filter(Boolean)));
     if (ids.length) {
-      const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", ids);
+      const { data: profs } = await supabase.from("staff_directory").select("id, full_name").in("id", ids);
       const map = new Map((profs ?? []).map((p: any) => [p.id, p.full_name]));
       list.forEach((t) => { t.requester = { full_name: map.get(t.requested_by) ?? "—" }; });
     }

@@ -155,7 +155,7 @@ export default function Reorders() {
     const list = (data ?? []) as any[];
     const ids = Array.from(new Set(list.map((i) => i.requested_by).filter(Boolean)));
     if (ids.length) {
-      const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", ids);
+      const { data: profs } = await supabase.from("staff_directory").select("id, full_name").in("id", ids);
       const map = new Map((profs ?? []).map((p: any) => [p.id, p.full_name]));
       list.forEach((i) => { i.requester = { full_name: map.get(i.requested_by) ?? "—" }; });
     }

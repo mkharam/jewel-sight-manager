@@ -31,12 +31,21 @@ export default function StaffChat() {
   const { data: messages = [], isLoading } = useQuery({
     queryKey: ["staff-chat"],
     queryFn: async () => {
+      // الأسماء تُجلب على حدة من staff_directory لا بضمّ profiles: سياسة profiles تمنع
+      // الموظف من قراءة سطر زميله، فكان كل مرسل يظهر باسم «موظف» في محادثة الفريق.
       const { data } = await supabase
         .from("staff_messages")
-        .select("id, sender_id, content, created_at, sender:profiles!staff_messages_sender_id_fkey(full_name)")
+        .select("id, sender_id, content, created_at")
         .order("created_at", { ascending: true })
         .limit(200);
-      return (data ?? []) as unknown as StaffMessage[];
+      const rows = (data ?? []) as unknown as StaffMessage[];
+      const ids = Array.from(new Set(rows.map((m) => m.sender_id).filter(Boolean)));
+      if (ids.length) {
+        const { data: profs } = await supabase.from("staff_directory").select("id, full_name").in("id", ids);
+        const map = new Map((profs ?? []).map((p: any) => [p.id, p.full_name]));
+        rows.forEach((m) => { m.sender = { full_name: map.get(m.sender_id) ?? "موظف" }; });
+      }
+      return rows;
     },
   });
 
