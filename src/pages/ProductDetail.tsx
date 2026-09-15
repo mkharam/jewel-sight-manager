@@ -140,6 +140,9 @@ export default function ProductDetail() {
     ((!!product.branch_id && product.branch_id === profile?.branch_id) || product.created_by === user?.id);
 
   const canEditBranchProduct = canManageBranchProduct;
+  // إضافة صورة تتبع سياسة product_images: المدير العام، أو قطعة في فرع المستخدم — بصرف
+  // النظر عن حالتها (قطعة محجوزة قد تحتاج صورة أوضح للزبون).
+  const canAddPhoto = isAdmin || (!!product.branch_id && product.branch_id === profile?.branch_id);
   const canDeleteOwnUpload = canManageBranchProduct;
   const canDeleteProduct = canEditProduct || canManageBranchProduct;
 
@@ -239,25 +242,78 @@ export default function ProductDetail() {
       <div className="grid md:grid-cols-2 gap-4">
         {/* Images */}
         <Card className="overflow-hidden">
-          <div
-            className="aspect-square bg-gold-soft cursor-pointer"
-            onClick={() => sortedImages.length && setLightboxOpen(true)}
-          >
-            {sortedImages[activeImage] ?? sortedImages[0] ? (
-              // الصورة الكاملة بدقتها الأصلية هنا فقط (لا مصغّرة) — هذه واجهة العرض الرئيسية
-              // للقطعة، وobject-contain يعرض الصورة كاملة دون قصّ أي جزء منها.
-              <img
-                key={(sortedImages[activeImage] ?? sortedImages[0]).id}
-                src={getImageUrl((sortedImages[activeImage] ?? sortedImages[0]).storage_path)!}
-                alt={product.name}
-                className="w-full h-full object-contain animate-in fade-in duration-200"
+          {/* قطعة بلا صورة: مساحة الصورة نفسها هي زر الرفع. كان الضغط عليها لا يفعل شيئاً
+              إطلاقاً (مجرد مربّع فارغ)، والرفع مخبّأ في زر مكتوب أسفل الصفحة — فمن يرى
+              الفراغ لا يخطر له أنه يستطيع ملأه. راجع canAddPhoto. */}
+          {sortedImages.length === 0 && canAddPhoto ? (
+            <label className="aspect-square bg-gold-soft flex flex-col items-center justify-center gap-2 cursor-pointer text-muted-foreground hover:bg-gold-soft/70 active:bg-gold-soft/60 transition-colors">
+              {uploadingPhoto ? (
+                <>
+                  <Loader2 className="size-10 animate-spin text-primary" />
+                  <span className="text-sm font-semibold">جارٍ رفع الصورة…</span>
+                </>
+              ) : (
+                <>
+                  <ImagePlus className="size-12 text-primary/70" />
+                  <span className="text-sm font-semibold text-foreground">اضغط لإضافة صورة</span>
+                  <span className="text-[11px]">صوّر القطعة أو اخترها من المعرض</span>
+                </>
+              )}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={uploadingPhoto}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) void addPhoto(file);
+                }}
               />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                <ImageIcon className="size-16 opacity-30" />
-              </div>
-            )}
-          </div>
+            </label>
+          ) : (
+            <div
+              className="aspect-square bg-gold-soft cursor-pointer relative"
+              onClick={() => sortedImages.length && setLightboxOpen(true)}
+            >
+              {sortedImages[activeImage] ?? sortedImages[0] ? (
+                // الصورة الكاملة بدقتها الأصلية هنا فقط (لا مصغّرة) — هذه واجهة العرض الرئيسية
+                // للقطعة، وobject-contain يعرض الصورة كاملة دون قصّ أي جزء منها.
+                <img
+                  key={(sortedImages[activeImage] ?? sortedImages[0]).id}
+                  src={getImageUrl((sortedImages[activeImage] ?? sortedImages[0]).storage_path)!}
+                  alt={product.name}
+                  className="w-full h-full object-contain animate-in fade-in duration-200"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                  <ImageIcon className="size-16 opacity-30" />
+                </div>
+              )}
+
+              {/* صورة إضافية للقطعة بضغطة من هنا مباشرة، دون النزول لأسفل الصفحة. */}
+              {canAddPhoto && (
+                <label
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute bottom-2 left-2 size-10 rounded-full bg-card/95 backdrop-blur shadow-md flex items-center justify-center cursor-pointer hover:bg-card active:scale-95 transition"
+                  aria-label="إضافة صورة"
+                >
+                  {uploadingPhoto ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4 text-primary" />}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={uploadingPhoto}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      if (file) void addPhoto(file);
+                    }}
+                  />
+                </label>
+              )}
+            </div>
+          )}
           {sortedImages.length > 1 && (
             <div className="grid grid-cols-4 gap-1 p-2">
               {sortedImages.map((img, i) => (
