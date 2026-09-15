@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { attachStaffNames } from "@/lib/staffNames";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
-import { UserPlus, Trash2, KeyRound, Users, Package, Tag, ArrowLeftRight, MessageCircle, Activity, Trophy, Coins, Medal } from "lucide-react";
+import { UserPlus, Trash2, KeyRound, Users, Package, Tag, ArrowLeftRight, MessageCircle, Activity, Trophy, Coins, Medal, ImagePlus } from "lucide-react";
 import { formatDate, formatCurrency, type Period, PERIOD_LABEL, periodStartISO } from "@/lib/constants";
 import { Link } from "react-router-dom";
 
@@ -454,10 +455,19 @@ function Stat({ icon: Icon, label, value }: { icon: any; label: string; value: n
   );
 }
 
-type SellerStat = { id: string; full_name: string; count: number; total: number };
+type SellerStat = {
+  id: string;
+  full_name: string;
+  count: number;   // قطع مباعة
+  total: number;   // قيمة المبيعات
+  added: number;   // قطع أضافها للمخزون
+};
 
-/** لوحة صدارة المبيعات — من جدول sales مباشرة (sold_by/final_price/sold_at)، لا تخمين من
- * حالة القطعة. المرتجعات (returned_at) تُستبعد من العدّ والقيمة، مطابقةً لمنطق Reports.tsx. */
+/** أداء الموظفين — المبيعات من جدول sales مباشرة (sold_by/final_price/sold_at) لا تخميناً
+ * من حالة القطعة، والمرتجعات (returned_at) مستبعدة مطابقةً لمنطق Reports.tsx. ويُضاف
+ * إليها عدد القطع التي أدخلها كل موظف للمخزون (products.created_by): تصوير البضاعة
+ * وإدخالها شغل حقيقي لم يكن يظهر في أي مكان، فموظف يصوّر مئة قطعة ولا يبيع كان يبدو
+ * كأنه لم يفعل شيئاً. لذلك تُبنى القائمة من المصدرين معاً لا من المبيعات وحدها. */
 function SalesLeaderboard() {
   const [period, setPeriod] = useState<Period>("month");
 
@@ -468,22 +478,47 @@ function SalesLeaderboard() {
     queryKey: ["sales-leaderboard", period],
     placeholderData: keepPreviousData,
     queryFn: async (): Promise<SellerStat[]> => {
-      const { data, error } = await supabase
-        .from("sales")
-        .select("sold_by, final_price, seller:profiles!sales_sold_by_fkey(full_name)")
-        .gte("sold_at", periodStartISO(period))
-        .is("returned_at", null);
-      if (error) { toast.error(error.message); throw error; }
+      const since = periodStartISO(period);
+      const [salesRes, addedRes] = await Promise.all([
+        supabase
+          .from("sales")
+          .select("sold_by, final_price")
+          .gte("sold_at", since)
+          .is("returned_at", null),
+        // القطع المؤرشفة مستبعدة كي لا تُحسب دفعات الاختبار ضمن إنتاج أحد.
+        supabase
+          .from("products")
+          .select("created_by")
+          .gte("created_at", since)
+          .neq("status", "archived"),
+      ]);
+      if (salesRes.error) { toast.error(salesRes.error.message); throw salesRes.error; }
+      if (addedRes.error) { toast.error(addedRes.error.message); throw addedRes.error; }
 
       const map = new Map<string, SellerStat>();
-      for (const r of (data ?? []) as any[]) {
+      const bucket = (id: string) => {
+        let cur = map.get(id);
+        if (!cur) { cur = { id, full_name: "—", count: 0, total: 0, added: 0 }; map.set(id, cur); }
+        return cur;
+      };
+
+      for (const r of (salesRes.data ?? []) as any[]) {
         if (!r.sold_by) continue;
-        const cur = map.get(r.sold_by) ?? { id: r.sold_by, full_name: r.seller?.full_name ?? "—", count: 0, total: 0 };
+        const cur = bucket(r.sold_by);
         cur.count += 1;
         cur.total += Number(r.final_price) || 0;
-        map.set(r.sold_by, cur);
       }
-      return Array.from(map.values()).sort((a, b) => b.total - a.total);
+      for (const r of (addedRes.data ?? []) as any[]) {
+        if (!r.created_by) continue;
+        bucket(r.created_by).added += 1;
+      }
+
+      const rows = Array.from(map.values());
+      await attachStaffNames(rows, "id", "staff");
+      for (const r of rows) r.full_name = (r as any).staff?.full_name ?? "—";
+
+      // الترتيب بقيمة المبيعات أولاً (هي المسابقة)، ومن لا مبيعات له يُرتَّب بعدد ما أضاف.
+      return rows.sort((a, b) => b.total - a.total || b.added - a.added);
     },
   });
 
@@ -505,7 +540,7 @@ function SalesLeaderboard() {
         ))}
       </div>
 
-      {stats === null ? (
+      {!stats ? (
         <div className="text-center py-8 text-muted-foreground">جارٍ التحميل...</div>
       ) : stats.length === 0 ? (
         <Card className="p-8 text-center text-muted-foreground">لا توجد مبيعات في هذه الفترة</Card>
@@ -522,8 +557,11 @@ function SalesLeaderboard() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-bold truncate">{s.full_name}</p>
-                <p className="text-xs text-muted-foreground flex items-center gap-1">
-                  <Package className="size-3" /> {s.count} قطعة مباعة
+                <p className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
+                  <span className="flex items-center gap-1"><Package className="size-3" /> {s.count} قطعة مباعة</span>
+                  {s.added > 0 && (
+                    <span className="flex items-center gap-1"><ImagePlus className="size-3" /> {s.added} قطعة أضافها</span>
+                  )}
                 </p>
               </div>
               <div className="text-left shrink-0">

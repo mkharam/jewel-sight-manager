@@ -6,7 +6,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
-import { Coins, Package, TrendingUp } from "lucide-react";
+import { ImagePlus, TrendingUp } from "lucide-react";
 import { formatCurrency, periodStartISO, PERIOD_LABEL_SHORT, type Period } from "@/lib/constants";
 
 export default function MySalesCard() {
@@ -24,15 +24,30 @@ export default function MySalesCard() {
     enabled: !!user,
     placeholderData: keepPreviousData,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("sales")
-        .select("final_price")
-        .eq("sold_by", user!.id)
-        .gte("sold_at", periodStartISO(period))
-        .is("returned_at", null);
-      if (error) throw error;
-      const rows = data ?? [];
-      return { count: rows.length, total: rows.reduce((s, r) => s + (Number(r.final_price) || 0), 0) };
+      const since = periodStartISO(period);
+      // تصوير البضاعة وإدخالها شغل حقيقي للموظف لم يكن يظهر له في أي مكان — يراه الآن
+      // بجانب مبيعاته. المؤرشف مستبعد كي لا تُحسب دفعات الاختبار.
+      const [salesRes, addedRes] = await Promise.all([
+        supabase
+          .from("sales")
+          .select("final_price")
+          .eq("sold_by", user!.id)
+          .gte("sold_at", since)
+          .is("returned_at", null),
+        supabase
+          .from("products")
+          .select("id", { count: "exact", head: true })
+          .eq("created_by", user!.id)
+          .gte("created_at", since)
+          .neq("status", "archived"),
+      ]);
+      if (salesRes.error) throw salesRes.error;
+      const rows = salesRes.data ?? [];
+      return {
+        count: rows.length,
+        total: rows.reduce((s, r) => s + (Number(r.final_price) || 0), 0),
+        added: addedRes.count ?? 0,
+      };
     },
   });
 
@@ -49,6 +64,12 @@ export default function MySalesCard() {
         <span className="text-xs text-muted-foreground">قطعة</span>
         {canSeeValue && stats && (
           <span className="text-primary font-bold text-xs mr-1">· {formatCurrency(stats.total)}</span>
+        )}
+        {!!stats?.added && (
+          <span className="text-xs text-muted-foreground flex items-center gap-1 mr-1">
+            <ImagePlus className="size-3.5 text-primary" />
+            <span className="font-bold text-foreground">{stats.added}</span> أضفتها
+          </span>
         )}
       </p>
       <div className="flex rounded-lg border overflow-hidden shrink-0">

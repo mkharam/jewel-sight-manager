@@ -3,7 +3,7 @@
 // والمدير العام يرى كل شيء.
 import { Loader2, Bell } from "lucide-react";
 import { Link } from "react-router-dom";
-import { formatDate } from "@/lib/constants";
+import { formatDate, getImageUrl } from "@/lib/constants";
 import { useAuth } from "@/hooks/useAuth";
 import { useActivityFeed } from "@/hooks/useActivityFeed";
 
@@ -32,11 +32,15 @@ export default function Notifications() {
         <p className="text-center text-sm text-muted-foreground py-12">لا توجد إشعارات بعد</p>
       ) : (
         <ul className="divide-y divide-border border rounded-lg overflow-hidden bg-card">
-          {entries.map(({ item, text, icon: Icon, href }) => (
+          {entries.map(({ item, text, icon: Icon, href, image }) => (
             <li key={item.id}>
               <Link to={href} className="flex gap-3 p-3 hover:bg-muted/40 transition-colors">
-                <div className="size-9 rounded-full bg-gold-gradient/20 flex items-center justify-center shrink-0">
-                  <Icon className="size-4 text-primary" />
+                <div className="size-9 rounded-full bg-gold-gradient/20 flex items-center justify-center shrink-0 overflow-hidden">
+                  {image ? (
+                    <img src={getImageUrl(image) ?? ""} alt="" className="size-full object-cover" loading="lazy" />
+                  ) : (
+                    <Icon className="size-4 text-primary" />
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm leading-snug">{text}</p>

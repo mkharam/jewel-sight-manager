@@ -48,7 +48,7 @@ function normalizeEntity(t: string): string {
   return t === "product" ? "products" : t === "sale" ? "sales" : t === "transfer" ? "transfers" : t;
 }
 
-export function describe(a: ActivityItem): { text: string; icon: any; href: string } | null {
+export function describe(a: ActivityItem): { text: string; icon: any; href: string; image?: string | null } | null {
   const actor = a.actor_name ?? "موظف";
   const type = normalizeEntity(a.entity_type);
   const d = a.details ?? {};
@@ -63,7 +63,9 @@ export function describe(a: ActivityItem): { text: string; icon: any; href: stri
   if (type === "products") {
     const name = d.name ?? "قطعة";
     const href = a.entity_id ? `/products/${a.entity_id}` : "/";
-    if (a.action === "created") return { text: `${actor} أضاف قطعة: ${name}`, icon: Package, href };
+    // إضافة قطعة تُعرض بصورتها لا بأيقونة: المدير يتعرّف على البضاعة الجديدة من شكلها
+    // أسرع من قراءة اسمٍ ولّده التحليل التلقائي. راجع logProductCreated في uploadRunner.
+    if (a.action === "created") return { text: `${actor} أضاف قطعة: ${name}`, icon: Package, href, image: d.image ?? null };
     // كانت هذه الأفعال الثلاثة أكثر ما يُسجَّل فعلياً ولا يظهر منها شيء في الجرس.
     if (a.action === "delete") return { text: `${actor} حذف القطعة: ${name}`, icon: Trash2, href: "/" };
     if (a.action === "update") return { text: `${actor} عدّل القطعة: ${name}`, icon: Pencil, href };

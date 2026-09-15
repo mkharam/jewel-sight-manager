@@ -11,6 +11,8 @@ export interface FeedEntry {
   text: string;
   icon: any;
   href: string;
+  /** مسار صورة القطعة في التخزين، للأحداث التي لها صورة (إضافة قطعة). */
+  image?: string | null;
 }
 
 /**

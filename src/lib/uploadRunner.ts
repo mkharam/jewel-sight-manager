@@ -264,6 +264,33 @@ export async function deleteCapturedPiece(productId: string): Promise<void> {
  * لا نكتب فوق أي حقل عبّأه الموظف فعلاً من وسم القطعة (العيار/النوع)؛ بيانات الوسم
  * المطبوعة أوثق من استنتاج الذكاء الاصطناعي من الصورة.
  */
+/**
+ * تسجيل إضافة قطعة في سجل النشاط — «الاسم مع الصورة» في منظومة الإدارة.
+ *
+ * لم يكن يُسجَّل أي حدث عند إضافة قطعة إطلاقاً: الموظف يصوّر عشرات القطع فلا يظهر منها
+ * شيء في جرس المدير ولا في صفحة الإشعارات، رغم أن describe() تعرف كيف تعرضها. نسجّلها
+ * بعد التحليل لا قبله حتى يكون الاسم اسمها الحقيقي لا «قطعة جديدة»، ونرفق مسار الصورة
+ * فيظهر الإشعار بصورة القطعة لا بأيقونة عامة.
+ */
+async function logProductCreated(productId: string, name: string, imageId: string) {
+  // المصغّرة تكفي للإشعار؛ نسقط للصورة الكاملة إن لم تكن جاهزة بعد.
+  const { data: img } = await supabase
+    .from("product_images")
+    .select("storage_path, thumb_path")
+    .eq("id", imageId)
+    .maybeSingle();
+  const storagePath = img?.thumb_path || img?.storage_path || null;
+
+  // فشل التسجيل لا يجوز أن يُفشل رفع القطعة — القطعة محفوظة وهذا سجل مساعد.
+  const { error } = await supabase.from("activity_log").insert({
+    action: "created",
+    entity_type: "products",
+    entity_id: productId,
+    details: { name, image: storagePath ?? null },
+  });
+  if (error) console.warn("activity log (product created) failed", error);
+}
+
 async function analyzeAndApply(
   file: File,
   saved: { productId: string; imageId: string },
@@ -300,7 +327,10 @@ async function analyzeAndApply(
 
     await saveStoneColors(saved.productId, a.gemstones);
 
-    return (a.name_ar as string) || null;
+    const finalName = (a.name_ar as string) || null;
+    if (finalName) await logProductCreated(saved.productId, finalName, saved.imageId);
+
+    return finalName;
   } catch (e) {
     console.warn("inline analysis failed — falling back to background queue", e);
     return null;

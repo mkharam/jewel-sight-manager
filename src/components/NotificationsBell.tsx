@@ -5,7 +5,7 @@ import { useActivityFeed } from "@/hooks/useActivityFeed";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { formatDate } from "@/lib/constants";
+import { formatDate, getImageUrl } from "@/lib/constants";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { enablePush, disablePush, currentPushStatus, type PushStatus } from "@/lib/push";
@@ -96,7 +96,7 @@ export default function NotificationsBell() {
           <div className="p-6 text-center text-sm text-muted-foreground">لا توجد نشاطات تخصّك بعد</div>
         ) : (
           <ul className="divide-y divide-border">
-            {entries.map(({ item: it, text, icon: Icon, href }) => {
+            {entries.map(({ item: it, text, icon: Icon, href, image }) => {
               const isNew = it.created_at > lastSeen;
               return (
                 <li key={it.id}>
@@ -108,8 +108,12 @@ export default function NotificationsBell() {
                       isNew && "bg-primary/5"
                     )}
                   >
-                    <div className="size-8 rounded-full bg-gold-gradient/20 flex items-center justify-center shrink-0">
-                      <Icon className="size-4 text-primary" />
+                    <div className="size-8 rounded-full bg-gold-gradient/20 flex items-center justify-center shrink-0 overflow-hidden">
+                      {image ? (
+                        <img src={getImageUrl(image) ?? ""} alt="" className="size-full object-cover" loading="lazy" />
+                      ) : (
+                        <Icon className="size-4 text-primary" />
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm leading-snug">{text}</p>
