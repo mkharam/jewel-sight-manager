@@ -311,14 +311,23 @@ export default function ProductSearch() {
         if (debounced.branchId === UNASSIGNED_BRANCH) q = q.is("branch_id", null);
         else if (debounced.branchId !== "all") q = q.eq("branch_id", debounced.branchId);
         if (debounced.categoryId !== "all") q = q.eq("category_id", debounced.categoryId);
+        // المؤرشف خارج الكتالوق: الأرشفة كانت بلا أثر عملي — القطعة المؤرشفة تبقى في
+        // نتائج البحث وفي البحث بالصورة كأن شيئاً لم يكن. تظهر فقط عند اختيار «مؤرشف»
+        // صراحةً من فلتر الحالة، فتصير الأرشفة طريقة عكوسة لإخراج بضاعة من التداول.
         if (debounced.status !== "all") q = q.eq("status", debounced.status as ProductStatus);
+        else q = q.neq("status", "archived" as ProductStatus);
         if (debounced.minWeight) q = q.gte("weight_grams", parseFloat(debounced.minWeight));
         if (debounced.maxWeight) q = q.lte("weight_grams", parseFloat(debounced.maxWeight));
         return q;
       };
 
       if (similarIds && similarIds.length > 0) {
-        const { data, error } = await supabase.from("products").select(SELECT).in("id", similarIds).limit(120);
+        // البحث بالصورة كان يتخطّى الفلاتر كلها، فتظهر فيه القطع المؤرشفة أيضاً.
+        const { data, error } = await supabase
+          .from("products").select(SELECT)
+          .in("id", similarIds)
+          .neq("status", "archived" as ProductStatus)
+          .limit(120);
         if (error) throw error;
         const idx = new Map(similarIds.map((id, i) => [id, i]));
         return [...(data ?? [])].sort((a: any, b: any) => (idx.get(a.id) ?? 999) - (idx.get(b.id) ?? 999));
