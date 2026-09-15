@@ -22,6 +22,7 @@ const Inquiries = lazy(() => import("@/pages/Inquiries"));
 const StaffChat = lazy(() => import("@/pages/StaffChat"));
 const Upload = lazy(() => import("@/pages/Upload"));
 const ReviewUnnamed = lazy(() => import("@/pages/ReviewUnnamed"));
+const MissingWeights = lazy(() => import("@/pages/MissingWeights"));
 const Staff = lazy(() => import("@/pages/Staff"));
 const Reports = lazy(() => import("@/pages/Reports"));
 const Transfers = lazy(() => import("@/pages/Transfers"));
@@ -79,6 +80,7 @@ const App = () => (
                 <Route path="/upload" element={<Upload />} />
                 <Route path="/live-add" element={<LiveAdd />} />
                 <Route path="/upload/review" element={<ReviewUnnamed />} />
+                <Route path="/weights" element={<MissingWeights />} />
                 <Route path="/import" element={<Navigate to="/upload" replace />} />
                 <Route path="/tray" element={<Navigate to="/upload" replace />} />
                 <Route path="/staff" element={<RequireRole allow={["admin"]}><Staff /></RequireRole>} />

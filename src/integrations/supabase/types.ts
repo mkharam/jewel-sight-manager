@@ -1201,7 +1201,7 @@ export type Database = {
           content: string
           created_at?: string
           id?: string
-          sender_id: string
+          sender_id?: string
         }
         Update: {
           content?: string
@@ -1422,7 +1422,7 @@ export type Database = {
           reason?: string | null
           received_at?: string | null
           received_by?: string | null
-          requested_by: string
+          requested_by?: string
           status?: Database["public"]["Enums"]["transfer_status"]
           to_branch_id: string
           updated_at?: string
@@ -1701,6 +1701,18 @@ export type Database = {
       }
       sku_type_letter: { Args: { _item_type: string }; Returns: string }
       tags_from_ai_labels: { Args: { labels: Json }; Returns: string[] }
+      update_own_product_details: {
+        Args: {
+          p_category_id?: string
+          p_gold_color?: string
+          p_karat?: string
+          p_name: string
+          p_product_id: string
+          p_ring_size?: string
+          p_weight_grams?: number
+        }
+        Returns: undefined
+      }
       update_product_barcode: {
         Args: { p_barcode_value: string; p_product_id: string }
         Returns: undefined

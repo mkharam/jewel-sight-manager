@@ -21,6 +21,7 @@ import SellDialog from "@/components/SellDialog";
 import ReserveDialog from "@/components/ReserveDialog";
 import ReorderRequestDialog from "@/components/ReorderRequestDialog";
 import ImageLightbox from "@/components/ImageLightbox";
+import EditOwnProductSheet from "@/components/EditOwnProductSheet";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
 import { invalidateInventoryAndSales } from "@/lib/queryInvalidation";
 
@@ -367,6 +368,16 @@ export default function ProductDetail() {
           <Button variant="outline" size="lg" className="w-full" onClick={verifyProduct}>
             <CheckCircle2 className="size-4 ml-1" /> تحقق من وجود القطعة
           </Button>
+
+          {/* قطعة رفعها هذا الموظف وما زالت متوفرة: يصحّح بياناته الوصفية بنفسه بدل
+              حذفها وإعادة تصويرها. الشروط نفسها التي يفرضها زر الحذف. */}
+          {canDeleteOwnUpload && (
+            <EditOwnProductSheet product={{
+              id: product.id, name: product.name, category_id: product.category_id,
+              karat: product.karat, gold_color: product.gold_color,
+              weight_grams: product.weight_grams, ring_size: product.ring_size,
+            }} />
+          )}
 
           {/* للموظف الذي لا يملك صلاحية التعديل الكاملة: تحديث الوزن وإضافة صور فقط */}
           {!canEditProduct && canEdit && (
