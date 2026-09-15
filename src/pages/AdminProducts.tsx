@@ -264,13 +264,18 @@ export default function AdminProducts() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <div className="size-10 rounded bg-muted overflow-hidden flex items-center justify-center shrink-0">
+                      {/* الصورة رابط لصفحة القطعة — كان لا بدّ من قائمة الإجراءات للوصول إليها. */}
+                      <Link
+                        to={`/products/${p.id}`}
+                        className="size-10 rounded bg-muted overflow-hidden flex items-center justify-center shrink-0 hover:opacity-80 transition-opacity"
+                        aria-label={`فتح ${p.name}`}
+                      >
                         {url ? (
                           <img src={url} alt={p.name} className="size-full object-cover" />
                         ) : (
                           <ImageOff className="size-4 text-muted-foreground" />
                         )}
-                      </div>
+                      </Link>
                       <div className="min-w-0">
                         <div className="font-medium truncate max-w-[180px]">{p.name}</div>
                         <div className="text-xs text-muted-foreground truncate">{p.sku || "—"}</div>

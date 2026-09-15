@@ -109,13 +109,19 @@ export default function MissingWeights() {
             const savedGrams = done[p.id];
             return (
               <Card key={p.id} className={`p-2.5 flex items-center gap-2.5 ${savedGrams ? "opacity-60" : ""}`}>
-                <div className="size-14 rounded-lg overflow-hidden bg-gold-soft shrink-0 flex items-center justify-center">
+                {/* الصورة نفسها تفتح القطعة: من يرى صورة قطعة يضغط عليها بالبديهة، وكان
+                    الاسم وحده هو الرابط. */}
+                <Link
+                  to={`/products/${p.id}`}
+                  className="size-14 rounded-lg overflow-hidden bg-gold-soft shrink-0 flex items-center justify-center active:opacity-70 transition-opacity"
+                  aria-label={`فتح ${p.name}`}
+                >
                   {img ? (
                     <img src={img} alt="" className="size-full object-cover" loading="lazy" />
                   ) : (
                     <ImageIcon className="size-5 text-muted-foreground" />
                   )}
-                </div>
+                </Link>
 
                 <div className="flex-1 min-w-0">
                   <Link to={`/products/${p.id}`} className="text-sm font-semibold leading-tight line-clamp-2 hover:text-primary">
