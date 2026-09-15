@@ -38,11 +38,9 @@ const desktopExtras: NavItem[] = [
   { to: "/notifications", label: "الإشعارات", icon: Bell },
 ];
 
-// مفيد للعمل اليومي — يراه المشرف والموظف بلا فرق بينهما (بضاعة كل الفروع، طلبات إعادة
-// الطلب، الجرد الميداني)، بخلاف أمور إدارية/حسابية بحتة أدناه.
+// مفيد للعمل اليومي — يراه المشرف والموظف بلا فرق بينهما، بخلاف الأمور الإدارية أدناه.
 const sharedExtras: NavItem[] = [
   { to: "/customers", label: "العملاء", icon: Users },
-  { to: "/stock-take", label: "جرد ميداني", icon: ClipboardCheck },
   { to: "/reorders", label: "طلبات إعادة الطلب", icon: PackagePlus, badgeKey: "reorders" },
 ];
 
@@ -54,6 +52,8 @@ const managerExtras: NavItem[] = [
 // أمور إدارية/حسابية — للمدير العام فقط: تقارير الأرباح، سجل المبيعات، التعديل الجماعي،
 // وإدارة الموظفين.
 const adminExtras: NavItem[] = [
+  // الجرد الميداني للإدارة فقط — الموظف يبحث ويسجّل ويطلب، والجرد قرار إداري.
+  { to: "/stock-take", label: "جرد ميداني", icon: ClipboardCheck },
   { to: "/reports", label: "التقارير", icon: BarChart3 },
   { to: "/sales", label: "المبيعات", icon: Receipt },
   { to: "/admin/products", label: "إدارة القطع", icon: ListChecks },
@@ -91,8 +91,10 @@ export default function AppLayout() {
   }, [user]);
 
   // عدد طلبات إعادة الطلب التي بانتظار قرار المدير
+  // مُعرّف المستخدم جزء من المفتاح: بدونه كان العدّاد المحسوب لحساب سابق يبقى في الكاش
+  // ويظهر كما هو للحساب التالي بعد تبديل المستخدم على الجهاز نفسه.
   const { data: pendingReorders = 0 } = useQuery({
-    queryKey: ["pending-reorders-count"],
+    queryKey: ["pending-reorders-count", user?.id],
     queryFn: async () => {
       const { count } = await supabase
         .from("product_reorder_requests")
@@ -100,12 +102,12 @@ export default function AppLayout() {
         .eq("status", "pending");
       return count ?? 0;
     },
-    enabled: !!user && (isAdmin || isManager),
+    enabled: !!user,
     refetchInterval: 60_000,
   });
 
   useEffect(() => {
-    if (!user || (!isAdmin && !isManager)) return;
+    if (!user) return;
     const ch = supabase
       .channel("reorders-badge")
       .on("postgres_changes", { event: "*", schema: "public", table: "product_reorder_requests" }, () => {
@@ -113,7 +115,7 @@ export default function AppLayout() {
       })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [user, isAdmin, isManager, qc]);
+  }, [user, qc]);
 
   // عدد التحويلات المعلّقة للموظف: واردة بانتظار استلام، أو صادرة بانتظار موافقة
   const { data: pendingTransfers = 0 } = useQuery({
@@ -180,6 +182,9 @@ export default function AppLayout() {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    // بدون هذا تبقى نتائج الحساب السابق في كاش react-query، فيفتح الموظف التطبيق على
+    // جهاز استعمله المدير فيرى للحظة بياناته هو (القطع، المحادثة، العدّادات).
+    qc.clear();
     navigate("/auth");
   };
 

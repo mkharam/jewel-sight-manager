@@ -7,6 +7,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import AppLayout from "@/components/AppLayout";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import RequireRole from "@/components/RequireRole";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { ConfirmDialogProvider } from "@/components/ConfirmDialogProvider";
 import { AuthProvider } from "@/hooks/useAuth";
@@ -80,15 +81,15 @@ const App = () => (
                 <Route path="/upload/review" element={<ReviewUnnamed />} />
                 <Route path="/import" element={<Navigate to="/upload" replace />} />
                 <Route path="/tray" element={<Navigate to="/upload" replace />} />
-                <Route path="/staff" element={<Staff />} />
-                <Route path="/reports" element={<Reports />} />
+                <Route path="/staff" element={<RequireRole allow={["admin"]}><Staff /></RequireRole>} />
+                <Route path="/reports" element={<RequireRole allow={["admin"]}><Reports /></RequireRole>} />
                 <Route path="/transfers" element={<Transfers />} />
                 <Route path="/reorders" element={<Reorders />} />
-                <Route path="/gold-price" element={<GoldPrice />} />
-                <Route path="/stock-take" element={<StockTake />} />
-                <Route path="/sales" element={<Sales />} />
+                <Route path="/gold-price" element={<RequireRole allow={["admin", "manager"]}><GoldPrice /></RequireRole>} />
+                <Route path="/stock-take" element={<RequireRole allow={["admin"]}><StockTake /></RequireRole>} />
+                <Route path="/sales" element={<RequireRole allow={["admin"]}><Sales /></RequireRole>} />
                 <Route path="/customers" element={<Customers />} />
-                <Route path="/admin/products" element={<AdminProducts />} />
+                <Route path="/admin/products" element={<RequireRole allow={["admin"]}><AdminProducts /></RequireRole>} />
               </Route>
               <Route path="*" element={<NotFound />} />
             </Routes>

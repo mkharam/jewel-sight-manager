@@ -1,6 +1,6 @@
 // مصدر واحد لتغذية الإشعارات — يستخدمه جرس الإشعارات وصفحة الإشعارات معاً، فيبقيان
 // متطابقين ويتشاركان الكاش بدل استعلامين منفصلين واشتراكَي realtime مكرّرين.
-import { useEffect } from "react";
+import { useEffect, useId } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -27,17 +27,22 @@ export function useActivityFeed(limit: number) {
   const isAdmin = roles.includes("admin");
   const branchId = profile?.branch_id ?? null;
 
-  // اشتراك realtime واحد يُبطل الكاش المشترك — بدل أن يعيد كل مكوّن جلبه بنفسه.
+  // اسم القناة يجب أن يكون فريداً لكل نسخة من الخطّاف: صفحة الإشعارات تُركَّب بينما
+  // جرس الإشعارات مركَّب أصلاً في الهيكل، فيطلبان الاسم نفسه — وsupabase-js يُعيد
+  // القناة القائمة ذاتها، وإضافة on() إليها بعد subscribe() ترمي خطأً يُسقط الصفحة.
+  const channelId = useId();
+
+  // الاشتراك يُبطل الكاش المشترك فقط — البيانات نفسها تأتي من استعلام react-query واحد.
   useEffect(() => {
     if (!user) return;
     const ch = supabase
-      .channel("activity-live")
+      .channel(`activity-live-${channelId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "activity_log" }, () => {
         qc.invalidateQueries({ queryKey: ["activity-feed"] });
       })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [user, qc]);
+  }, [user, qc, channelId]);
 
   const query = useQuery({
     queryKey: ["activity-feed", user?.id, branchId, isAdmin, limit],

@@ -83,6 +83,8 @@ export default function ReorderRequestDialog({
       setOpen(false);
       reset();
       qc.invalidateQueries({ queryKey: ["reorder-requests"] });
+      // عدّاد «إعادة طلب» في الشريط السفلي كان يبقى على رقمه حتى تحديث الصفحة.
+      qc.invalidateQueries({ queryKey: ["pending-reorders-count"] });
     } catch (e: any) {
       toast.error(e.message ?? "تعذّر إرسال الطلب");
     } finally {
