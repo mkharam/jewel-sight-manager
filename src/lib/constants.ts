@@ -49,6 +49,8 @@ export const KARAT_OPTIONS = ["18K", "21K"];
 // والأحد. "اليوم" وحدها منتصف الليل المحلي لأنها الأوضح بلا لبس.
 export type Period = "today" | "week" | "month";
 export const PERIOD_LABEL: Record<Period, string> = { today: "اليوم", week: "آخر 7 أيام", month: "آخر 30 يوماً" };
+/** نفس الفترات بنص مختصر — للأماكن الضيقة (بطاقة "مبيعاتي" في صف واحد على الهاتف). */
+export const PERIOD_LABEL_SHORT: Record<Period, string> = { today: "اليوم", week: "7 أيام", month: "30 يوم" };
 export function periodStartISO(period: Period): string {
   const now = new Date();
   if (period === "today") {

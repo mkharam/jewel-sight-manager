@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store, CheckSquare, Trash2, Loader2, ArrowUpDown } from "lucide-react";
+import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store, CheckSquare, Trash2, Loader2, ArrowUpDown, ChevronDown } from "lucide-react";
 import ProductCard from "@/components/ProductCard";
 import ImageSearchButton from "@/components/ImageSearchButton";
 import AiAssistantSheet from "@/components/AiAssistantSheet";
@@ -79,6 +79,7 @@ export default function ProductSearch() {
   const [pages, setPages] = useState(restoredState?.pages ?? 1); // كم صفحة تم تحميلها
   // موضع التمرير المطلوب استعادته بعد اكتمال تحميل نفس عدد الصفحات — يُستهلك مرة واحدة.
   const pendingScrollRestore = useRef(restoredState?.scrollY ?? null);
+  const [showAiTags, setShowAiTags] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -499,29 +500,26 @@ export default function ProductSearch() {
     <div className="space-y-4">
       {/* Luxury welcome + search */}
       {/* بطاقة الترحيب = هوية المتجر نفسها: حرير زمرّدي وخيوط ذهبية ونص ذهبي */}
-      <div className="relative overflow-hidden rounded-3xl brand-silk shadow-emerald p-5 md:p-8">
+      <div className="relative overflow-hidden rounded-3xl brand-silk shadow-emerald p-3.5 md:p-6">
         <div className="absolute -top-12 -left-12 size-40 rounded-full bg-primary/10 blur-2xl pointer-events-none" />
         <div className="absolute -bottom-16 -right-10 size-44 rounded-full bg-primary/10 blur-2xl pointer-events-none" />
-        {/* خيطان ذهبيان رفيعان يعبران البطاقة كما في الشعار */}
-        <div className="absolute inset-x-0 top-6 h-px bg-gradient-to-l from-transparent via-primary/45 to-transparent pointer-events-none" />
-        <div className="absolute inset-x-0 bottom-10 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent pointer-events-none" />
+        {/* خيط ذهبي رفيع يعبر البطاقة كما في الشعار */}
+        <div className="absolute inset-x-0 bottom-8 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent pointer-events-none" />
         <div className="relative">
-          <div className="flex items-center gap-2 text-primary/80 text-xs font-medium mb-1">
-            <Sparkles className="size-3.5" />
-            <span>{greeting}</span>
-          </div>
-          <h2 className="text-xl md:text-3xl font-extrabold text-gold-gradient leading-tight">
-            أهلاً بك، {profile?.full_name ?? "—"}
-          </h2>
-          <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/15 backdrop-blur text-primary text-[11px] font-semibold border border-primary/25">
-              <Store className="size-3" />
-              {myBranchName ?? "بدون فرع محدد"}
+          {/* الترحيب في سطر واحد بدل ثلاثة: كان يأخذ خُمس الشاشة على الهاتف بلا أي معلومة
+              يحتاجها الموظف يومياً، فيُدفع أول صف قطع بالكامل خارج الشاشة. الهوية الذهبية
+              محفوظة، فقط بحجم يليق بمعلومة ثانوية. */}
+          <div className="flex items-center justify-between gap-2 mb-2.5 flex-wrap">
+            <p className="text-sm font-bold text-gold-gradient truncate">
+              {greeting}، {profile?.full_name ?? "—"}
+            </p>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/15 backdrop-blur text-primary text-[10px] font-semibold border border-primary/25 shrink-0">
+              <Store className="size-2.5" />
+              {myBranchName ?? "بدون فرع"} · {roleLabel}
             </span>
-            <span className="text-[11px] text-on-brand-muted">{roleLabel} · مخرّم</span>
           </div>
 
-          <div className="flex flex-col gap-2.5 mt-4">
+          <div className="flex flex-col gap-2.5">
             <div className="relative flex items-center gap-2">
               <div className="relative flex-1">
                 <SearchIcon className="absolute right-4 top-1/2 -translate-y-1/2 size-5 text-muted-foreground" />
@@ -675,23 +673,34 @@ export default function ProductSearch() {
         )}
       </div>
 
-      {/* وسوم الذكاء الاصطناعي — مستخرجة تلقائياً من تحليل صور القطع */}
+      {/* وسوم الذكاء الاصطناعي — مطويّة افتراضياً: صفّان أفقيان متتاليان (الفلاتر السريعة
+          ثم الوسوم) كانا يزاحمان أول صف قطع خارج الشاشة، والوسوم أداة استكشاف يُلجأ إليها
+          أحياناً لا في كل فتحة. تُفتح بضغطة وتبقى مفتوحة ما دام الموظف يستخدمها، وتُفتح
+          تلقائياً إن كان أحدها مُفعَّلاً فعلاً حتى لا يختفي فلتر شغّال عن عينه. */}
       {aiTags && aiTags.length > 0 && (
         <div className="space-y-1">
-          <p className="text-[11px] text-muted-foreground flex items-center gap-1 px-1">
-            <Sparkles className="size-3 text-primary" /> وسوم مكتشفة بالذكاء الاصطناعي
-          </p>
-          <div className="flex gap-2 overflow-x-auto -mx-3 px-3 pb-1 scrollbar-none">
-            {aiTags.map(({ tag, count }) => (
-              <Chip
-                key={tag}
-                active={filters.tag === tag}
-                onClick={() => setFilters((f) => ({ ...f, tag: f.tag === tag ? "" : tag }))}
-              >
-                {tag} <span className="opacity-60">{count}</span>
-              </Chip>
-            ))}
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowAiTags((v) => !v)}
+            className="text-[11px] text-muted-foreground flex items-center gap-1 px-1 hover:text-foreground transition-colors"
+          >
+            <Sparkles className="size-3 text-primary" />
+            وسوم مكتشفة بالذكاء الاصطناعي
+            <ChevronDown className={`size-3 transition-transform ${showAiTags || filters.tag ? "rotate-180" : ""}`} />
+          </button>
+          {(showAiTags || filters.tag) && (
+            <div className="flex gap-2 overflow-x-auto -mx-3 px-3 pb-1 scrollbar-none">
+              {aiTags.map(({ tag, count }) => (
+                <Chip
+                  key={tag}
+                  active={filters.tag === tag}
+                  onClick={() => setFilters((f) => ({ ...f, tag: f.tag === tag ? "" : tag }))}
+                >
+                  {tag} <span className="opacity-60">{count}</span>
+                </Chip>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -736,6 +745,8 @@ export default function ProductSearch() {
             <span className="mr-2 text-primary font-semibold">· {selectedIds.size} محدّدة</span>
           )}
         </p>
+        {/* نصوص مختصرة على الهاتف: الثلاثة أزرار بنصوصها الكاملة كانت تلتف لسطرين وتدفع
+            القطع للأسفل. الأيقونات تكفي هنا والنص الكامل يظهر على الشاشات الأوسع. */}
         <div className="flex items-center gap-2">
           <Button
             size="sm"
@@ -743,8 +754,8 @@ export default function ProductSearch() {
             onClick={() => setFilters((f) => ({ ...f, sortDir: f.sortDir === "desc" ? "asc" : "desc" }))}
             title={filters.sortDir === "desc" ? "الأحدث أولاً" : "الأقدم أولاً"}
           >
-            <ArrowUpDown className="size-4 ml-1" />
-            {filters.sortDir === "desc" ? "الأحدث أولاً" : "الأقدم أولاً"}
+            <ArrowUpDown className="size-4 xs:ml-1" />
+            <span className="hidden xs:inline">{filters.sortDir === "desc" ? "الأحدث أولاً" : "الأقدم أولاً"}</span>
           </Button>
           {canBulkEdit && (
             <Button
@@ -752,9 +763,10 @@ export default function ProductSearch() {
               variant={selectionMode ? "default" : "outline"}
               onClick={() => (selectionMode ? exitSelection() : setSelectionMode(true))}
               className={selectionMode ? "bg-primary text-primary-foreground" : ""}
+              title={selectionMode ? "إلغاء التحديد" : "تحديد متعدد"}
             >
-              <CheckSquare className="size-4 ml-1" />
-              {selectionMode ? "إلغاء التحديد" : "تحديد متعدد"}
+              <CheckSquare className="size-4 xs:ml-1" />
+              <span className="hidden xs:inline">{selectionMode ? "إلغاء التحديد" : "تحديد متعدد"}</span>
             </Button>
           )}
           <Link to="/upload">

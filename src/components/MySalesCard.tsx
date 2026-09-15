@@ -7,7 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Coins, Package, TrendingUp } from "lucide-react";
-import { formatCurrency, periodStartISO, PERIOD_LABEL, type Period } from "@/lib/constants";
+import { formatCurrency, periodStartISO, PERIOD_LABEL_SHORT, type Period } from "@/lib/constants";
 
 export default function MySalesCard() {
   const { user, roles } = useAuth();
@@ -38,38 +38,31 @@ export default function MySalesCard() {
 
   if (!user) return null;
 
+  // سطر واحد لا ثلاثة: البطاقة معلومة مساعدة لا الغرض الأساسي من الشاشة، وكانت تدفع
+  // أول صف قطع خارج الشاشة على الهاتف. العنوان والرقم ومبدّل الفترة كلهم في صف واحد.
   return (
-    <Card className="p-3.5 bg-gold-soft border-primary/20">
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <p className="text-sm font-bold flex items-center gap-1.5">
-          <TrendingUp className="size-4 text-primary" /> مبيعاتي
-        </p>
-        <div className="flex rounded-lg border overflow-hidden shrink-0">
-          {(Object.keys(PERIOD_LABEL) as Period[]).map((p) => (
-            <button
-              key={p}
-              onClick={() => setPeriod(p)}
-              className={`px-2 h-7 text-[11px] font-semibold transition-colors ${
-                period === p ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"
-              }`}
-            >
-              {PERIOD_LABEL[p]}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-1.5">
-          <Package className="size-4 text-muted-foreground" />
-          <span className="font-bold">{stats?.count ?? "—"}</span>
-          <span className="text-xs text-muted-foreground">قطعة</span>
-        </div>
-        {canSeeValue && (
-          <div className="flex items-center gap-1.5">
-            <Coins className="size-4 text-muted-foreground" />
-            <span className="font-bold text-primary">{stats ? formatCurrency(stats.total) : "—"}</span>
-          </div>
+    <Card className="px-3 py-2 bg-gold-soft border-primary/20 flex items-center justify-between gap-2 flex-wrap">
+      <p className="text-sm font-semibold flex items-center gap-1.5">
+        <TrendingUp className="size-4 text-primary shrink-0" />
+        مبيعاتي
+        <span className="font-bold mr-1">{stats?.count ?? "—"}</span>
+        <span className="text-xs text-muted-foreground">قطعة</span>
+        {canSeeValue && stats && (
+          <span className="text-primary font-bold text-xs mr-1">· {formatCurrency(stats.total)}</span>
         )}
+      </p>
+      <div className="flex rounded-lg border overflow-hidden shrink-0">
+        {(Object.keys(PERIOD_LABEL_SHORT) as Period[]).map((p) => (
+          <button
+            key={p}
+            onClick={() => setPeriod(p)}
+            className={`px-2 h-7 text-[11px] font-semibold transition-colors ${
+              period === p ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"
+            }`}
+          >
+            {PERIOD_LABEL_SHORT[p]}
+          </button>
+        ))}
       </div>
     </Card>
   );
