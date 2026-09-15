@@ -51,12 +51,26 @@ const UNASSIGNED_BRANCH = "__unassigned__";
 // الفعلي بزر الرجوع/الجهاز يستعيد الحالة. sessionStorage لا localStorage: يُمحى تلقائياً
 // عند إغلاق التبويب بدل أن يبقى "عالقاً" لجلسات لاحقة غير مرتبطة.
 const SCROLL_STATE_KEY = "lamaa.searchScrollState.v1";
-type SavedScrollState = { filters: Filters; pages: number; scrollY: number };
+type SavedScrollState = { filters: Filters; pages: number; scrollY: number; loadId?: string };
+
+// useNavigationType() تُرجع "POP" أيضاً عند أول عرض لفتحة جديدة للتطبيق، لا عند الرجوع
+// وحده — فكان الموظف يفتح التطبيق من جديد فيجد بحثه وفلاتره القديمة كما تركها، وهو
+// عكس المطلوب تماماً. LOAD_ID يُولَّد مرة واحدة لكل تحميل فعلي لملفات الجافاسكربت
+// ويُحفظ مع الحالة، فنستعيدها فقط إن كان من حفظها هو نفس هذه الفتحة — أي أن الانتقال
+// تمّ داخل التطبيق (فتح قطعة ثم رجوع) لا فتحاً جديداً.
+const LOAD_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
 
 function readSavedScrollState(): SavedScrollState | null {
   try {
     const raw = sessionStorage.getItem(SCROLL_STATE_KEY);
-    return raw ? (JSON.parse(raw) as SavedScrollState) : null;
+    if (!raw) return null;
+    const saved = JSON.parse(raw) as SavedScrollState;
+    if (saved.loadId !== LOAD_ID) {
+      // حالة خلّفتها فتحة سابقة — نتخلّص منها كي لا تُستعاد لاحقاً بالغلط.
+      sessionStorage.removeItem(SCROLL_STATE_KEY);
+      return null;
+    }
+    return saved;
   } catch {
     return null;
   }
@@ -423,7 +437,7 @@ export default function ProductSearch() {
     const write = () => {
       frame = 0;
       try {
-        sessionStorage.setItem(SCROLL_STATE_KEY, JSON.stringify({ filters, pages, scrollY: window.scrollY }));
+        sessionStorage.setItem(SCROLL_STATE_KEY, JSON.stringify({ filters, pages, scrollY: window.scrollY, loadId: LOAD_ID }));
       } catch {}
     };
     const onScroll = () => {
