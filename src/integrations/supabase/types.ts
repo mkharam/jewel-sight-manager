@@ -1700,6 +1700,17 @@ export type Database = {
         Returns: undefined
       }
       sku_type_letter: { Args: { _item_type: string }; Returns: string }
+      staff_activity_counts: {
+        Args: { p_since?: string }
+        Returns: {
+          inquiries: number
+          products: number
+          quotes: number
+          sales: number
+          transfers: number
+          user_id: string
+        }[]
+      }
       tags_from_ai_labels: { Args: { labels: Json }; Returns: string[] }
       update_own_product_details: {
         Args: {

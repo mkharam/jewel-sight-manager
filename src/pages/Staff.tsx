@@ -337,7 +337,7 @@ function ActivityPanel({ branches }: { branches: Branch[] }) {
         { data: inquiries },
       ] = await Promise.all([
         supabase.from("profiles").select("id, full_name, branch_id"),
-        supabase.from("products").select("id, name, created_by, created_at, branch:branches(name)").order("created_at", { ascending: false }).limit(50),
+        supabase.from("products").select("id, name, created_by, created_at, branch:branches(name)").neq("status", "archived").order("created_at", { ascending: false }).limit(50),
         supabase.from("product_quotes").select("id, price, customer_name, quoted_by, created_at, product:products(id,name)").order("created_at", { ascending: false }).limit(50),
         supabase.from("transfers").select("id, product_name_snapshot, requested_by, created_at, status, from_branch:branches!transfers_from_branch_id_fkey(name), to_branch:branches!transfers_to_branch_id_fkey(name)").order("created_at", { ascending: false }).limit(50),
         supabase.from("customer_inquiries").select("id, customer_name, created_by, created_at").order("created_at", { ascending: false }).limit(50),
@@ -353,10 +353,20 @@ function ActivityPanel({ branches }: { branches: Branch[] }) {
           products: 0, quotes: 0, transfers: 0, inquiries: 0,
         });
       });
-      (products ?? []).forEach((r: any) => { const s = map.get(r.created_by); if (s) s.products++; });
-      (quotes ?? []).forEach((r: any) => { const s = map.get(r.quoted_by); if (s) s.quotes++; });
-      (transfers ?? []).forEach((r: any) => { const s = map.get(r.requested_by); if (s) s.transfers++; });
-      (inquiries ?? []).forEach((r: any) => { const s = map.get(r.created_by); if (s) s.inquiries++; });
+
+      // الأعداد من قاعدة البيانات لا من الصفوف المجلوبة أعلاه: تلك محدودة بآخر ٥٠ صفاً
+      // لبناء شريط النشاط الأخير، فكان عدّها يعطي «نصيب الموظف من آخر ٥٠» لا مجموعه —
+      // من أضاف ٦٢ قطعة كان يظهر بـ٥. راجع staff_activity_counts في قاعدة البيانات.
+      const { data: counts, error: countsErr } = await supabase.rpc("staff_activity_counts", { p_since: null });
+      if (countsErr) toast.error(countsErr.message);
+      (counts ?? []).forEach((c: any) => {
+        const s = map.get(c.user_id);
+        if (!s) return;
+        s.products = Number(c.products) || 0;
+        s.quotes = Number(c.quotes) || 0;
+        s.transfers = Number(c.transfers) || 0;
+        s.inquiries = Number(c.inquiries) || 0;
+      });
 
       const sorted = Array.from(map.values()).sort((a, b) =>
         (b.products + b.quotes + b.transfers + b.inquiries) - (a.products + a.quotes + a.transfers + a.inquiries)
