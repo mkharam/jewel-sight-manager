@@ -22,6 +22,17 @@ const baseNav: NavItem[] = [
   { to: "/upload", label: "رفع", icon: Upload, badgeKey: "uploads" },
 ];
 
+// الشريط السفلي للموظف: عمله اليومي هو تسجيل سعر لزبون، وطلب إعادة قطعة، وتسجيل
+// استفسار — وكان «إعادة الطلب» مدفوناً داخل «المزيد» بينما تحتلّ «المحادثة» مكاناً
+// ثابتاً. تسجيل السعر يبدأ من القطعة نفسها فمكانه البحث (وله زر مباشر على بطاقة
+// القطعة الآن)، والمحادثة تنتقل إلى «المزيد» مع بقاء تنبيهها ظاهراً كنقطة عليه.
+const employeeMobileNav: NavItem[] = [
+  { to: "/", label: "البحث", icon: Search, end: true },
+  { to: "/inquiries", label: "استفسارات", icon: MessageCircle },
+  { to: "/reorders", label: "إعادة طلب", icon: PackagePlus, badgeKey: "reorders" },
+  { to: "/upload", label: "رفع", icon: Upload, badgeKey: "uploads" },
+];
+
 const desktopExtras: NavItem[] = [
   { to: "/transfers", label: "تحويلات", icon: ArrowLeftRight, badgeKey: "transfers" },
   { to: "/notifications", label: "الإشعارات", icon: Bell },
@@ -142,14 +153,23 @@ export default function AppLayout() {
 
   const [moreOpen, setMoreOpen] = useState(false);
 
-  // الشريط السفلي: 4 أساسية + زر «المزيد» يفتح بقية الصفحات (منها الاستيراد)
-  const mobileNav: NavItem[] = baseNav;
+  // الشريط السفلي: 4 أساسية + زر «المزيد» يفتح بقية الصفحات. الموظف يحصل على ترتيب
+  // خاص به مبني على عمله اليومي (راجع employeeMobileNav)، والمدير يبقى على الترتيب العام.
+  const isStaff = !isAdmin && !isManager;
+  const mobileNav: NavItem[] = isStaff ? employeeMobileNav : baseNav;
   const moreItems: NavItem[] = [
+    // ما خرج من الشريط السفلي للموظف يدخل هنا حتى لا يضيع
+    ...(isStaff ? [{ to: "/chat", label: "المحادثة", icon: MessagesSquare }] : []),
     ...desktopExtras,
-    ...sharedExtras,
+    // «إعادة الطلب» صار في الشريط السفلي للموظف فلا نكرّره هنا
+    ...sharedExtras.filter((i) => !(isStaff && i.to === "/reorders")),
     ...((isAdmin || isManager) ? managerExtras : []),
     ...(isAdmin ? [...adminExtras, { to: "/staff", label: "موظفون", icon: Users }] : []),
   ];
+
+  // تنبيه مجمّع على زر «المزيد»: التحويلات المعلّقة كانت تظهر داخل القائمة فقط، فلا
+  // يعرف الموظف بوجودها ما لم يفتحها. النقطة تظهر إن كان أي عنصر بالداخل يحمل عدداً.
+  const moreBadgeCount = moreItems.reduce((n, i) => n + (i.badgeKey ? badges[i.badgeKey] ?? 0 : 0), 0);
 
   // المشرف والموظف يريان نفس الشيء تقريباً — بضاعة كل الفروع والاستفسارات وما يفيد
   // العمل اليومي، بدون أي فرق بينهما في التنقّل عدا سعر الذهب (للمشرف والمدير فقط).
@@ -261,8 +281,13 @@ export default function AppLayout() {
                 aria-label="المزيد"
                 className="min-h-[64px] py-2 flex flex-col items-center justify-center gap-1 text-[11px] font-semibold text-muted-foreground active:bg-muted/40 select-none"
               >
-                <div className="flex items-center justify-center rounded-xl h-8 w-12">
+                <div className="relative flex items-center justify-center rounded-xl h-8 w-12">
                   <MoreHorizontal className="size-[22px]" />
+                  {moreBadgeCount > 0 && (
+                    <span className="absolute -top-1 left-1 min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center">
+                      {moreBadgeCount > 9 ? "9+" : moreBadgeCount}
+                    </span>
+                  )}
                 </div>
                 <span>المزيد</span>
               </button>
