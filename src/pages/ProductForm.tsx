@@ -320,9 +320,20 @@ export default function ProductForm() {
   const removeExisting = async (imgId: string, path: string) => {
     const ok = await confirm({ title: "حذف هذه الصورة؟", confirmLabel: "حذف", destructive: true });
     if (!ok) return;
-    await supabase.storage.from("product-images").remove([path]);
-    await supabase.from("product_images").delete().eq("id", imgId);
+
+    // الترتيب مقصود: نحذف السطر أولاً ثم الملف. كان العكس، وبلا فحص للخطأ — فإن رفضت
+    // سياسة الصلاحيات حذف السطر (مشرف على قطعة فرع آخر) يكون الملف قد مُحي فعلاً من
+    // التخزين، فتبقى الصورة في الكتالوق مكسورة إلى الأبد. وكانت الواجهة تُخفيها على كل
+    // حال فيظن الموظف أنها حُذفت.
+    const { error } = await supabase.from("product_images").delete().eq("id", imgId);
+    if (error) return toast.error(error.message || "تعذّر حذف الصورة");
+
+    // الملف نفسه: فشل حذفه لا يترك أثراً مرئياً (لا سطر يشير إليه) فلا نُفزع الموظف به.
+    const { error: storageErr } = await supabase.storage.from("product-images").remove([path]);
+    if (storageErr) console.warn("storage cleanup failed", storageErr);
+
     setExistingImages((arr) => arr.filter((i) => i.id !== imgId));
+    toast.success("تم حذف الصورة");
   };
 
   // الموظف لا يصل لهذه الصفحة إطلاقاً (يستخدم "تحديث سريع" من صفحة القطعة بدلاً منها).

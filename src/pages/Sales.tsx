@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { invalidateInventoryAndSales } from "@/lib/queryInvalidation";
@@ -65,6 +65,21 @@ export default function Sales() {
     setSales((data ?? []) as any);
   };
 
+  // الإجماليات من قاعدة البيانات على كل المبيعات، لا مجموعَ الصفحة المعروضة: القائمة
+  // أعلاه محدودة بآخر ٣٠٠ بيعة للعرض، وجمعُها كان سيعطي رقماً مالياً ناقصاً بلا أي
+  // مؤشّر فور تجاوز هذا الحد. تتبع فلتر الفرع لا مربّع البحث.
+  const { data: totals } = useQuery({
+    queryKey: ["sales-totals", branchFilter],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("sales_totals", {
+        p_branch_id: branchFilter === "all" ? null : branchFilter,
+      });
+      if (error) throw error;
+      const row = (data as any)?.[0];
+      return { count: Number(row?.sales_count ?? 0), revenue: Number(row?.revenue ?? 0) };
+    },
+  });
+
   useEffect(() => {
     load();
     const ch = supabase
@@ -89,14 +104,6 @@ export default function Sales() {
     });
   }, [sales, q, branchFilter]);
 
-  const totals = useMemo(() => {
-    const active = filtered.filter((s) => !s.returned_at);
-    return {
-      count: active.length,
-      revenue: active.reduce((sum, s) => sum + Number(s.final_price ?? 0), 0),
-    };
-  }, [filtered]);
-
   const submitReturn = async () => {
     if (!returnTarget) return;
     if (!returnReason.trim()) return toast.error("اكتب سبب الإرجاع");
@@ -111,6 +118,7 @@ export default function Sales() {
     // الإرجاع يُعيد القطعة للمخزون ويُنقص مبيعات البائع — الكتالوج وبطاقة "مبيعاتي"
     // ولوحة الصدارة كانت تبقى على أرقامها السابقة حتى إعادة التحميل.
     invalidateInventoryAndSales(qc);
+    qc.invalidateQueries({ queryKey: ["sales-totals"] });
   };
 
   return (
@@ -123,11 +131,11 @@ export default function Sales() {
       <div className="grid grid-cols-2 gap-3">
         <Card className="p-4">
           <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1"><DollarSign className="size-4" />إجمالي المبيعات</div>
-          <p className="text-xl font-extrabold text-gold-gradient">{formatCurrency(totals.revenue)}</p>
+          <p className="text-xl font-extrabold text-gold-gradient">{totals ? formatCurrency(totals.revenue) : "…"}</p>
         </Card>
         <Card className="p-4">
           <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1"><Receipt className="size-4" />عدد المبيعات</div>
-          <p className="text-xl font-extrabold text-gold-gradient">{totals.count}</p>
+          <p className="text-xl font-extrabold text-gold-gradient">{totals?.count ?? "…"}</p>
         </Card>
       </div>
 

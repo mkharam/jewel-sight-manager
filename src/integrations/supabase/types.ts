@@ -1688,6 +1688,13 @@ export type Database = {
         Args: { _reason: string; _sale_id: string }
         Returns: undefined
       }
+      sales_totals: {
+        Args: { p_branch_id?: string }
+        Returns: {
+          revenue: number
+          sales_count: number
+        }[]
+      }
       send_push_notification: {
         Args: {
           p_body: string

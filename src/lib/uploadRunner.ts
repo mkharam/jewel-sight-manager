@@ -437,7 +437,9 @@ async function saveTrayPieces(
       .single();
     if (e1 || !prod) continue;
 
-    await supabase.from("product_images").insert({
+    // بلا فحص الخطأ كانت القطعة تُنشأ بلا صورة إطلاقاً وبصمت — قطعة في الكتالوق لا صورة
+    // لها ولا سبب ظاهر. نحذف القطعة اليتيمة بدل تركها، فالصورة هي كل قيمتها هنا.
+    const { error: imgErr } = await supabase.from("product_images").insert({
       product_id: prod.id,
       storage_path: piecePath,
       thumb_path: pieceThumbPath,
@@ -445,6 +447,11 @@ async function saveTrayPieces(
       uploaded_by: opts.userId,
       ai_labels: { ...a, position: p.position, category_id: categoryId, provider },
     } as any);
+    if (imgErr) {
+      console.warn("product image insert failed — removing the orphaned product", imgErr);
+      await supabase.from("products").delete().eq("id", prod.id);
+      continue;
+    }
 
     await saveStoneColors(prod.id, a.gemstones);
   }
