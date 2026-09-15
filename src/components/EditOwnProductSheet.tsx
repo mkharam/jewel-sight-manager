@@ -1,9 +1,9 @@
-// تصحيح بيانات قطعة رفعها الموظف بنفسه.
+// تصحيح بيانات قطعة من بضاعة فرع الموظف.
 //
-// الموظف يصوّر عشرات القطع في جلسة تصوير متتالي ويسمّيها الذكاء الاصطناعي تلقائياً، ثم
-// يكتشف اسماً أو عياراً خاطئاً — ولم يكن أمامه إلا حذف القطعة وتصويرها من جديد. هنا
-// يصحّحها مباشرة. الحقول هنا وصفية فقط؛ الأسعار والفرع والحالة والباركود للإدارة،
-// والدالة update_own_product_details في قاعدة البيانات لا تلمسها أصلاً.
+// الذكاء الاصطناعي يسمّي القطع تلقائياً بعد التصوير المتتالي، فيمرّ اسم أو عيار خاطئ.
+// كان التصحيح مقصوراً على من صوّر القطعة بنفسه، فالموظف يرى الخطأ على قطعة في درجه ولا
+// يملك إصلاحه. المعيار الآن بضاعة الفرع. الحقول هنا وصفية فقط؛ الأسعار والفرع والحالة
+// والباركود للإدارة، والدالة update_own_product_details لا تلمسها أصلاً.
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -64,14 +64,18 @@ export default function EditOwnProductSheet({ product }: Props) {
   const save = async () => {
     if (!name.trim()) return toast.error("اكتب اسم القطعة");
     setSaving(true);
+    // تعديل صريح: الدالة لا تلمس إلا الحقول الواردة هنا. اللوحة تعرض الحقول الستة كلها
+    // فتمرّرها كلها، وتمرير null يعني «امسح هذا الحقل» لا «اتركه».
     const { error } = await supabase.rpc("update_own_product_details", {
       p_product_id: product.id,
-      p_name: name.trim(),
-      p_category_id: categoryId === NONE ? null : categoryId,
-      p_karat: karat === NONE ? null : karat,
-      p_gold_color: goldColor === NONE ? null : goldColor,
-      p_weight_grams: weight.trim() === "" ? null : Number(weight),
-      p_ring_size: ringSize.trim() || null,
+      p_patch: {
+        name: name.trim(),
+        category_id: categoryId === NONE ? null : categoryId,
+        karat: karat === NONE ? null : karat,
+        gold_color: goldColor === NONE ? null : goldColor,
+        weight_grams: weight.trim() === "" ? null : Number(weight),
+        ring_size: ringSize.trim() || null,
+      },
     });
     setSaving(false);
     // supabase-js يُرجع الخطأ ولا يرميه — بدون هذا الفحص كانت تظهر رسالة نجاح والتعديل
@@ -87,14 +91,14 @@ export default function EditOwnProductSheet({ product }: Props) {
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
         <Button variant="outline" className="w-full h-11">
-          <Pencil className="size-4 ml-1" /> تعديل بيانات قطعتي
+          <Pencil className="size-4 ml-1" /> تعديل بيانات القطعة
         </Button>
       </SheetTrigger>
       <SheetContent side="bottom" className="rounded-t-2xl max-h-[92vh] overflow-y-auto">
         <SheetHeader className="text-right">
           <SheetTitle>تعديل بيانات القطعة</SheetTitle>
           <SheetDescription>
-            هذه قطعة رفعتها أنت. صحّح ما جاء خطأً في التسمية التلقائية — الأسعار والفرع تخصّ الإدارة.
+            صحّح ما جاء خطأً في التسمية التلقائية — الأسعار والفرع والحالة تخصّ الإدارة.
           </SheetDescription>
         </SheetHeader>
 

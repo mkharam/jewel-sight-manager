@@ -1720,15 +1720,7 @@ export type Database = {
       }
       tags_from_ai_labels: { Args: { labels: Json }; Returns: string[] }
       update_own_product_details: {
-        Args: {
-          p_category_id?: string
-          p_gold_color?: string
-          p_karat?: string
-          p_name: string
-          p_product_id: string
-          p_ring_size?: string
-          p_weight_grams?: number
-        }
+        Args: { p_patch: Json; p_product_id: string }
         Returns: undefined
       }
       update_product_barcode: {

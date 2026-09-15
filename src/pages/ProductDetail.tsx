@@ -129,13 +129,20 @@ export default function ProductDetail() {
   // لا يملك هذه الصلاحية إطلاقاً، فقط إضافة صور وتحديث الوزن (أزرار منفصلة أدناه).
   const canEditProduct = isAdmin || (isManager && product.branch_id === profile?.branch_id);
 
-  // الموظف يحذف ما رفعه هو بنفسه ما دامت القطعة «متوفرة»: صورة مكرّرة أو قطعة دخلت
-  // بالغلط أثناء التصوير المتتالي كانت تبقى في الكتالوق حتى ينتبه لها مدير. القطعة
-  // المحجوزة أو المبيعة مستثناة لأن لها أثراً في سجلات أخرى — والسياسة في قاعدة
+  // الحذف يبقى لمن رفع القطعة وحده: إخراج قطعة من المخزون قرار أثقل من تصحيح اسمها.
+  // القطعة المحجوزة أو المبيعة مستثناة لأن لها أثراً في سجلات أخرى — والسياسة في قاعدة
   // البيانات تفرض الشرطين نفسيهما، فهذا الزر إظهار لما هو مسموح لا تخويل له.
   const canDeleteOwnUpload =
     !canEditProduct && product.created_by === user?.id && product.status === "available";
   const canDeleteProduct = canEditProduct || canDeleteOwnUpload;
+
+  // أما التعديل الوصفي فمعياره الفرع لا من صوّر القطعة: الموظف يرى اسماً خاطئاً على قطعة
+  // في درجه فيصحّحه، ولو كان زميله هو من صوّرها. هذا يطابق تحديث الوزن المسموح له أصلاً
+  // على كل بضاعة فرعه (update_product_weight). راجع update_own_product_details.
+  const canEditBranchProduct =
+    !canEditProduct &&
+    product.status === "available" &&
+    ((!!product.branch_id && product.branch_id === profile?.branch_id) || product.created_by === user?.id);
 
   const onDelete = async () => {
     const ok = await confirm({
@@ -371,7 +378,7 @@ export default function ProductDetail() {
 
           {/* قطعة رفعها هذا الموظف وما زالت متوفرة: يصحّح بياناته الوصفية بنفسه بدل
               حذفها وإعادة تصويرها. الشروط نفسها التي يفرضها زر الحذف. */}
-          {canDeleteOwnUpload && (
+          {canEditBranchProduct && (
             <EditOwnProductSheet product={{
               id: product.id, name: product.name, category_id: product.category_id,
               karat: product.karat, gold_color: product.gold_color,
