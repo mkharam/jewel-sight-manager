@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -17,6 +17,8 @@ interface Props {
   branchId: string | null;
   trigger?: React.ReactNode;
   fullWidthButton?: boolean;
+  /** سعر اليوم المحسوب من سعر الذهب — يُعبّأ مسبقاً ويبقى قابلاً للتعديل (خصم/زيادة). */
+  suggestedPrice?: number | null;
 }
 
 // عملاء متكررون — يُخزَّنون محلياً لتجنب إعادة الكتابة
@@ -34,7 +36,7 @@ function pushRecentCustomer(c: RecentCustomer) {
   try { localStorage.setItem(RECENT_CUSTOMERS_KEY, JSON.stringify(next)); } catch {}
 }
 
-export default function QuickQuoteSheet({ productId, productName, branchId, trigger, fullWidthButton }: Props) {
+export default function QuickQuoteSheet({ productId, productName, branchId, trigger, fullWidthButton, suggestedPrice }: Props) {
   const { user, profile } = useAuth();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -46,6 +48,15 @@ export default function QuickQuoteSheet({ productId, productName, branchId, trig
   const recentCustomers = useMemo(() => (open ? loadRecentCustomers() : []), [open]);
 
   const myBranchId = profile?.branch_id ?? branchId ?? null;
+
+  // الحقل يُعبَّأ بسعر اليوم عند كل فتح: الموظف في الغالب يعطي السعر المحسوب كما هو،
+  // فتعبئته توفّر عليه حسابه وكتابته، ويبقى قابلاً للتعديل إن أعطى خصماً. لا نعبّئه إن
+  // كان قد كتب شيئاً بالفعل حتى لا نمحو ما كتبه.
+  useEffect(() => {
+    if (!open) return;
+    if (suggestedPrice == null) return;
+    setPrice((cur) => (cur.trim() === "" ? String(suggestedPrice) : cur));
+  }, [open, suggestedPrice]);
 
   // Last 3 quotes for this product — shown to prevent price drift between branches
   const { data: recent } = useQuery({
@@ -151,6 +162,15 @@ export default function QuickQuoteSheet({ productId, productName, branchId, trig
               autoFocus
               className="text-lg h-12 font-bold"
             />
+            {suggestedPrice != null && Math.round(Number(price)) !== Math.round(suggestedPrice) && (
+              <button
+                type="button"
+                onClick={() => setPrice(String(suggestedPrice))}
+                className="mt-1.5 text-[11px] text-primary font-semibold underline underline-offset-2"
+              >
+                إرجاع سعر اليوم ({formatCurrency(suggestedPrice)})
+              </button>
+            )}
             {showVarianceWarning && (
               <div className="mt-2 flex items-start gap-2 rounded-lg bg-warning/15 border border-warning/30 p-2 text-xs">
                 <AlertTriangle className="size-4 shrink-0 text-warning-foreground mt-0.5" />

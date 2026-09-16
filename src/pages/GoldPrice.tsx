@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Coins, Save } from "lucide-react";
+import { Coins, Save, AlertTriangle } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/constants";
 import { suggestedPrice } from "@/lib/luxury";
 import { toast } from "sonner";
@@ -69,6 +69,25 @@ export default function GoldPrice() {
   if (!canEdit) return <Navigate to="/" replace />;
 
   const calcRow = latest.get(calcKarat);
+  // العيارات الموجودة فعلاً على بضاعة نشطة — لا قائمة ثابتة: ما يهمّ هو ما في الدرج.
+  const { data: stockKarats } = useQuery({
+    queryKey: ["stock-karats"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("products")
+        .select("karat")
+        .neq("status", "archived")
+        .not("karat", "is", null);
+      const counts = new Map<string, number>();
+      for (const r of (data ?? []) as any[]) counts.set(r.karat, (counts.get(r.karat) ?? 0) + 1);
+      return counts;
+    },
+  });
+
+  const unpricedKarats = Array.from(stockKarats?.entries() ?? [])
+    .filter(([k]) => !latest.get(k))
+    .map(([karat, pieces]) => ({ karat, pieces }));
+
   const suggestion = suggestedPrice(Number(weight) || null, calcRow?.price_per_gram ?? null, calcRow?.making_charge ?? null);
 
   return (
@@ -82,6 +101,21 @@ export default function GoldPrice() {
           <p className="text-xs text-muted-foreground">حدّث سعر الجرام والمصنعية لكل عيار — يستخدمها الموظفون لحساب السعر المقترح.</p>
         </div>
       </header>
+
+      {/* عيار عليه بضاعة ولا سعر غرام له = قطع لا يمكن تسعيرها إطلاقاً، ولا شيء كان
+          يُنبّه إلى ذلك: سُجّل سعر ٢٢K بينما بضاعة المتجر ١٨K و٢١K. */}
+      {unpricedKarats.length > 0 && (
+        <Card className="p-3 border-warning/40 bg-warning/10">
+          <p className="text-sm font-semibold flex items-center gap-2">
+            <AlertTriangle className="size-4 text-warning-foreground shrink-0" />
+            عيارات عليها بضاعة بلا سعر غرام
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {unpricedKarats.map((u) => `${u.karat} (${u.pieces} قطعة)`).join(" · ")} — لن يظهر لها سعر
+            للموظفين حتى تُدخل سعر غرامها هنا.
+          </p>
+        </Card>
+      )}
 
       <div className="grid sm:grid-cols-2 gap-3">
         {KARATS.map((k) => {

@@ -13,6 +13,8 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { ImageIcon, MapPin, MoreVertical, Check, Barcode, Tag } from "lucide-react";
 import type { LatestQuote } from "@/hooks/useLatestQuotes";
+import { useGoldPrices } from "@/hooks/useGoldPrices";
+import { priceForPiece, PRICE_GAP_LABEL } from "@/lib/pricing";
 import { PRODUCT_STATUS, formatCurrency, formatWeight, getThumbUrl, ProductStatus } from "@/lib/constants";
 import { GOLD_COLORS } from "@/lib/luxury";
 import { supabase } from "@/integrations/supabase/client";
@@ -69,6 +71,9 @@ export default function ProductCard({
   const [pending, setPending] = useState<ProductStatus | null>(null);
   const qc = useQueryClient();
   const { roles, profile } = useAuth();
+  // سعر اليوم محسوباً من وزن القطعة وعيارها — الاستعلام مشترك ومخزَّن فلا يتكرّر لكل بطاقة.
+  const { data: goldPrices } = useGoldPrices();
+  const { price: todayPrice, gap: priceGap } = priceForPiece(product, goldPrices);
   const isAdmin = roles.includes("admin");
   const isManager = roles.includes("manager");
   // تغيير الحالة السريع تعديل — يقتصر على المدير العام أو المشرف على قطع فرعه فقط.
@@ -156,6 +161,13 @@ export default function ProductCard({
               </>
             ) : product.sale_price != null ? (
               <p className="text-base font-bold text-primary">{formatCurrency(product.sale_price)}</p>
+            ) : todayPrice ? (
+              /* لا سعر مثبّت على القطعة (وهذا حال البضاعة كلها) — نحسبه من سعر الذهب
+                 اليوم. مكتوب «سعر اليوم» لأنه يتغيّر بتغيّر سعر الغرام لا رقماً ثابتاً. */
+              <>
+                <p className="text-[10px] text-muted-foreground leading-none">سعر اليوم</p>
+                <p className="text-base font-bold text-primary leading-tight">{formatCurrency(todayPrice.total)}</p>
+              </>
             ) : lastQuote ? (
               /* لا سعر بيع مثبّت على القطعة (وهذا حال البضاعة كلها اليوم) — نعرض آخر
                  سعر أُعطي لزبون بدل شرطة فارغة، فيعرف الموظف بكم سُعِّرت من قبل قبل أن
@@ -168,7 +180,7 @@ export default function ProductCard({
                 <p className="text-base font-bold text-primary leading-tight">{formatCurrency(lastQuote.price)}</p>
               </>
             ) : (
-              <p className="text-xs text-muted-foreground">لم يُسعَّر بعد</p>
+              <p className="text-xs text-muted-foreground">{priceGap ? PRICE_GAP_LABEL[priceGap] : "لم يُسعَّر بعد"}</p>
             )}
           </div>
           {/* القطعة بلا فرع تترك الخانة فارغة فيبدو الأمر عطلاً — والموظف يُسأل «وين

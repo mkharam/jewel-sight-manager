@@ -24,6 +24,8 @@ import ImageLightbox from "@/components/ImageLightbox";
 import EditOwnProductSheet from "@/components/EditOwnProductSheet";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
 import { invalidateInventoryAndSales } from "@/lib/queryInvalidation";
+import { useGoldPrices } from "@/hooks/useGoldPrices";
+import { priceForPiece, PRICE_GAP_LABEL } from "@/lib/pricing";
 
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
@@ -40,6 +42,7 @@ export default function ProductDetail() {
   const [weightInput, setWeightInput] = useState("");
   const [savingWeight, setSavingWeight] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const { data: goldPrices } = useGoldPrices();
 
 
   const { data: product, isLoading } = useQuery({
@@ -142,6 +145,8 @@ export default function ProductDetail() {
   const canEditBranchProduct = canManageBranchProduct;
   // إضافة صورة تتبع سياسة product_images: المدير العام، أو قطعة في فرع المستخدم — بصرف
   // النظر عن حالتها (قطعة محجوزة قد تحتاج صورة أوضح للزبون).
+  // سعر القطعة اليوم = وزنها × سعر غرام عيارها + الأجرة. راجع src/lib/pricing.ts
+  const { price: todayPrice, gap: priceGap } = priceForPiece(product, goldPrices);
   const canAddPhoto = isAdmin || (!!product.branch_id && product.branch_id === profile?.branch_id);
   const canDeleteOwnUpload = canManageBranchProduct;
   const canDeleteProduct = canEditProduct || canManageBranchProduct;
@@ -405,7 +410,45 @@ export default function ProductDetail() {
             )}
           </Card>
 
-          <QuickQuoteSheet productId={id!} productName={product.name} branchId={product.branch_id} fullWidthButton />
+          {/* سعر اليوم بارزاً فوق زر التسعير مباشرة: هذا هو الرقم الذي يُقال للزبون
+              الواقف أمام الموظف، وكان يُحسب في الرأس أو بمكالمة لأن الحاسبة محبوسة في
+              صفحة «سعر الذهب» التي لا يراها الموظف أصلاً. */}
+          <Card className="p-4 bg-gold-soft border-primary/25">
+            {todayPrice ? (
+              <>
+                <div className="flex items-end justify-between gap-2 flex-wrap">
+                  <div>
+                    <p className="text-xs text-muted-foreground">سعر اليوم</p>
+                    <p className="text-2xl font-extrabold text-gold-gradient leading-tight">
+                      {formatCurrency(todayPrice.total)}
+                    </p>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground text-left leading-relaxed">
+                    {formatWeight(todayPrice.weight)} × {formatCurrency(todayPrice.pricePerGram)}
+                    {todayPrice.makingCharge > 0 && <> + أجرة {formatCurrency(todayPrice.makingCharge)}/غ</>}
+                  </p>
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1.5">
+                  محسوب من سعر الذهب بتاريخ {todayPrice.effectiveDate} — يتغيّر بتغيّره.
+                </p>
+              </>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Scale className="size-4 text-muted-foreground shrink-0" />
+                <p className="text-sm text-muted-foreground">
+                  {priceGap ? PRICE_GAP_LABEL[priceGap] : "لا يمكن حساب السعر"}
+                </p>
+              </div>
+            )}
+          </Card>
+
+          <QuickQuoteSheet
+            productId={id!}
+            productName={product.name}
+            branchId={product.branch_id}
+            suggestedPrice={todayPrice?.total ?? null}
+            fullWidthButton
+          />
 
           {product.status === "available" && (
             <div className="grid grid-cols-2 gap-2">
