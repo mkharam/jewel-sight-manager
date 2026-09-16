@@ -14,3 +14,7 @@ verify_jwt = false
 
 [functions.send-push]
 verify_jwt = false
+
+# تطبيق الصيانة يصادق بمفتاح REPAIR_API_KEY بدل JWT، فلا يمرّ عبر تحقق Supabase.
+[functions.repair-api]
+verify_jwt = false
