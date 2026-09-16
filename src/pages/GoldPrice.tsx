@@ -11,11 +11,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Coins, Save, AlertTriangle, Eye, EyeOff } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useShowPricesSetting } from "@/hooks/useAppSettings";
-import { formatCurrency, formatDate } from "@/lib/constants";
+import { KARAT_OPTIONS, formatCurrency, formatDate } from "@/lib/constants";
 import { suggestedPrice } from "@/lib/luxury";
 import { toast } from "sonner";
 
-const KARATS = ["18K", "21K", "22K", "24K"];
+// عيارات المتجر تُؤخذ من KARAT_OPTIONS كبقية الشاشات — كانت هنا قائمة مستقلة تضيف
+// ٢٢K و٢٤K وهما غير موجودين في المحل، فسُجّل سعر ٢٢K بالخطأ وبقيت قطع ٢١K بلا سعر.
+const KARATS = KARAT_OPTIONS;
 
 export default function GoldPrice() {
   const { user, roles, rolesLoading } = useAuth();
