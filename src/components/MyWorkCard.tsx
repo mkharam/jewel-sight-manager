@@ -2,12 +2,15 @@
 // وصفحة التحويلات ويدوّر بينهم كل مرة. لا يوجد عمود "assigned_to" فعلي في القاعدة، فنعتمد
 // أقرب تقريب متاح: استفساراته هو (سجّلها بنفسه) المعلّقة، وتحويلات واردة لفرعه بانتظار
 // استلام (أي موظف في الفرع يقدر يستلمها، فهي "شغل الفرع" لا شغل شخص بعينه بالضبط).
+//
+// "قطع بلا وزن" لم تعد هنا — نُقلت إلى MissingWeightsBanner كأول ما يظهر في الصفحة
+// الرئيسية بدل شارة بين شارات أخرى، فالوزن أساس التسعير ولا يجوز أن يُكتشف بالصدفة.
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
-import { MessageCircle, ArrowLeftRight, ListChecks, Scale } from "lucide-react";
+import { MessageCircle, ArrowLeftRight, ListChecks } from "lucide-react";
 
 export default function MyWorkCard() {
   const { user, profile } = useAuth();
@@ -20,7 +23,7 @@ export default function MyWorkCard() {
     enabled: !!user,
     refetchOnWindowFocus: true,
     queryFn: async () => {
-      const [inqRes, trRes, wRes] = await Promise.all([
+      const [inqRes, trRes] = await Promise.all([
         supabase
           .from("customer_inquiries")
           .select("id", { count: "exact", head: true })
@@ -33,28 +36,17 @@ export default function MyWorkCard() {
               .eq("to_branch_id", profile.branch_id)
               .in("status", ["approved", "in_transit"])
           : Promise.resolve({ count: 0 }),
-        // قطع فرعه بلا وزن — الوزن أساس التسعير، وبدونه لا يستطيع إعطاء سعر لزبون.
-        profile?.branch_id
-          ? supabase
-              .from("products")
-              .select("id", { count: "exact", head: true })
-              .eq("branch_id", profile.branch_id)
-              .eq("status", "available")
-              .is("weight_grams", null)
-          : Promise.resolve({ count: 0 }),
       ]);
       return {
         pendingInquiries: inqRes.count ?? 0,
         awaitingTransfers: (trRes as { count: number | null }).count ?? 0,
-        missingWeights: (wRes as { count: number | null }).count ?? 0,
       };
     },
   });
 
   const pendingInquiries = data?.pendingInquiries ?? 0;
   const awaitingTransfers = data?.awaitingTransfers ?? 0;
-  const missingWeights = data?.missingWeights ?? 0;
-  const total = pendingInquiries + awaitingTransfers + missingWeights;
+  const total = pendingInquiries + awaitingTransfers;
   if (!user || total === 0) return null;
 
   return (
@@ -79,15 +71,6 @@ export default function MyWorkCard() {
           >
             <ArrowLeftRight className="size-3.5 text-primary" />
             {awaitingTransfers} تحويل بانتظار الاستلام
-          </Link>
-        )}
-        {!!missingWeights && (
-          <Link
-            to="/weights"
-            className="flex items-center gap-1.5 px-2.5 h-8 rounded-lg bg-muted/50 hover:bg-muted transition-colors text-xs font-semibold"
-          >
-            <Scale className="size-3.5 text-primary" />
-            {missingWeights} قطعة بلا وزن
           </Link>
         )}
       </div>

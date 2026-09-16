@@ -12,6 +12,7 @@ import { useLatestQuotes } from "@/hooks/useLatestQuotes";
 import { useGoldPrices } from "@/hooks/useGoldPrices";
 import ImageSearchButton from "@/components/ImageSearchButton";
 import AiAssistantSheet from "@/components/AiAssistantSheet";
+import MissingWeightsBanner from "@/components/MissingWeightsBanner";
 import MySalesCard from "@/components/MySalesCard";
 import MyWorkCard from "@/components/MyWorkCard";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
@@ -698,6 +699,7 @@ export default function ProductSearch() {
         </div>
       </div>
 
+      <MissingWeightsBanner />
       <MySalesCard />
       <MyWorkCard />
 

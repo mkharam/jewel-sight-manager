@@ -141,17 +141,23 @@ function LowStockAlerts({ canEdit }: { canEdit: boolean }) {
 }
 
 export default function Reorders() {
-  const { roles } = useAuth();
-  const canManage = roles.includes("admin") || roles.includes("manager");
+  const { roles, profile } = useAuth();
+  const isAdmin = roles.includes("admin");
+  const canManage = isAdmin || roles.includes("manager");
   const [items, setItems] = useState<ReorderRequest[]>([]);
   const [tab, setTab] = useState<"pending" | "active" | "all">("pending");
 
   const load = async () => {
-    const { data } = await supabase
+    // طلب إعادة الطلب من المورد شأن فرع لا شأن المحل كله — يظهر للمدير العام دائماً،
+    // ولفرع الموظف فقط بخلاف ذلك (بمن فيهم المشرف على فرعه). راجع سياسة SELECT المفتوحة
+    // على الجدول في القاعدة؛ التصفية هنا للعرض لا للحماية.
+    let q = supabase
       .from("product_reorder_requests")
       .select("*, branch:branches(name)")
       .order("created_at", { ascending: false })
       .limit(200);
+    if (!isAdmin && profile?.branch_id) q = q.eq("branch_id", profile.branch_id);
+    const { data } = await q;
     const list = (data ?? []) as any[];
     const ids = Array.from(new Set(list.map((i) => i.requested_by).filter(Boolean)));
     if (ids.length) {

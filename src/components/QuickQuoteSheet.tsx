@@ -97,13 +97,9 @@ export default function QuickQuoteSheet({ productId, productName, branchId, trig
     });
     setSaving(false);
     if (error) return toast.error(error.message);
-    await supabase.from("activity_log").insert({
-      actor_id: user?.id,
-      action: "quote",
-      entity_type: "product",
-      entity_id: productId,
-      details: { price: p, customer: name },
-    });
+    // لا نسجّل نشاطاً يدوياً هنا — مُشغِّل على product_quotes يفعل هذا تلقائياً عند كل
+    // إدراج، وكان هذا يكتب سطراً ثانياً مكرَّراً لكل سعر مسجَّل (بلا branch_id حتى، فلا
+    // يصل لأي موظف أصلاً) قبل أن يُستعمل نوع الحدث في الإشعارات.
     pushRecentCustomer({ name: name.trim(), phone: phone.trim() });
     toast.success("تم تسجيل السعر");
     setPrice(""); setName(""); setPhone(""); setNotes("");
