@@ -1722,6 +1722,34 @@ export type Database = {
         Returns: string
       }
       product_has_sales: { Args: { p_product_id: string }; Returns: boolean }
+      report_branch_summary: {
+        Args: { p_end: string; p_start: string }
+        Returns: {
+          branch_id: string
+          cogs: number
+          new_products: number
+          quotes: number
+          returns_count: number
+          revenue: number
+          sales_count: number
+          transfers_in: number
+          transfers_out: number
+          transfers_received: number
+        }[]
+      }
+      report_inventory_snapshot: {
+        Args: never
+        Returns: {
+          age_plus: number
+          age180: number
+          age60: number
+          age90: number
+          branch_id: string
+          count: number
+          value_cost: number
+          value_sale: number
+        }[]
+      }
       return_sale: {
         Args: { _reason: string; _sale_id: string }
         Returns: undefined

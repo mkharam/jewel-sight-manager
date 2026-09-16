@@ -58,6 +58,9 @@ export default function Reports() {
     },
   });
 
+  // الأرقام (الإيراد، تكلفة البضاعة، الأعداد بالفرع) تأتي من report_branch_summary لا
+  // من جمع هذه الصفوف يدوياً — راجع التعليق على "summary" أدناه. هذا الجلب هنا لعرض
+  // "آخر الأسعار المسجَّلة" فقط، فحدّ 200 مقصود وموثَّق لا حداً ضمنياً من Supabase.
   const { data: quotes = [] } = useQuery({
     queryKey: ["report-quotes", month],
     queryFn: async () => {
@@ -65,30 +68,16 @@ export default function Reports() {
         .from("product_quotes")
         .select("id, branch_id, price, customer_name, created_at, product_id, products(name, sku)")
         .gte("created_at", startISO)
-        .lt("created_at", endISO);
-      return data ?? [];
-    },
-  });
-
-  // المبيعات الفعلية المكتملة (وليست عروض الأسعار فقط) — هذا هو الإيراد الحقيقي.
-  // نستبعد المُرجعة من الإيراد لكن نُبقيها في العدد الإجمالي لتظهر في السجل التفصيلي.
-  // نجلب cost_price الحالي للقطعة المرتبطة لحساب هامش الربح (الإيراد - تكلفة البضاعة
-  // المباعة) — تقريب معقول لا سعر التكلفة وقت البيع بالضبط (غير محفوظ كلقطة)، لكنه
-  // أدق بكثير من الاكتفاء بالإيراد وحده.
-  const { data: sales = [] } = useQuery({
-    queryKey: ["report-sales", month],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("sales")
-        .select("id, branch_id, final_price, discount, returned_at, sold_at, product_name_snapshot, customer_name, product:products(cost_price)")
-        .gte("sold_at", startISO)
-        .lt("sold_at", endISO);
+        .lt("created_at", endISO)
+        .order("created_at", { ascending: false })
+        .limit(200);
       return data ?? [];
     },
   });
 
   // مصاريف المحل خلال نفس الشهر — إيجار/رواتب/صيانة... لحساب صافي الربح الحقيقي لا
-  // الإيراد فقط. راجع بطاقة "المصاريف" أسفل الصفحة لإضافة/حذف مصروف.
+  // الإيراد فقط. راجع بطاقة "المصاريف" أسفل الصفحة لإضافة/حذف مصروف. القائمة تُعرض
+  // كاملة (لا slice) فيلزم أن تكون شاملة فعلاً — حدّ 500 سخيّ جداً لمصاريف شهر واحد.
   const { data: expenses = [] } = useQuery({
     queryKey: ["report-expenses", month],
     queryFn: async () => {
@@ -97,11 +86,13 @@ export default function Reports() {
         .select("id, branch_id, category, amount, note, expense_date, created_at")
         .gte("expense_date", startISO.slice(0, 10))
         .lt("expense_date", endISO.slice(0, 10))
-        .order("expense_date", { ascending: false });
+        .order("expense_date", { ascending: false })
+        .limit(500);
       return data ?? [];
     },
   });
 
+  // نفس ملاحظة quotes أعلاه: هذا الجلب لعرض "آخر التحويلات" فقط، الأعداد من الدالة.
   const { data: transfers = [] } = useQuery({
     queryKey: ["report-transfers", month],
     queryFn: async () => {
@@ -109,101 +100,73 @@ export default function Reports() {
         .from("transfers")
         .select("id, from_branch_id, to_branch_id, status, product_name_snapshot, created_at")
         .gte("created_at", startISO)
-        .lt("created_at", endISO);
+        .lt("created_at", endISO)
+        .order("created_at", { ascending: false })
+        .limit(200);
       return data ?? [];
     },
   });
 
-  const { data: newProducts = [] } = useQuery({
-    queryKey: ["report-new-products", month],
+  // الأرقام الفعلية (الإيراد، تكلفة البضاعة، عدد المبيعات/التحويلات/القطع الجديدة بكل
+  // فرع) تُحسب في قاعدة البيانات على كل الصفوف — لا بجمع صفوف quotes/transfers المجلوبة
+  // أعلاه للعرض فقط (وحدّها 200 مقصود لذاك الغرض تحديداً، لا يصلح مصدراً لرقم مالي).
+  // نفس الدرس الذي صُحِّح في sales_totals وstaff_activity_counts سابقاً.
+  const { data: branchSummary } = useQuery({
+    queryKey: ["report-branch-summary", month],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("products")
-        .select("id, branch_id, name, sku, created_at")
-        .gte("created_at", startISO)
-        .lt("created_at", endISO);
+      const { data, error } = await supabase.rpc("report_branch_summary", { p_start: startISO, p_end: endISO });
+      if (error) throw error;
       return data ?? [];
     },
   });
 
-  // جميع القطع المتوفرة حالياً — للجرد الحيّ (قيمة المخزون + القطع الراكدة)
-  const { data: availableProducts = [] } = useQuery({
+  // لقطة المخزون الحيّة (القطع المتوفرة الآن) محسوبة أيضاً في القاعدة — بلا حدّ زمني
+  // فتكبر مع نمو المخزون كله لا شهراً واحداً، وهذا ما كان يجعلها الأخطر بين الاستعلامات
+  // القديمة هنا.
+  const { data: inventorySnapshot } = useQuery({
     queryKey: ["report-inventory-snapshot"],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("products")
-        .select("id, branch_id, sale_price, cost_price, created_at, name, sku")
-        .eq("status", "available");
+      const { data, error } = await supabase.rpc("report_inventory_snapshot");
+      if (error) throw error;
       return data ?? [];
+    },
+  });
+
+  // أقدم ١٠ قطع متوفرة — استعلام مُرتَّب ومحدود فعلياً (لا جلب الكل ثم فرز في المتصفح)،
+  // فالحدّ هنا جزء من المعنى المطلوب (أقدم ١٠) لا حداً ضمنياً يُخشى منه.
+  const { data: stalestPieces = [] } = useQuery({
+    queryKey: ["report-stalest-pieces"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("products")
+        .select("id, branch_id, name, sku, created_at")
+        .eq("status", "available")
+        .order("created_at", { ascending: true })
+        .limit(10);
+      if (error) throw error;
+      const now = Date.now();
+      return (data ?? [])
+        .map((p) => ({ ...p, days: Math.floor((now - new Date(p.created_at).getTime()) / (1000 * 60 * 60 * 24)) }))
+        .filter((p) => p.days >= 90);
     },
   });
 
   const summary = useMemo(() => {
-    const map = new Map<string, {
-      branch_id: string;
-      name: string;
-      quotes: number;
-      salesCount: number;
-      returnsCount: number;
-      revenue: number;
-      cogs: number;
-      transfersOut: number;
-      transfersIn: number;
-      transfersReceived: number;
-      newProducts: number;
-    }>();
-    for (const b of branches) {
-      map.set(b.id, {
-        branch_id: b.id,
-        name: b.name,
-        quotes: 0,
-        salesCount: 0,
-        returnsCount: 0,
-        revenue: 0,
-        cogs: 0,
-        transfersOut: 0,
-        transfersIn: 0,
-        transfersReceived: 0,
-        newProducts: 0,
-      });
-    }
-    for (const q of quotes) {
-      if (!q.branch_id) continue;
-      const row = map.get(q.branch_id);
-      if (!row) continue;
-      row.quotes += 1;
-    }
-    // المبيعة المُرجعة تُستبعد من الإيراد ومن عدد المبيعات معاً — كان العدّاد يشملها بينما
-    // الإيراد لا، فتظهر الصفحة "عدد المبيعات 1 / الإيراد 0 د.ل" وكأن هناك خللاً في الحساب.
-    // نعرضها في عمود مستقل بدل إسقاطها بصمت، فالمرتجعات معلومة يحتاجها المدير.
-    for (const s of sales as any[]) {
-      if (!s.branch_id) continue;
-      const row = map.get(s.branch_id);
-      if (!row) continue;
-      if (s.returned_at) {
-        row.returnsCount += 1;
-      } else {
-        row.salesCount += 1;
-        row.revenue += Number(s.final_price ?? 0);
-        row.cogs += Number(s.product?.cost_price ?? 0);
-      }
-    }
-    for (const t of transfers) {
-      const from = map.get(t.from_branch_id);
-      const to = map.get(t.to_branch_id);
-      if (from) from.transfersOut += 1;
-      if (to) {
-        to.transfersIn += 1;
-        if (t.status === "received") to.transfersReceived += 1;
-      }
-    }
-    for (const p of newProducts) {
-      if (!p.branch_id) continue;
-      const row = map.get(p.branch_id);
-      if (row) row.newProducts += 1;
-    }
-    return Array.from(map.values());
-  }, [branches, quotes, sales, transfers, newProducts]);
+    const nameOf = new Map(branches.map((b) => [b.id, b.name]));
+    return (branchSummary ?? []).map((r) => ({
+      branch_id: r.branch_id,
+      name: nameOf.get(r.branch_id) ?? "—",
+      quotes: Number(r.quotes),
+      salesCount: Number(r.sales_count),
+      returnsCount: Number(r.returns_count),
+      revenue: Number(r.revenue),
+      cogs: Number(r.cogs),
+      transfersOut: Number(r.transfers_out),
+      transfersIn: Number(r.transfers_in),
+      transfersReceived: Number(r.transfers_received),
+      newProducts: Number(r.new_products),
+    }));
+  }, [branches, branchSummary]);
 
   const totals = useMemo(() => {
     const base = summary.reduce(
@@ -227,39 +190,19 @@ export default function Reports() {
 
   // Inventory value + aging (available stock only)
   const inventoryByBranch = useMemo(() => {
-    const now = Date.now();
-    const map = new Map<string, {
-      branch_id: string;
-      name: string;
-      count: number;
-      valueSale: number;
-      valueCost: number;
-      age60: number;
-      age90: number;
-      age180: number;
-      agePlus: number;
-    }>();
-    for (const b of branches) {
-      map.set(b.id, {
-        branch_id: b.id, name: b.name, count: 0, valueSale: 0, valueCost: 0,
-        age60: 0, age90: 0, age180: 0, agePlus: 0,
-      });
-    }
-    for (const p of availableProducts as any[]) {
-      if (!p.branch_id) continue;
-      const row = map.get(p.branch_id);
-      if (!row) continue;
-      row.count += 1;
-      row.valueSale += Number(p.sale_price ?? 0);
-      row.valueCost += Number(p.cost_price ?? 0);
-      const days = (now - new Date(p.created_at).getTime()) / (1000 * 60 * 60 * 24);
-      if (days < 60) row.age60 += 1;
-      else if (days < 90) row.age90 += 1;
-      else if (days < 180) row.age180 += 1;
-      else row.agePlus += 1;
-    }
-    return Array.from(map.values());
-  }, [branches, availableProducts]);
+    const nameOf = new Map(branches.map((b) => [b.id, b.name]));
+    return (inventorySnapshot ?? []).map((r) => ({
+      branch_id: r.branch_id,
+      name: nameOf.get(r.branch_id) ?? "—",
+      count: Number(r.count),
+      valueSale: Number(r.value_sale),
+      valueCost: Number(r.value_cost),
+      age60: Number(r.age60),
+      age90: Number(r.age90),
+      age180: Number(r.age180),
+      agePlus: Number(r.age_plus),
+    }));
+  }, [branches, inventorySnapshot]);
 
   const inventoryTotals = useMemo(() => {
     return inventoryByBranch.reduce(
@@ -272,16 +215,6 @@ export default function Reports() {
       { count: 0, valueSale: 0, valueCost: 0, stale: 0 },
     );
   }, [inventoryByBranch]);
-
-  // Top 10 stalest available pieces (oldest first)
-  const stalestPieces = useMemo(() => {
-    const now = Date.now();
-    return [...(availableProducts as any[])]
-      .map((p) => ({ ...p, days: Math.floor((now - new Date(p.created_at).getTime()) / (1000 * 60 * 60 * 24)) }))
-      .filter((p) => p.days >= 90)
-      .sort((a, b) => b.days - a.days)
-      .slice(0, 10);
-  }, [availableProducts]);
 
   useEffect(() => {
     document.title = `جرد شهري | ${monthOptions.find((o) => o.value === month)?.label ?? ""}`;
