@@ -186,6 +186,14 @@ export function isRelevant(a: ActivityItem, ctx: RelevanceContext): boolean {
   // جلسة جرد واحدة ويُغرقان الشريط. يبقيان في سجل النشاط للمدير العام دون سواه.
   if (type === "products" && (a.action === "location_changed" || a.action === "verify")) return false;
 
+  // "بيعت هذه القطعة" مقصودة أن تبقى للمدير العام وحده — من باعها وبكم مبلغ ليس شأن
+  // بقية الموظفين، حتى في فرعهم هم. من يبحث عن القطعة يجدها "مباعة" في الكتالوج عادةً
+  // (بلا سرّية)؛ هذا فقط يمنع دفع الحدث كإشعار نشط. لا يشمل الإرجاع (sale_returned) —
+  // ذاك يهمّ الفرع لأن القطعة عادت للمخزون فيها.
+  if ((type === "sales" && a.action === "sold") || (type === "products" && a.action === "status_sold")) {
+    return false;
+  }
+
   const branches = branchesOf(a).filter(Boolean);
   // حدث بلا انتماء لفرع (تسعيرة مثلاً) — لا نُغرق به موظفي الفروع الأخرى.
   if (branches.length === 0) return false;
