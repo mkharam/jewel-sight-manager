@@ -115,12 +115,12 @@ export default function GoldPrice() {
         <div className="min-w-0">
           <p className="text-sm font-semibold flex items-center gap-2">
             {pricesShown ? <Eye className="size-4 text-primary" /> : <EyeOff className="size-4 text-muted-foreground" />}
-            إظهار أسعار القطع للموظفين
+            تسعيرة البضاعة التلقائية
           </p>
           <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
             {pricesShown
-              ? "سعر كل قطعة ظاهر للموظفين في الكتالوق وصفحة القطعة."
-              : "الأسعار مخفيّة عن الموظفين — يرون سعر الغرام في صفحتهم الرئيسية ويسجّلون السعر يدوياً. أنت ترى الأسعار دائماً."}
+              ? "الموظفون يرون سعر كل قطعة محسوباً من وزنها وسعر غرامها."
+              : "مطفأة — الموظف لا يرى تسعيرة القطع. يبقى يرى سعر الغرام في صفحته الرئيسية، ويرى أي سعر سجّله زميل لزبون. أنت ترى التسعيرة دائماً."}
           </p>
         </div>
         <Switch
@@ -128,10 +128,10 @@ export default function GoldPrice() {
           disabled={savingSetting}
           onCheckedChange={(v) => {
             void setPricesShown(v)
-              .then(() => toast.success(v ? "الأسعار ظاهرة للموظفين" : "الأسعار مخفيّة عن الموظفين"))
+              .then(() => toast.success(v ? "التسعيرة التلقائية مفعّلة للموظفين" : "التسعيرة التلقائية مطفأة"))
               .catch((e: any) => toast.error(e.message ?? "تعذّر حفظ الإعداد"));
           }}
-          aria-label="إظهار أسعار القطع للموظفين"
+          aria-label="تسعيرة البضاعة التلقائية"
         />
       </Card>
 

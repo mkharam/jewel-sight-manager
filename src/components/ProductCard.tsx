@@ -159,24 +159,22 @@ export default function ProductCard({
         </div>
         <div className="flex items-end justify-between pt-1.5 border-t border-border/60 mt-1">
           <div className="min-w-0">
-            {!pricesVisible ? null : product.promo_price ? (
+            {/* تسعيرة القطعة (مثبّتة أو محسوبة من سعر الذهب) تخضع لمفتاح المالك، أما
+                «آخر سعر» فيبقى ظاهراً دائماً: هو ما أُعطي لزبون فعلاً لا تسعيرة المتجر،
+                وهو ما يمنع موظفاً من إعطاء رقم يخالف زميله في فرع آخر. */}
+            {pricesVisible && product.promo_price ? (
               <>
                 <p className="text-xs text-muted-foreground line-through">{formatCurrency(product.sale_price)}</p>
                 <p className="text-base font-bold text-primary">{formatCurrency(product.promo_price)}</p>
               </>
-            ) : product.sale_price != null ? (
+            ) : pricesVisible && product.sale_price != null ? (
               <p className="text-base font-bold text-primary">{formatCurrency(product.sale_price)}</p>
             ) : todayPrice ? (
-              /* لا سعر مثبّت على القطعة (وهذا حال البضاعة كلها) — نحسبه من سعر الذهب
-                 اليوم. مكتوب «سعر اليوم» لأنه يتغيّر بتغيّر سعر الغرام لا رقماً ثابتاً. */
               <>
                 <p className="text-[10px] text-muted-foreground leading-none">سعر اليوم</p>
                 <p className="text-base font-bold text-primary leading-tight">{formatCurrency(todayPrice.total)}</p>
               </>
-            ) : pricesVisible && lastQuote ? (
-              /* لا سعر بيع مثبّت على القطعة (وهذا حال البضاعة كلها اليوم) — نعرض آخر
-                 سعر أُعطي لزبون بدل شرطة فارغة، فيعرف الموظف بكم سُعِّرت من قبل قبل أن
-                 يفتحها. مكتوب أنه «آخر سعر» لا سعرَ القطعة حتى لا يُقرأ كسعر رسمي. */
+            ) : lastQuote ? (
               <>
                 <p className="text-[10px] text-muted-foreground flex items-center gap-0.5 leading-none">
                   <Tag className="size-2.5" /> آخر سعر
@@ -184,9 +182,9 @@ export default function ProductCard({
                 </p>
                 <p className="text-base font-bold text-primary leading-tight">{formatCurrency(lastQuote.price)}</p>
               </>
-            ) : !pricesVisible ? null : (
+            ) : pricesVisible ? (
               <p className="text-xs text-muted-foreground">{priceGap ? PRICE_GAP_LABEL[priceGap] : "لم يُسعَّر بعد"}</p>
-            )}
+            ) : null}
           </div>
           {/* القطعة بلا فرع تترك الخانة فارغة فيبدو الأمر عطلاً — والموظف يُسأل «وين
               القطعة؟» فلا يجد جواباً. نقولها صراحةً: وصلت ولم تُوزَّع على محل بعد. */}
