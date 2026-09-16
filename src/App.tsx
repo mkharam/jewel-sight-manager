@@ -25,6 +25,7 @@ const ReviewUnnamed = lazy(() => import("@/pages/ReviewUnnamed"));
 const MissingWeights = lazy(() => import("@/pages/MissingWeights"));
 const Staff = lazy(() => import("@/pages/Staff"));
 const Reports = lazy(() => import("@/pages/Reports"));
+const DailySummary = lazy(() => import("@/pages/DailySummary"));
 const Transfers = lazy(() => import("@/pages/Transfers"));
 const Reorders = lazy(() => import("@/pages/Reorders"));
 const GoldPrice = lazy(() => import("@/pages/GoldPrice"));
@@ -85,6 +86,7 @@ const App = () => (
                 <Route path="/tray" element={<Navigate to="/upload" replace />} />
                 <Route path="/staff" element={<RequireRole allow={["admin"]}><Staff /></RequireRole>} />
                 <Route path="/reports" element={<RequireRole allow={["admin"]}><Reports /></RequireRole>} />
+                <Route path="/daily-summary" element={<RequireRole allow={["admin"]}><DailySummary /></RequireRole>} />
                 <Route path="/transfers" element={<Transfers />} />
                 <Route path="/reorders" element={<Reorders />} />
                 <Route path="/gold-price" element={<RequireRole allow={["admin", "manager"]}><GoldPrice /></RequireRole>} />

@@ -1649,6 +1649,18 @@ export type Database = {
     }
     Functions: {
       current_user_branch_id: { Args: never; Returns: string }
+      daily_summary: {
+        Args: { p_since: string }
+        Returns: {
+          inquiries_created: number
+          products_added: number
+          quotes_given: number
+          reorders_requested: number
+          sales_count: number
+          sales_revenue: number
+          transfers_requested: number
+        }[]
+      }
       expire_due_reservations: { Args: never; Returns: number }
       has_branch: { Args: { _user_id: string }; Returns: boolean }
       has_role: {

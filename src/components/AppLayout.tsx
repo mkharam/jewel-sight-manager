@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Scale, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Bell } from "lucide-react";
+import { Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Bell } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -53,6 +53,8 @@ const managerExtras: NavItem[] = [
 // أمور إدارية/حسابية — للمدير العام فقط: تقارير الأرباح، سجل المبيعات، التعديل الجماعي،
 // وإدارة الموظفين.
 const adminExtras: NavItem[] = [
+  // أول ما يريد المالك رؤيته كل يوم — ملخّص شامل الفروع بدل فتح خمس صفحات.
+  { to: "/daily-summary", label: "الملخّص اليومي", icon: CalendarDays },
   // الجرد الميداني للإدارة فقط — الموظف يبحث ويسجّل ويطلب، والجرد قرار إداري.
   { to: "/stock-take", label: "جرد ميداني", icon: ClipboardCheck },
   { to: "/reports", label: "التقارير", icon: BarChart3 },
