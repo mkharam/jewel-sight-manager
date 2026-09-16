@@ -317,12 +317,15 @@ async function analyzeAndApply(
     if (description) patch.description = description;
     if (!Object.keys(patch).length) return null;
 
-    // شرط الاسم الافتراضي: لا نكتب فوق اسم عدّله الموظف يدوياً أثناء التحليل.
-    const { error: upErr } = await supabase
-      .from("products")
-      .update(patch as any)
-      .eq("id", saved.productId)
-      .eq("name", PLACEHOLDER_NAME);
+    // عبر دالة مرتفعة الصلاحيات لا update() مباشر: سياسة UPDATE على products تسمح
+    // للمدير العام أو المشرف فقط، فكان تحديث موظف عادي يمرّ بصمت (0 صف تأثّر، بلا خطأ)
+    // وتبقى القطعة "قطعة جديدة" حتى يلتقطها مُشغِّل الخلفية لاحقاً — يُفشِل الغرض من
+    // التحليل الفوري تحديداً لمن يحتاجه أكثر: الموظف الذي يصوّر البضاعة. راجع
+    // apply_ai_analysis في قاعدة البيانات؛ شرط الاسم الافتراضي محروس هناك أيضاً.
+    const { error: upErr } = await supabase.rpc("apply_ai_analysis", {
+      p_product_id: saved.productId,
+      p_patch: patch as any,
+    });
     if (upErr) throw upErr;
 
     await saveStoneColors(saved.productId, a.gemstones);

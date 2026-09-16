@@ -1648,6 +1648,10 @@ export type Database = {
       }
     }
     Functions: {
+      apply_ai_analysis: {
+        Args: { p_patch: Json; p_product_id: string }
+        Returns: undefined
+      }
       current_user_branch_id: { Args: never; Returns: string }
       daily_summary: {
         Args: { p_since: string }

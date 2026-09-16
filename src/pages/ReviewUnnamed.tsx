@@ -97,16 +97,21 @@ export default function ReviewUnnamed() {
     }
     setSavingIds((s) => new Set(s).add(row.id));
     try {
-      const { error } = await supabase
-        .from("products")
-        .update({
+      // عبر دالة مرتفعة الصلاحيات لا update() مباشر: سياسة UPDATE على products تسمح
+      // للمدير العام أو المشرف فقط، فكان حفظ موظف عادي هنا يمرّ بصمت (0 صف تأثّر، بلا
+      // خطأ) وتظهر "تم الحفظ" بينما القطعة بقيت بلا اسم حقيقي. نفس الثغرة التي عولجت
+      // في التصوير المتتالي (راجع apply_ai_analysis)، هنا عبر update_own_product_details
+      // لأن الموظف قد يكون كتب اسماً يدوياً لا نتيجة تحليل بحتة.
+      const { error } = await supabase.rpc("update_own_product_details", {
+        p_product_id: row.id,
+        p_patch: {
           name: draft.name.trim(),
           category_id: draft.category_id || null,
           karat: draft.karat || null,
           item_type: draft.item_type || null,
           description: draft.description || null,
-        })
-        .eq("id", row.id);
+        },
+      });
       if (error) throw error;
       toast.success("تم الحفظ");
       qc.setQueryData<Row[]>(queryKey, (prev) => (prev ?? []).filter((r) => r.id !== row.id));
