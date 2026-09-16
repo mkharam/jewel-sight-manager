@@ -6,16 +6,17 @@ import { useAuth } from "@/hooks/useAuth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store, CheckSquare, Trash2, Loader2, ArrowUpDown, ChevronDown } from "lucide-react";
+import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store, CheckSquare, Trash2, Loader2, ArrowUpDown, ChevronDown, Coins } from "lucide-react";
 import ProductCard from "@/components/ProductCard";
 import { useLatestQuotes } from "@/hooks/useLatestQuotes";
+import { useGoldPrices } from "@/hooks/useGoldPrices";
 import ImageSearchButton from "@/components/ImageSearchButton";
 import AiAssistantSheet from "@/components/AiAssistantSheet";
 import MySalesCard from "@/components/MySalesCard";
 import MyWorkCard from "@/components/MyWorkCard";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
 import { invalidateInventoryAndSales } from "@/lib/queryInvalidation";
-import { PRODUCT_STATUS, KARAT_OPTIONS, ProductStatus } from "@/lib/constants";
+import { PRODUCT_STATUS, KARAT_OPTIONS, ProductStatus, formatCurrency } from "@/lib/constants";
 import { GOLD_COLORS, STONE_COLORS } from "@/lib/luxury";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
@@ -183,6 +184,12 @@ export default function ProductSearch() {
       setBulkBusy(false);
     }
   };
+
+  // سعر الغرام في صدر الصفحة: المعلومة الوحيدة التي يحتاجها الموظف طوال اليوم ليحسب
+  // سعراً لزبون، وهي رقم واحد لا يكشف سعر قطعة بعينها لو نظر الزبون إلى الشاشة —
+  // بخلاف عرض سعر كل قطعة في الكتالوق الذي يستطيع المالك إطفاءه.
+  const { data: goldPrices } = useGoldPrices();
+  const goldRates = Array.from(goldPrices?.values() ?? []).sort((a, b) => a.karat.localeCompare(b.karat));
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
@@ -547,6 +554,22 @@ export default function ProductSearch() {
               {myBranchName ?? "بدون فرع"} · {roleLabel}
             </span>
           </div>
+
+          {goldRates.length > 0 && (
+            <div className="flex items-center gap-1.5 mb-2.5 flex-wrap">
+              <Coins className="size-3.5 text-primary shrink-0" />
+              <span className="text-[11px] text-muted-foreground">سعر الغرام اليوم</span>
+              {goldRates.map((r) => (
+                <span
+                  key={r.karat}
+                  className="inline-flex items-baseline gap-1 px-2 py-0.5 rounded-lg bg-gold-soft border border-primary/20 text-[11px] font-bold"
+                >
+                  <span className="text-muted-foreground font-semibold">{r.karat}</span>
+                  <span className="text-primary" dir="ltr">{formatCurrency(r.price_per_gram)}</span>
+                </span>
+              ))}
+            </div>
+          )}
 
           <div className="flex flex-col gap-2.5">
             <div className="relative flex items-center gap-2">

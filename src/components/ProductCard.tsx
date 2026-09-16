@@ -15,6 +15,7 @@ import { ImageIcon, MapPin, MoreVertical, Check, Barcode, Tag } from "lucide-rea
 import type { LatestQuote } from "@/hooks/useLatestQuotes";
 import { useGoldPrices } from "@/hooks/useGoldPrices";
 import { priceForPiece, PRICE_GAP_LABEL } from "@/lib/pricing";
+import { usePricesVisible } from "@/hooks/useAppSettings";
 import { PRODUCT_STATUS, formatCurrency, formatWeight, getThumbUrl, ProductStatus } from "@/lib/constants";
 import { GOLD_COLORS } from "@/lib/luxury";
 import { supabase } from "@/integrations/supabase/client";
@@ -72,8 +73,12 @@ export default function ProductCard({
   const qc = useQueryClient();
   const { roles, profile } = useAuth();
   // سعر اليوم محسوباً من وزن القطعة وعيارها — الاستعلام مشترك ومخزَّن فلا يتكرّر لكل بطاقة.
+  // الأسعار قد يُطفئها المالك حتى لا تظهر على الشاشة أمام الزبون. راجع usePricesVisible.
+  const pricesVisible = usePricesVisible();
   const { data: goldPrices } = useGoldPrices();
-  const { price: todayPrice, gap: priceGap } = priceForPiece(product, goldPrices);
+  const computed = priceForPiece(product, goldPrices);
+  const todayPrice = pricesVisible ? computed.price : null;
+  const priceGap = pricesVisible ? computed.gap : null;
   const isAdmin = roles.includes("admin");
   const isManager = roles.includes("manager");
   // تغيير الحالة السريع تعديل — يقتصر على المدير العام أو المشرف على قطع فرعه فقط.
@@ -154,7 +159,7 @@ export default function ProductCard({
         </div>
         <div className="flex items-end justify-between pt-1.5 border-t border-border/60 mt-1">
           <div className="min-w-0">
-            {product.promo_price ? (
+            {!pricesVisible ? null : product.promo_price ? (
               <>
                 <p className="text-xs text-muted-foreground line-through">{formatCurrency(product.sale_price)}</p>
                 <p className="text-base font-bold text-primary">{formatCurrency(product.promo_price)}</p>
@@ -168,7 +173,7 @@ export default function ProductCard({
                 <p className="text-[10px] text-muted-foreground leading-none">سعر اليوم</p>
                 <p className="text-base font-bold text-primary leading-tight">{formatCurrency(todayPrice.total)}</p>
               </>
-            ) : lastQuote ? (
+            ) : pricesVisible && lastQuote ? (
               /* لا سعر بيع مثبّت على القطعة (وهذا حال البضاعة كلها اليوم) — نعرض آخر
                  سعر أُعطي لزبون بدل شرطة فارغة، فيعرف الموظف بكم سُعِّرت من قبل قبل أن
                  يفتحها. مكتوب أنه «آخر سعر» لا سعرَ القطعة حتى لا يُقرأ كسعر رسمي. */
@@ -179,7 +184,7 @@ export default function ProductCard({
                 </p>
                 <p className="text-base font-bold text-primary leading-tight">{formatCurrency(lastQuote.price)}</p>
               </>
-            ) : (
+            ) : !pricesVisible ? null : (
               <p className="text-xs text-muted-foreground">{priceGap ? PRICE_GAP_LABEL[priceGap] : "لم يُسعَّر بعد"}</p>
             )}
           </div>

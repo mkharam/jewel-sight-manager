@@ -26,6 +26,7 @@ import { useConfirm } from "@/components/ConfirmDialogProvider";
 import { invalidateInventoryAndSales } from "@/lib/queryInvalidation";
 import { useGoldPrices } from "@/hooks/useGoldPrices";
 import { priceForPiece, PRICE_GAP_LABEL } from "@/lib/pricing";
+import { usePricesVisible } from "@/hooks/useAppSettings";
 
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
@@ -38,11 +39,9 @@ export default function ProductDetail() {
   const isManager = roles.includes("manager");
   const [activeImage, setActiveImage] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
-  // للموظف تحديداً (لا يملك صلاحية التعديل الكاملة): تحديث الوزن وإضافة صور فقط.
-  const [weightInput, setWeightInput] = useState("");
-  const [savingWeight, setSavingWeight] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const { data: goldPrices } = useGoldPrices();
+  const pricesVisible = usePricesVisible();
 
 
   const { data: product, isLoading } = useQuery({
@@ -102,10 +101,6 @@ export default function ProductDetail() {
     enabled: !!id,
   });
 
-  useEffect(() => {
-    setWeightInput(product?.weight_grams != null ? String(product.weight_grams) : "");
-  }, [product?.weight_grams]);
-
   // بث مباشر للأسعار والاستفسارات لهذه القطعة
   useEffect(() => {
     if (!id) return;
@@ -146,7 +141,9 @@ export default function ProductDetail() {
   // إضافة صورة تتبع سياسة product_images: المدير العام، أو قطعة في فرع المستخدم — بصرف
   // النظر عن حالتها (قطعة محجوزة قد تحتاج صورة أوضح للزبون).
   // سعر القطعة اليوم = وزنها × سعر غرام عيارها + الأجرة. راجع src/lib/pricing.ts
-  const { price: todayPrice, gap: priceGap } = priceForPiece(product, goldPrices);
+  const computedPrice = priceForPiece(product, goldPrices);
+  const todayPrice = pricesVisible ? computedPrice.price : null;
+  const priceGap = pricesVisible ? computedPrice.gap : null;
   const canAddPhoto = isAdmin || (!!product.branch_id && product.branch_id === profile?.branch_id);
   const canDeleteOwnUpload = canManageBranchProduct;
   const canDeleteProduct = canEditProduct || canManageBranchProduct;
@@ -180,23 +177,6 @@ export default function ProductDetail() {
     });
     toast.success("تم التحقق من القطعة");
     qc.invalidateQueries({ queryKey: ["product", id] });
-  };
-
-  const saveWeight = async () => {
-    setSavingWeight(true);
-    try {
-      const w = weightInput.trim() ? parseFloat(weightInput) : null;
-      const { error } = await supabase.rpc("update_product_weight", { p_product_id: id!, p_weight_grams: w });
-      if (error) throw error;
-      toast.success("تم تحديث الوزن");
-      qc.invalidateQueries({ queryKey: ["product", id] });
-      // الوزن يظهر على بطاقة القطعة في الكتالوج أيضاً.
-      qc.invalidateQueries({ queryKey: ["products"] });
-    } catch (e: any) {
-      toast.error(e.message ?? "تعذّر تحديث الوزن");
-    } finally {
-      setSavingWeight(false);
-    }
   };
 
   const addPhoto = async (file: File) => {
@@ -413,6 +393,7 @@ export default function ProductDetail() {
           {/* سعر اليوم بارزاً فوق زر التسعير مباشرة: هذا هو الرقم الذي يُقال للزبون
               الواقف أمام الموظف، وكان يُحسب في الرأس أو بمكالمة لأن الحاسبة محبوسة في
               صفحة «سعر الذهب» التي لا يراها الموظف أصلاً. */}
+          {pricesVisible && (
           <Card className="p-4 bg-gold-soft border-primary/25">
             {todayPrice ? (
               <>
@@ -441,6 +422,7 @@ export default function ProductDetail() {
               </div>
             )}
           </Card>
+          )}
 
           <QuickQuoteSheet
             productId={id!}
@@ -480,42 +462,6 @@ export default function ProductDetail() {
               karat: product.karat, gold_color: product.gold_color,
               weight_grams: product.weight_grams, ring_size: product.ring_size,
             }} />
-          )}
-
-          {/* للموظف الذي لا يملك صلاحية التعديل الكاملة: تحديث الوزن وإضافة صور فقط */}
-          {!canEditProduct && canEdit && (
-            <Card className="p-4 space-y-3">
-              <p className="text-sm font-semibold">تحديث سريع</p>
-              <div className="flex gap-2">
-                <Input
-                  type="text"
-                  inputMode="decimal"
-                  value={weightInput}
-                  onChange={(e) => setWeightInput(normalizeDecimalInput(e.target.value))}
-                  placeholder="الوزن (غ)"
-                  dir="ltr"
-                  className="flex-1"
-                />
-                <Button variant="outline" onClick={saveWeight} disabled={savingWeight}>
-                  {savingWeight ? <Loader2 className="size-4 animate-spin" /> : <Scale className="size-4" />}
-                </Button>
-              </div>
-              <label className="flex items-center justify-center gap-2 h-10 rounded-md border border-input text-sm cursor-pointer hover:bg-accent">
-                {uploadingPhoto ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4" />}
-                إضافة صورة
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  disabled={uploadingPhoto}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    e.target.value = "";
-                    if (file) void addPhoto(file);
-                  }}
-                />
-              </label>
-            </Card>
           )}
 
           <Link to={`/transfers?product=${id}&name=${encodeURIComponent(product.name)}`} className="block">

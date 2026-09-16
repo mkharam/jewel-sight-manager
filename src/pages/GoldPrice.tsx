@@ -8,7 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Coins, Save, AlertTriangle } from "lucide-react";
+import { Coins, Save, AlertTriangle, Eye, EyeOff } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { useShowPricesSetting } from "@/hooks/useAppSettings";
 import { formatCurrency, formatDate } from "@/lib/constants";
 import { suggestedPrice } from "@/lib/luxury";
 import { toast } from "sonner";
@@ -88,6 +90,8 @@ export default function GoldPrice() {
     .filter(([k]) => !latest.get(k))
     .map(([karat, pieces]) => ({ karat, pieces }));
 
+  const { enabled: pricesShown, setEnabled: setPricesShown, saving: savingSetting } = useShowPricesSetting();
+
   const suggestion = suggestedPrice(Number(weight) || null, calcRow?.price_per_gram ?? null, calcRow?.making_charge ?? null);
 
   return (
@@ -101,6 +105,33 @@ export default function GoldPrice() {
           <p className="text-xs text-muted-foreground">حدّث سعر الجرام والمصنعية لكل عيار — يستخدمها الموظفون لحساب السعر المقترح.</p>
         </div>
       </header>
+
+      {/* مفتاح المالك: الزبون يقف بجانب الموظف وقد يرى شاشته، فليس دائماً مرغوباً أن
+          يظهر سعر كل قطعة في الكتالوق. حين يُطفأ يبقى سعر الغرام وحده ظاهراً للموظف في
+          صفحته الرئيسية ويبقى تسجيل السعر لزبون متاحاً. المالك يرى الأسعار دائماً. */}
+      <Card className="p-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold flex items-center gap-2">
+            {pricesShown ? <Eye className="size-4 text-primary" /> : <EyeOff className="size-4 text-muted-foreground" />}
+            إظهار أسعار القطع للموظفين
+          </p>
+          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+            {pricesShown
+              ? "سعر كل قطعة ظاهر للموظفين في الكتالوق وصفحة القطعة."
+              : "الأسعار مخفيّة عن الموظفين — يرون سعر الغرام في صفحتهم الرئيسية ويسجّلون السعر يدوياً. أنت ترى الأسعار دائماً."}
+          </p>
+        </div>
+        <Switch
+          checked={pricesShown}
+          disabled={savingSetting}
+          onCheckedChange={(v) => {
+            void setPricesShown(v)
+              .then(() => toast.success(v ? "الأسعار ظاهرة للموظفين" : "الأسعار مخفيّة عن الموظفين"))
+              .catch((e: any) => toast.error(e.message ?? "تعذّر حفظ الإعداد"));
+          }}
+          aria-label="إظهار أسعار القطع للموظفين"
+        />
+      </Card>
 
       {/* عيار عليه بضاعة ولا سعر غرام له = قطع لا يمكن تسعيرها إطلاقاً، ولا شيء كان
           يُنبّه إلى ذلك: سُجّل سعر ٢٢K بينما بضاعة المتجر ١٨K و٢١K. */}

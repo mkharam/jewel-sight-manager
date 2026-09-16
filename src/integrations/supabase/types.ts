@@ -140,6 +140,27 @@ export type Database = {
         }
         Relationships: []
       }
+      app_settings: {
+        Row: {
+          key: string
+          updated_at: string
+          updated_by: string | null
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+          value: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Relationships: []
+      }
       branches: {
         Row: {
           code: string | null
@@ -1684,6 +1705,7 @@ export type Database = {
         Args: { _branch_id: string; _item_type?: string }
         Returns: string
       }
+      product_has_sales: { Args: { p_product_id: string }; Returns: boolean }
       return_sale: {
         Args: { _reason: string; _sale_id: string }
         Returns: undefined
