@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
     const imageBase64: string | undefined = body?.imageBase64;
     const mimeType: string = body?.mimeType ?? "image/jpeg";
     const categories: { id: string; name: string }[] = body?.categories ?? [];
-    const matchCount: number = Math.min(Math.max(Number(body?.matchCount ?? 12), 1), 40);
+    const matchCount: number = Math.min(Math.max(Number(body?.matchCount ?? 12), 1), 100);
 
     if (!imageBase64) return json({ error: "imageBase64 required" }, 400);
 
@@ -89,7 +89,8 @@ Deno.serve(async (req) => {
         ...m,
         kind: (m.visual ?? 0) >= 0.92 ? "exact" : (m.visual ?? 0) >= 0.75 ? "similar" : "same_attributes",
       }))
-      .filter((m) => (m.visual ?? 0) >= 0.55 || (m.textual ?? 0) >= 0.72)
+      // نُبقي حتى التشابه الطفيف — الموظف يريد أن يرى كل الخيارات الممكنة لا القليل منها.
+      .filter((m) => (m.visual ?? 0) >= 0.35 || (m.textual ?? 0) >= 0.5)
       .sort((a, b) => b.similarity - a.similarity)
       .slice(0, matchCount);
 
