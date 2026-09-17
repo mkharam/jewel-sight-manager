@@ -1,4 +1,4 @@
-// سعر القطعة اليوم = وزنها × سعر غرام عيارها + الأجرة.
+// سعر القطعة اليوم = وزنها × سعر غرام عيارها.
 //
 // كل قطعة في المتجر بلا سعر مثبّت (sale_price فارغ في ١٤٠ قطعة)، بينما الوزن والعيار
 // وسعر الغرام كلها موجودة — فالسعر محسوب لا مُدخَل. حسابه في مكان واحد يضمن أن الرقم
@@ -16,7 +16,6 @@ export interface PriceBreakdown {
   /** السعر النهائي المقترح للقطعة اليوم. */
   total: number;
   pricePerGram: number;
-  makingCharge: number;
   weight: number;
   effectiveDate: string;
 }
@@ -36,14 +35,13 @@ export function priceForPiece(
   // فبقيت قطع ٢١K بلا أي سعر. نقولها صراحةً بدل ترك الخانة فارغة.
   if (!rate) return { price: null, gap: "no-rate" };
 
-  const total = suggestedPrice(piece.weight_grams, rate.price_per_gram, rate.making_charge);
+  const total = suggestedPrice(piece.weight_grams, rate.price_per_gram);
   if (total == null) return { price: null, gap: "no-rate" };
 
   return {
     price: {
       total,
       pricePerGram: rate.price_per_gram,
-      makingCharge: rate.making_charge,
       weight: piece.weight_grams,
       effectiveDate: rate.effective_date,
     },

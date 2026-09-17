@@ -57,16 +57,13 @@ export const AGE_BUCKET_META: Record<AgeBucket, { label: string; color: string }
   "180+": { label: "راكد (+180 يوم)", color: "bg-destructive/20 text-foreground" },
 };
 
-/** السعر المقترح = (الوزن × سعر الجرام) + المصنعية (لكل جرام أو مبلغ ثابت) */
+/** السعر المقترح = الوزن × سعر الجرام (بدون أجرة مصنعية) */
 export function suggestedPrice(
   weight: number | null | undefined,
   pricePerGram: number | null | undefined,
-  makingCharge: number | null | undefined,
-  makingPerGram = true,
 ): number | null {
   if (!weight || !pricePerGram) return null;
-  const making = makingCharge ?? 0;
-  return Math.round(weight * pricePerGram + (makingPerGram ? weight * making : making));
+  return Math.round(weight * pricePerGram);
 }
 
 export function whatsappShareUrl(text: string, phone?: string | null) {
