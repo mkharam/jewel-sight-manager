@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ImageIcon, MapPin, MoreVertical, Check, Barcode, Tag } from "lucide-react";
+import { ImageIcon, MapPin, MoreVertical, Check, Barcode, Tag, Scale } from "lucide-react";
 import type { LatestQuote } from "@/hooks/useLatestQuotes";
 import { useGoldPrices } from "@/hooks/useGoldPrices";
 import { priceForPiece, PRICE_GAP_LABEL } from "@/lib/pricing";
@@ -124,6 +124,14 @@ export default function ProductCard({
         <Badge className={`absolute top-2 right-2 ${status.color} border-0 shadow-md`}>
           {status.label}
         </Badge>
+        {/* تنبيه بارز فوق الصورة — الوزن أساس التسعير، وقطعة بلا وزن لا يمكن تسعيرها
+            لزبون واقف أمام الموظف، فتستحق تحذيراً واضحاً لا مجرد غياب الرقم. */}
+        {product.weight_grams == null && (
+          <Badge className="absolute bottom-2 left-2 bg-destructive text-destructive-foreground border-0 shadow-md flex items-center gap-1">
+            <Scale className="size-3" />
+            بلا وزن
+          </Badge>
+        )}
         {(product.karat || product.gold_color) && (
           <Badge data-karat-badge variant="secondary" className="absolute top-2 left-2 bg-card/90 backdrop-blur border-0 shadow-sm">
             {[product.karat, GOLD_COLORS.find((c) => c.value === product.gold_color)?.label].filter(Boolean).join(" · ")}

@@ -13,7 +13,7 @@ import { useUploadQueuePendingCount } from "@/lib/uploadQueue";
 import { ensurePushEnabled } from "@/lib/push";
 import { resumePendingUploads } from "@/lib/uploadRunner";
 
-type NavItem = { to: string; label: string; icon: any; end?: boolean; badgeKey?: "transfers" | "uploads" | "reorders" };
+type NavItem = { to: string; label: string; icon: any; end?: boolean; badgeKey?: "transfers" | "uploads" | "reorders" | "weights" };
 
 const baseNav: NavItem[] = [
   { to: "/", label: "البحث", icon: Search, end: true },
@@ -40,7 +40,7 @@ const desktopExtras: NavItem[] = [
 
 // مفيد للعمل اليومي — يراه المشرف والموظف بلا فرق بينهما، بخلاف الأمور الإدارية أدناه.
 const sharedExtras: NavItem[] = [
-  { to: "/weights", label: "قطع بلا وزن", icon: Scale },
+  { to: "/weights", label: "قطع بلا وزن", icon: Scale, badgeKey: "weights" },
   { to: "/customers", label: "العملاء", icon: Users },
   { to: "/reorders", label: "طلبات إعادة الطلب", icon: PackagePlus, badgeKey: "reorders" },
 ];
@@ -153,8 +153,37 @@ export default function AppLayout() {
     return () => { supabase.removeChannel(ch); };
   }, [user, qc]);
 
+  // عدد القطع بلا وزن — لفرع المستخدم إن كان مُسنداً لفرع، وإلا (مدير عام بلا فرع
+  // محدَّد) كل الفروع، ليرى دائماً رقماً يعكس شيئاً فعلياً بدل صفر مضلِّل.
+  const { data: missingWeights = 0 } = useQuery({
+    queryKey: ["missing-weights-count", branchId, user?.id],
+    queryFn: async () => {
+      let q = supabase
+        .from("products")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "available")
+        .is("weight_grams", null);
+      if (branchId) q = q.eq("branch_id", branchId);
+      const { count } = await q;
+      return count ?? 0;
+    },
+    enabled: !!user,
+    refetchInterval: 60_000,
+  });
+
+  useEffect(() => {
+    if (!user) return;
+    const ch = supabase
+      .channel("missing-weights-badge")
+      .on("postgres_changes", { event: "*", schema: "public", table: "products" }, () => {
+        qc.invalidateQueries({ queryKey: ["missing-weights-count"] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [user, qc]);
+
   const pendingUploads = useUploadQueuePendingCount();
-  const badges: Record<string, number> = { transfers: pendingTransfers, uploads: pendingUploads, reorders: pendingReorders };
+  const badges: Record<string, number> = { transfers: pendingTransfers, uploads: pendingUploads, reorders: pendingReorders, weights: missingWeights };
 
   const [moreOpen, setMoreOpen] = useState(false);
 
