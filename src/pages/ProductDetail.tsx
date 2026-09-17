@@ -140,7 +140,7 @@ export default function ProductDetail() {
   const canEditBranchProduct = canManageBranchProduct;
   // إضافة صورة تتبع سياسة product_images: المدير العام، أو قطعة في فرع المستخدم — بصرف
   // النظر عن حالتها (قطعة محجوزة قد تحتاج صورة أوضح للزبون).
-  // سعر القطعة اليوم = وزنها × سعر غرام عيارها + الأجرة. راجع src/lib/pricing.ts
+  // سعر القطعة اليوم = وزنها × سعر غرام عيارها. راجع src/lib/pricing.ts
   const computedPrice = priceForPiece(product, goldPrices);
   const todayPrice = pricesVisible ? computedPrice.price : null;
   const priceGap = pricesVisible ? computedPrice.gap : null;
@@ -406,7 +406,6 @@ export default function ProductDetail() {
                   </div>
                   <p className="text-[11px] text-muted-foreground text-left leading-relaxed">
                     {formatWeight(todayPrice.weight)} × {formatCurrency(todayPrice.pricePerGram)}
-                    {todayPrice.makingCharge > 0 && <> + أجرة {formatCurrency(todayPrice.makingCharge)}/غ</>}
                   </p>
                 </div>
                 <p className="text-[10px] text-muted-foreground mt-1.5">

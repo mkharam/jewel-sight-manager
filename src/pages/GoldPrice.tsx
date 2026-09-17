@@ -94,7 +94,7 @@ export default function GoldPrice() {
 
   const { enabled: pricesShown, setEnabled: setPricesShown, saving: savingSetting } = useShowPricesSetting();
 
-  const suggestion = suggestedPrice(Number(weight) || null, calcRow?.price_per_gram ?? null, calcRow?.making_charge ?? null);
+  const suggestion = suggestedPrice(Number(weight) || null, calcRow?.price_per_gram ?? null);
 
   return (
     <div className="space-y-4 max-w-4xl mx-auto">
