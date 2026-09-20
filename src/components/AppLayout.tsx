@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Bell } from "lucide-react";
+import { Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Bell, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -59,6 +59,7 @@ const adminExtras: NavItem[] = [
   { to: "/stock-take", label: "جرد ميداني", icon: ClipboardCheck },
   { to: "/reports", label: "التقارير", icon: BarChart3 },
   { to: "/sales", label: "المبيعات", icon: Receipt },
+  { to: "/admin/repairs", label: "الصيانة", icon: Wrench },
   { to: "/admin/products", label: "إدارة القطع", icon: ListChecks },
 ];
 

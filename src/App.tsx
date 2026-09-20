@@ -31,6 +31,7 @@ const Reorders = lazy(() => import("@/pages/Reorders"));
 const GoldPrice = lazy(() => import("@/pages/GoldPrice"));
 const StockTake = lazy(() => import("@/pages/StockTake"));
 const Sales = lazy(() => import("@/pages/Sales"));
+const Repairs = lazy(() => import("@/pages/Repairs"));
 const Customers = lazy(() => import("@/pages/Customers"));
 const LiveAdd = lazy(() => import("@/pages/LiveAdd"));
 const AdminProducts = lazy(() => import("@/pages/AdminProducts"));
@@ -92,6 +93,7 @@ const App = () => (
                 <Route path="/gold-price" element={<RequireRole allow={["admin", "manager"]}><GoldPrice /></RequireRole>} />
                 <Route path="/stock-take" element={<RequireRole allow={["admin"]}><StockTake /></RequireRole>} />
                 <Route path="/sales" element={<RequireRole allow={["admin"]}><Sales /></RequireRole>} />
+                <Route path="/admin/repairs" element={<RequireRole allow={["admin"]}><Repairs /></RequireRole>} />
                 <Route path="/customers" element={<Customers />} />
                 <Route path="/admin/products" element={<RequireRole allow={["admin"]}><AdminProducts /></RequireRole>} />
               </Route>
