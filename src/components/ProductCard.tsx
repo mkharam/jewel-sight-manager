@@ -15,7 +15,7 @@ import { ImageIcon, MapPin, MoreVertical, Check, Barcode, Tag } from "lucide-rea
 import type { LatestQuote } from "@/hooks/useLatestQuotes";
 import { useGoldPrices } from "@/hooks/useGoldPrices";
 import { priceForPiece, PRICE_GAP_LABEL } from "@/lib/pricing";
-import { usePricesVisible } from "@/hooks/useAppSettings";
+import { usePriceVisibleFor } from "@/hooks/useAppSettings";
 import { PRODUCT_STATUS, formatCurrency, formatWeight, getThumbUrl, ProductStatus } from "@/lib/constants";
 import { GOLD_COLORS } from "@/lib/luxury";
 import { supabase } from "@/integrations/supabase/client";
@@ -74,9 +74,9 @@ export default function ProductCard({
   const { roles, profile } = useAuth();
   // سعر اليوم محسوباً من وزن القطعة وعيارها — الاستعلام مشترك ومخزَّن فلا يتكرّر لكل بطاقة.
   // الأسعار قد يُطفئها المالك حتى لا تظهر على الشاشة أمام الزبون. راجع usePricesVisible.
-  const pricesVisible = usePricesVisible();
   const { data: goldPrices } = useGoldPrices();
   const computed = priceForPiece(product, goldPrices);
+  const pricesVisible = usePriceVisibleFor(product.promo_price ?? product.sale_price ?? computed.price?.total ?? null);
   const todayPrice = pricesVisible ? computed.price : null;
   const priceGap = pricesVisible ? computed.gap : null;
   const isAdmin = roles.includes("admin");

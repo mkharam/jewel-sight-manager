@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Coins, Save, AlertTriangle, Eye, EyeOff } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
-import { useShowPricesSetting } from "@/hooks/useAppSettings";
+import { useShowPricesSetting, usePriceRangeSetting } from "@/hooks/useAppSettings";
 import { KARAT_OPTIONS, formatCurrency, formatDate } from "@/lib/constants";
 import { suggestedPrice } from "@/lib/luxury";
 import { toast } from "sonner";
@@ -94,6 +94,27 @@ export default function GoldPrice() {
 
   const { enabled: pricesShown, setEnabled: setPricesShown, saving: savingSetting } = useShowPricesSetting();
 
+  const { range, setRange, saving: savingRange } = usePriceRangeSetting();
+  const [rangeOn, setRangeOn] = useState(false);
+  const [rangeMin, setRangeMin] = useState("");
+  const [rangeMax, setRangeMax] = useState("");
+  useEffect(() => {
+    setRangeOn(range.enabled);
+    setRangeMin(range.min == null ? "" : String(range.min));
+    setRangeMax(range.max == null ? "" : String(range.max));
+  }, [range.enabled, range.min, range.max]);
+  const saveRange = (enabled: boolean) => {
+    const min = rangeMin.trim() === "" ? null : Number(rangeMin);
+    const max = rangeMax.trim() === "" ? null : Number(rangeMax);
+    if ((min != null && isNaN(min)) || (max != null && isNaN(max)) || (min != null && max != null && min > max)) {
+      toast.error("نطاق غير صحيح — تأكد أن الحد الأدنى أقل من الأعلى");
+      return;
+    }
+    void setRange({ enabled, min, max })
+      .then(() => toast.success(enabled ? "تم حفظ نطاق الأسعار" : "أُلغي تحديد النطاق"))
+      .catch((e: any) => toast.error(e.message ?? "تعذّر حفظ الإعداد"));
+  };
+
   const suggestion = suggestedPrice(Number(weight) || null, calcRow?.price_per_gram ?? null);
 
   return (
@@ -133,6 +154,41 @@ export default function GoldPrice() {
           }}
           aria-label="تسعيرة البضاعة التلقائية"
         />
+      </Card>
+
+      <Card className="p-3 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">عرض أسعار نطاق معيّن فقط</p>
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+              {rangeOn
+                ? "الموظف يرى سعر القطعة فقط إن وقع ضمن النطاق أدناه، وغيرها تظهر بلا سعر. أنت ترى كل الأسعار دائماً."
+                : "مطفأ — تُعرض الأسعار بلا تحديد نطاق (حسب مفتاح التسعيرة أعلاه)."}
+            </p>
+          </div>
+          <Switch
+            checked={rangeOn}
+            disabled={savingRange}
+            onCheckedChange={(v) => {
+              setRangeOn(v);
+              saveRange(v);
+            }}
+            aria-label="عرض أسعار نطاق معيّن فقط"
+          />
+        </div>
+        {rangeOn && (
+          <div className="flex items-end gap-2 flex-wrap">
+            <div>
+              <Label className="text-xs">من</Label>
+              <Input type="number" inputMode="numeric" className="w-32" value={rangeMin} onChange={(e) => setRangeMin(e.target.value)} placeholder="بلا حد أدنى" />
+            </div>
+            <div>
+              <Label className="text-xs">إلى</Label>
+              <Input type="number" inputMode="numeric" className="w-32" value={rangeMax} onChange={(e) => setRangeMax(e.target.value)} placeholder="بلا حد أعلى" />
+            </div>
+            <Button size="sm" disabled={savingRange} onClick={() => saveRange(true)}>حفظ النطاق</Button>
+          </div>
+        )}
       </Card>
 
       {/* عيار عليه بضاعة ولا سعر غرام له = قطع لا يمكن تسعيرها إطلاقاً، ولا شيء كان

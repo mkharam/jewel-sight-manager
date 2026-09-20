@@ -26,7 +26,7 @@ import { useConfirm } from "@/components/ConfirmDialogProvider";
 import { invalidateInventoryAndSales } from "@/lib/queryInvalidation";
 import { useGoldPrices } from "@/hooks/useGoldPrices";
 import { priceForPiece, PRICE_GAP_LABEL } from "@/lib/pricing";
-import { usePricesVisible } from "@/hooks/useAppSettings";
+import { usePriceVisibleFor } from "@/hooks/useAppSettings";
 
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
@@ -41,7 +41,6 @@ export default function ProductDetail() {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const { data: goldPrices } = useGoldPrices();
-  const pricesVisible = usePricesVisible();
 
 
   const { data: product, isLoading } = useQuery({
@@ -142,6 +141,7 @@ export default function ProductDetail() {
   // النظر عن حالتها (قطعة محجوزة قد تحتاج صورة أوضح للزبون).
   // سعر القطعة اليوم = وزنها × سعر غرام عيارها + الأجرة. راجع src/lib/pricing.ts
   const computedPrice = priceForPiece(product, goldPrices);
+  const pricesVisible = usePriceVisibleFor(product.promo_price ?? product.sale_price ?? computedPrice.price?.total ?? null);
   const todayPrice = pricesVisible ? computedPrice.price : null;
   const priceGap = pricesVisible ? computedPrice.gap : null;
   const canAddPhoto = isAdmin || (!!product.branch_id && product.branch_id === profile?.branch_id);
@@ -362,7 +362,7 @@ export default function ProductDetail() {
             </div>
 
             <div className="pt-3 border-t border-border">
-              {product.promo_price ? (
+              {!pricesVisible ? null : product.promo_price ? (
                 <div>
                   <p className="text-sm text-muted-foreground line-through">{formatCurrency(product.sale_price)}</p>
                   <p className="text-3xl font-extrabold text-primary">{formatCurrency(product.promo_price)}</p>
