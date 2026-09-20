@@ -124,6 +124,11 @@ export default function ProductCard({
         <Badge className={`absolute top-2 right-2 ${status.color} border-0 shadow-md`}>
           {status.label}
         </Badge>
+        {product.weight_grams == null && (
+          <Badge className="absolute bottom-2 left-2 bg-destructive text-destructive-foreground border-0 shadow-md">
+            بلا وزن
+          </Badge>
+        )}
         {(product.karat || product.gold_color) && (
           <Badge data-karat-badge variant="secondary" className="absolute top-2 left-2 bg-card/90 backdrop-blur border-0 shadow-sm">
             {[product.karat, GOLD_COLORS.find((c) => c.value === product.gold_color)?.label].filter(Boolean).join(" · ")}

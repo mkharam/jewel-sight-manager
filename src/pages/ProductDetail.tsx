@@ -406,7 +406,6 @@ export default function ProductDetail() {
                   </div>
                   <p className="text-[11px] text-muted-foreground text-left leading-relaxed">
                     {formatWeight(todayPrice.weight)} × {formatCurrency(todayPrice.pricePerGram)}
-                    {todayPrice.makingCharge > 0 && <> + أجرة {formatCurrency(todayPrice.makingCharge)}/غ</>}
                   </p>
                 </div>
                 <p className="text-[10px] text-muted-foreground mt-1.5">

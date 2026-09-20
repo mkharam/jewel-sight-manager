@@ -85,7 +85,7 @@ export default function ImageSearchButton({ categories, onResults, variant = "bu
       });
 
       const { data, error } = await supabase.functions.invoke("image-search", {
-        body: { imageBase64: base64, mimeType: file.type, categories, matchCount: 12 },
+        body: { imageBase64: base64, mimeType: file.type, categories, matchCount: 60 },
       });
 
       if (error) throw error;
