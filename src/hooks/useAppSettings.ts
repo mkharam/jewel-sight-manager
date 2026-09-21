@@ -65,6 +65,30 @@ export function usePriceVisibleFor(price: number | null | undefined): boolean {
   return (r.min == null || price >= r.min) && (r.max == null || price <= r.max);
 }
 
+const SPOT_RATE = "spot_usd_lyd_rate";
+const SPOT_MARGIN = "spot_margin_percent";
+
+/** سعر الدولار بالدينار وهامش الربح % لاقتراح سعر الذهب من السوق العالمي. */
+export function useSpotSettings() {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+  const { data } = useSettings();
+  const numOrNull = (v: any) => (v === null || v === undefined || v === "" || isNaN(Number(v)) ? null : Number(v));
+
+  const save = async (rate: number | null, marginPercent: number) => {
+    const now = new Date().toISOString();
+    const rows = [
+      { key: SPOT_RATE, value: rate as any, updated_by: user?.id, updated_at: now },
+      { key: SPOT_MARGIN, value: marginPercent as any, updated_by: user?.id, updated_at: now },
+    ];
+    const { error } = await supabase.from("app_settings").upsert(rows);
+    if (error) throw error;
+    await qc.invalidateQueries({ queryKey: ["app-settings"] });
+  };
+
+  return { rate: numOrNull(data?.get(SPOT_RATE)), marginPercent: numOrNull(data?.get(SPOT_MARGIN)) ?? 0, save };
+}
+
 /** نطاق الأسعار المسموح للموظف برؤيته — لشاشة المالك. */
 export function usePriceRangeSetting() {
   const qc = useQueryClient();

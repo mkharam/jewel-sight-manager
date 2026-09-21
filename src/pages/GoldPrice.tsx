@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { useShowPricesSetting, usePriceRangeSetting } from "@/hooks/useAppSettings";
 import { KARAT_OPTIONS, formatCurrency, formatDate } from "@/lib/constants";
 import { businessToday } from "@/lib/dates";
+import GoldSpotSuggestion from "@/components/GoldSpotSuggestion";
 import { suggestedPrice } from "@/lib/luxury";
 import { toast } from "sonner";
 
@@ -225,6 +226,10 @@ export default function GoldPrice() {
           </p>
         </Card>
       )}
+
+      <GoldSpotSuggestion
+        onUse={(karat, price) => setForm((f) => ({ ...f, [karat]: { price: String(price), making: f[karat]?.making ?? "" } }))}
+      />
 
       <div className="grid sm:grid-cols-2 gap-3">
         {KARATS.map((k) => {
