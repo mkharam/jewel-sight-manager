@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Bell, Wrench } from "lucide-react";
+import { Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Bell, Wrench, Landmark } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import NotificationsBell from "@/components/NotificationsBell";
 import InstallPrompt from "@/components/InstallPrompt";
+import StaleGoldPriceBanner from "@/components/StaleGoldPriceBanner";
 import { useUploadQueuePendingCount } from "@/lib/uploadQueue";
 import { ensurePushEnabled } from "@/lib/push";
 import { resumePendingUploads } from "@/lib/uploadRunner";
@@ -50,6 +51,8 @@ const managerExtras: NavItem[] = [
   { to: "/gold-price", label: "سعر الذهب", icon: Coins },
   // الصيانة: المدير العام يرى كل الفروع، والمشرف فرعه وحده (تفرضه RLS).
   { to: "/admin/repairs", label: "الصيانة", icon: Wrench },
+  // إقفال اليوم: المشرف يقفل فرعه، والمدير العام يراجع كل الفروع.
+  { to: "/closing", label: "إقفال اليوم", icon: Landmark },
 ];
 
 // أمور إدارية/حسابية — للمدير العام فقط: تقارير الأرباح، سجل المبيعات، التعديل الجماعي،
@@ -276,6 +279,7 @@ export default function AppLayout() {
       </header>
 
       <main className="flex-1 container mx-auto px-3 sm:px-4 py-3 sm:py-4 pb-28 md:pb-8">
+        <StaleGoldPriceBanner />
         <Outlet />
       </main>
 

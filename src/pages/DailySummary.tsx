@@ -11,9 +11,10 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   CalendarDays, Package, Tag, MessageCircle, Receipt, PackagePlus, ArrowLeftRight,
-  Scale, TrendingUp, Loader2,
+  Scale, TrendingUp, Loader2, Landmark,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/constants";
+import { businessToday } from "@/lib/dates";
 
 function todayStartISO() {
   const d = new Date();
@@ -59,6 +60,25 @@ export default function DailySummary() {
         .is("weight_grams", null)
         .eq("status", "available");
       return count ?? 0;
+    },
+  });
+
+  // أي الفروع أقفلت اليوم — المالك يرى فوراً من لم يُقفل ومن عنده فرق.
+  const { data: closingStatus } = useQuery({
+    queryKey: ["daily-summary-closings", businessToday()],
+    refetchInterval: 5 * 60_000,
+    queryFn: async () => {
+      const db = supabase as any;
+      const [{ data: br }, { data: cl }] = await Promise.all([
+        supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
+        db.from("daily_closings").select("branch_id, diff_cash, diff_card, diff_transfer").eq("closing_date", businessToday()),
+      ]);
+      const byBranch = new Map<string, any>(((cl ?? []) as any[]).map((c) => [c.branch_id, c]));
+      return ((br ?? []) as any[]).map((b) => {
+        const c = byBranch.get(b.id);
+        const diff = c ? [c.diff_cash, c.diff_card, c.diff_transfer].some((d: number) => Math.abs(Number(d)) > 0.004) : false;
+        return { id: b.id, name: b.name, closed: !!c, diff };
+      });
     },
   });
 
@@ -119,6 +139,25 @@ export default function DailySummary() {
           </Link>
         )}
       </div>
+
+      {closingStatus && closingStatus.length > 0 && (
+        <Link to="/closing">
+          <Card className="p-4 hover:bg-muted/40 transition-colors">
+            <h2 className="font-bold mb-2 flex items-center gap-2"><Landmark className="size-4 text-primary" /> إقفال اليوم</h2>
+            <div className="flex flex-wrap gap-2">
+              {closingStatus.map((b) => (
+                <Badge
+                  key={b.id}
+                  variant="outline"
+                  className={b.closed ? (b.diff ? "bg-destructive/15 text-destructive border-destructive/30" : "bg-emerald-500/15 text-emerald-600 border-emerald-500/30") : "text-muted-foreground"}
+                >
+                  {b.name}: {b.closed ? (b.diff ? "أُقفل — فرق" : "أُقفل") : "لم يُقفل"}
+                </Badge>
+              ))}
+            </div>
+          </Card>
+        </Link>
+      )}
 
       <Card className="p-4">
         <h2 className="font-bold mb-3 flex items-center gap-2"><Receipt className="size-4 text-primary" /> نشاط اليوم لكل موظف</h2>
