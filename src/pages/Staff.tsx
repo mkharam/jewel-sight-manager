@@ -85,7 +85,7 @@ export default function Staff() {
 
   const createUser = async () => {
     if (!email || !password || !fullName) { toast.error("املأ كل الحقول"); return; }
-    if (password.length < 4) { toast.error("كلمة المرور 4 خانات على الأقل"); return; }
+    if (password.length < MIN_PASSWORD) { toast.error(`كلمة المرور ${MIN_PASSWORD} خانات على الأقل`); return; }
     if (!/^[a-zA-Z0-9._-]+$/.test(email.trim())) {
       toast.error("اسم المستخدم: أحرف إنجليزية وأرقام فقط"); return;
     }
@@ -98,7 +98,7 @@ export default function Staff() {
     });
     setBusy(false);
     if (error || (data as any)?.error) {
-      toast.error((data as any)?.error ?? error?.message ?? "فشل إنشاء الحساب");
+      toast.error(await functionErrorMessage(error, data, "فشل إنشاء الحساب"));
       return;
     }
     toast.success("تم إنشاء الحساب");
@@ -139,19 +139,19 @@ export default function Staff() {
       body: { action: "delete", user_id: u.id },
     });
     if (error || (data as any)?.error) {
-      toast.error((data as any)?.error ?? error?.message ?? "فشل الحذف"); return;
+      toast.error(await functionErrorMessage(error, data, "فشل الحذف")); return;
     }
     toast.success("تم الحذف");
     load();
   };
 
   const resetPassword = async () => {
-    if (!pwUser || !newPw || newPw.length < 4) { toast.error("كلمة مرور غير صالحة"); return; }
+    if (!pwUser || !newPw || newPw.length < MIN_PASSWORD) { toast.error(`كلمة المرور ${MIN_PASSWORD} خانات على الأقل`); return; }
     const { data, error } = await supabase.functions.invoke("admin-manage-users", {
       body: { action: "update_password", user_id: pwUser.id, password: newPw },
     });
     if (error || (data as any)?.error) {
-      toast.error((data as any)?.error ?? error?.message ?? "فشل التعديل"); return;
+      toast.error(await functionErrorMessage(error, data, "فشل التعديل")); return;
     }
     toast.success("تم تغيير كلمة المرور");
     setPwUser(null); setNewPw("");
@@ -184,7 +184,7 @@ export default function Staff() {
               </div>
               <div className="space-y-1.5">
                 <Label>كلمة المرور</Label>
-                <Input type="password" dir="ltr" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="4 خانات على الأقل" autoComplete="new-password" />
+                <Input type="password" dir="ltr" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={`${MIN_PASSWORD} خانات على الأقل`} autoComplete="new-password" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
@@ -300,7 +300,7 @@ export default function Staff() {
           <DialogHeader><DialogTitle>تغيير كلمة مرور — {pwUser?.full_name}</DialogTitle></DialogHeader>
           <div className="space-y-1.5">
             <Label>كلمة المرور الجديدة</Label>
-            <Input type="password" dir="ltr" value={newPw} onChange={(e) => setNewPw(e.target.value)} placeholder="4 خانات على الأقل" autoComplete="new-password" />
+            <Input type="password" dir="ltr" value={newPw} onChange={(e) => setNewPw(e.target.value)} placeholder={`${MIN_PASSWORD} خانات على الأقل`} autoComplete="new-password" />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPwUser(null)}>إلغاء</Button>
@@ -310,6 +310,30 @@ export default function Staff() {
       </Dialog>
     </div>
   );
+}
+
+
+// نظام الدخول يرفض كلمات المرور الأقصر من 6 خانات (إعداد Supabase Auth)؛ التحقق هنا يمنع
+// الرحلة إلى الخادم ويعطي رسالة صحيحة بدل «non-2xx».
+const MIN_PASSWORD = 6;
+
+const SERVER_ERRORS: Record<string, string> = {
+  "Password should be at least 6 characters.": "كلمة المرور يجب ألا تقل عن 6 خانات",
+  "A user with this email address has already been registered": "اسم المستخدم مستخدم مسبقاً",
+  "forbidden": "لا تملك صلاحية هذا الإجراء",
+  "unauthorized": "انتهت الجلسة — سجّل الدخول من جديد",
+  "missing fields": "املأ كل الحقول",
+};
+
+/** رسالة الخطأ الفعلية من دالة الحافة: عند حالة غير 2xx يضع supabase-js الجسم في error.context. */
+async function functionErrorMessage(error: any, data: any, fallback: string): Promise<string> {
+  let msg: string | undefined = data?.error;
+  if (!msg) {
+    try { msg = (await error?.context?.json?.())?.error; } catch { /* الجسم ليس JSON */ }
+  }
+  msg = msg ?? error?.message;
+  if (!msg || /non-2xx/i.test(msg)) return fallback;
+  return SERVER_ERRORS[msg] ?? msg;
 }
 
 type EmpStat = {
