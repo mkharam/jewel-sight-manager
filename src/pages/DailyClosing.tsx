@@ -37,6 +37,8 @@ interface Closing {
   installment_sales: number;
   tradein_sales: number;
   expenses_total: number;
+  buyback_cash: number;
+  buyback_transfer: number;
   expected_cash: number;
   expected_card: number;
   expected_transfer: number;
@@ -331,6 +333,8 @@ function ClosingResult({ c, onReopen }: { c: Closing; onReopen?: () => void }) {
       </div>
       <p className="text-xs text-muted-foreground">
         {c.sales_count} عملية بيع · مصروفات {formatCurrency(c.expenses_total)} · افتتاح {formatCurrency(c.opening_cash)}
+        {(Number(c.buyback_cash) > 0 || Number(c.buyback_transfer) > 0) &&
+          ` · كسر مُشترى: نقداً ${formatCurrency(c.buyback_cash)}${Number(c.buyback_transfer) > 0 ? ` / تحويل ${formatCurrency(c.buyback_transfer)}` : ""}`}
       </p>
       <div className="divide-y divide-border">
         {rows.map((r) => (

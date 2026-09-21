@@ -11,7 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   CalendarDays, Package, Tag, MessageCircle, Receipt, PackagePlus, ArrowLeftRight,
-  Scale, TrendingUp, Loader2, Landmark,
+  Scale, TrendingUp, Loader2, Landmark, BookmarkCheck,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/constants";
 import { businessToday } from "@/lib/dates";
@@ -82,6 +82,21 @@ export default function DailySummary() {
     },
   });
 
+  // حجوزات تنتهي اليوم/غداً أو تأخّرت — تحتاج تصرّفاً قبل أن تُفرَج القطعة تلقائياً.
+  const { data: reservationsDue } = useQuery({
+    queryKey: ["daily-summary-reservations", businessToday()],
+    refetchInterval: 5 * 60_000,
+    queryFn: async () => {
+      const tomorrow = new Date(Date.parse(businessToday() + "T00:00:00Z") + 86_400_000).toISOString().slice(0, 10);
+      const { count } = await supabase
+        .from("reservations")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "active")
+        .lte("expires_at", tomorrow);
+      return count ?? 0;
+    },
+  });
+
   const dateLabel = new Intl.DateTimeFormat("ar-u-nu-latn", { weekday: "long", year: "numeric", month: "long", day: "numeric" }).format(new Date());
 
   const stats = [
@@ -129,6 +144,15 @@ export default function DailySummary() {
             </Card>
           </Link>
         ))}
+        {!!reservationsDue && (
+          <Link to="/reservations">
+            <Card className="p-3 hover:bg-muted/40 transition-colors h-full border-warning/40 bg-warning/10">
+              <BookmarkCheck className="size-4 text-warning-foreground mb-1.5" />
+              <p className="text-xl font-bold leading-none">{reservationsDue}</p>
+              <p className="text-[11px] text-muted-foreground mt-1">حجز ينتهي قريباً أو تأخّر</p>
+            </Card>
+          </Link>
+        )}
         {!!missingWeights && (
           <Link to="/weights">
             <Card className="p-3 hover:bg-muted/40 transition-colors h-full border-warning/40 bg-warning/10">

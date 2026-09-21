@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Bell, Wrench, Landmark } from "lucide-react";
+import { Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Bell, Wrench, Landmark, BookmarkCheck, Recycle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -43,6 +43,7 @@ const desktopExtras: NavItem[] = [
 const sharedExtras: NavItem[] = [
   { to: "/weights", label: "قطع بلا وزن", icon: Scale, badgeKey: "weights" },
   { to: "/customers", label: "العملاء", icon: Users },
+  { to: "/reservations", label: "الحجوزات", icon: BookmarkCheck },
   { to: "/reorders", label: "طلبات إعادة الطلب", icon: PackagePlus, badgeKey: "reorders" },
 ];
 
@@ -53,6 +54,8 @@ const managerExtras: NavItem[] = [
   { to: "/admin/repairs", label: "الصيانة", icon: Wrench },
   // إقفال اليوم: المشرف يقفل فرعه، والمدير العام يراجع كل الفروع.
   { to: "/closing", label: "إقفال اليوم", icon: Landmark },
+  // شراء الذهب القديم: مال يخرج من الدرج — المدير العام والمشرف فقط.
+  { to: "/buybacks", label: "شراء الكسر", icon: Recycle },
 ];
 
 // أمور إدارية/حسابية — للمدير العام فقط: تقارير الأرباح، سجل المبيعات، التعديل الجماعي،
