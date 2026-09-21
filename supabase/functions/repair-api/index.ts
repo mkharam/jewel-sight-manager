@@ -271,11 +271,33 @@ Deno.serve(async (req) => {
       const num = (v: unknown) => (v === null || v === undefined || v === "" || Number.isNaN(Number(v)) ? null : Number(v));
       const str = (v: unknown) => (typeof v === "string" && v.length > 0 ? v : null);
 
+      // زبون الصيانة الجديد لا وجود له في المخزون بعد — نطابقه بالهاتف أو ننشئه، وإلا بقي
+      // الزبون في تطبيق الصيانة وحده ولم يظهر في قائمة زبائن المخزون.
+      const phoneKey = (v: unknown) => String(v ?? "").replace(/\D/g, "").slice(-9);
+      const resolved = new Map<string, string>(); // phoneKey → inventory customer id
+      for (const t of valid) {
+        if (ref(customers, t.customer_id)) continue;
+        const key = phoneKey(t.customer_phone);
+        if (key.length < 6 || !t.customer_name || resolved.has(key)) continue;
+        const { data: cands } = await admin.from("customers").select("id, phone").ilike("phone", `%${key.slice(-6)}%`).limit(20);
+        const hit = (cands ?? []).find((c: any) => phoneKey(c.phone) === key);
+        if (hit) {
+          resolved.set(key, hit.id as string);
+          continue;
+        }
+        const { data: created } = await admin
+          .from("customers")
+          .insert({ full_name: t.customer_name, phone: t.customer_phone, branch_id: ref(branches, t.branch_id), notes: "من تطبيق الصيانة" })
+          .select("id")
+          .single();
+        if (created) resolved.set(key, created.id as string);
+      }
+
       const rows = valid.map((t) => ({
         id: t.id,
         ticket_number: t.ticket_number,
         branch_id: ref(branches, t.branch_id),
-        customer_id: ref(customers, t.customer_id),
+        customer_id: ref(customers, t.customer_id) ?? resolved.get(phoneKey(t.customer_phone)) ?? null,
         customer_name: str(t.customer_name),
         customer_phone: str(t.customer_phone),
         received_by: ref(profiles, t.received_by),
@@ -306,7 +328,9 @@ Deno.serve(async (req) => {
         const { error } = await admin.from("repair_tickets").upsert(rows, { onConflict: "id" });
         if (error) throw error;
       }
-      return json({ ok: true, synced: rows.length, skipped: tickets.length - rows.length });
+      // نُعيد الربط ليحفظه تطبيق الصيانة على سجل الزبون عنده فلا يتكرر الإنشاء.
+      const customer_links = rows.filter((r) => r.customer_id).map((r) => ({ ticket_id: r.id, customer_id: r.customer_id }));
+      return json({ ok: true, synced: rows.length, skipped: tickets.length - rows.length, customer_links });
     }
 
     if (route === "health" && req.method === "GET") return json({ ok: true });
