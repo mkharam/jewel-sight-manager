@@ -67,6 +67,9 @@ export function usePriceVisibleFor(price: number | null | undefined): boolean {
 
 const SPOT_RATE = "spot_usd_lyd_rate";
 const SPOT_MARGIN = "spot_margin_percent";
+const SPOT_MODE = "spot_rate_mode"; // manual = سعر دولار يدوي | official = الرسمي الحيّ × (1 + العلاوة)
+const SPOT_PREMIUM = "spot_premium_percent"; // علاوة السوق فوق السعر الرسمي
+export type SpotRateMode = "manual" | "official";
 
 /** سعر الدولار بالدينار وهامش الربح % لاقتراح سعر الذهب من السوق العالمي. */
 export function useSpotSettings() {
@@ -75,18 +78,27 @@ export function useSpotSettings() {
   const { data } = useSettings();
   const numOrNull = (v: any) => (v === null || v === undefined || v === "" || isNaN(Number(v)) ? null : Number(v));
 
-  const save = async (rate: number | null, marginPercent: number) => {
+  const save = async (s: { rate: number | null; marginPercent: number; mode: SpotRateMode; premiumPercent: number }) => {
     const now = new Date().toISOString();
-    const rows = [
-      { key: SPOT_RATE, value: rate as any, updated_by: user?.id, updated_at: now },
-      { key: SPOT_MARGIN, value: marginPercent as any, updated_by: user?.id, updated_at: now },
-    ];
-    const { error } = await supabase.from("app_settings").upsert(rows);
+    const row = (key: string, value: any) => ({ key, value, updated_by: user?.id, updated_at: now });
+    const { error } = await supabase.from("app_settings").upsert([
+      row(SPOT_RATE, s.rate),
+      row(SPOT_MARGIN, s.marginPercent),
+      row(SPOT_MODE, s.mode),
+      row(SPOT_PREMIUM, s.premiumPercent),
+    ]);
     if (error) throw error;
     await qc.invalidateQueries({ queryKey: ["app-settings"] });
   };
 
-  return { rate: numOrNull(data?.get(SPOT_RATE)), marginPercent: numOrNull(data?.get(SPOT_MARGIN)) ?? 0, save };
+  const mode: SpotRateMode = data?.get(SPOT_MODE) === "official" ? "official" : "manual";
+  return {
+    rate: numOrNull(data?.get(SPOT_RATE)),
+    marginPercent: numOrNull(data?.get(SPOT_MARGIN)) ?? 0,
+    mode,
+    premiumPercent: numOrNull(data?.get(SPOT_PREMIUM)) ?? 0,
+    save,
+  };
 }
 
 /** نطاق الأسعار المسموح للموظف برؤيته — لشاشة المالك. */
