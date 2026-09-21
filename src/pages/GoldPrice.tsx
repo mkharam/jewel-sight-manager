@@ -12,6 +12,7 @@ import { Coins, Save, AlertTriangle, Eye, EyeOff } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useShowPricesSetting, usePriceRangeSetting } from "@/hooks/useAppSettings";
 import { KARAT_OPTIONS, formatCurrency, formatDate } from "@/lib/constants";
+import { businessToday } from "@/lib/dates";
 import { suggestedPrice } from "@/lib/luxury";
 import { toast } from "sonner";
 
@@ -55,7 +56,7 @@ export default function GoldPrice() {
   const save = async (karat: string) => {
     const row = form[karat];
     if (!row?.price) return toast.error("اكتب سعر الجرام");
-    const today = new Date().toISOString().slice(0, 10);
+    const today = businessToday();
     const { error } = await supabase.from("gold_prices").insert({
       karat,
       price_per_gram: Number(row.price),
@@ -67,6 +68,25 @@ export default function GoldPrice() {
     toast.success(`تم تحديث سعر ${karat}`);
     setForm((f) => ({ ...f, [karat]: { price: "", making: "" } }));
     qc.invalidateQueries({ queryKey: ["gold-prices"] });
+    qc.invalidateQueries({ queryKey: ["gold-prices-current"] });
+  };
+
+  // السعر لم يتغيّر اليوم؟ يُؤكَّد بضغطة بدل إعادة كتابته — فيبقى السجلّ صادقاً بأن أحداً
+  // راجعه اليوم، ويختفي تنبيه «لم يُحدَّث».
+  const confirmUnchanged = async (karat: string) => {
+    const cur = latest.get(karat);
+    if (!cur) return;
+    const { error } = await supabase.from("gold_prices").insert({
+      karat,
+      price_per_gram: Number(cur.price_per_gram),
+      making_charge: Number(cur.making_charge ?? 0),
+      effective_date: businessToday(),
+      updated_by: user?.id ?? null,
+    });
+    if (error) return toast.error(error.message);
+    toast.success(`تم تأكيد سعر ${karat} لليوم`);
+    qc.invalidateQueries({ queryKey: ["gold-prices"] });
+    qc.invalidateQueries({ queryKey: ["gold-prices-current"] });
   };
 
   if (rolesLoading) return null;
@@ -235,6 +255,11 @@ export default function GoldPrice() {
                 <Button size="sm" className="w-full" onClick={() => save(k)}>
                   <Save className="size-4 ml-1" /> حفظ سعر اليوم
                 </Button>
+                {cur && cur.effective_date !== businessToday() && (
+                  <Button size="sm" variant="outline" className="w-full" onClick={() => confirmUnchanged(k)}>
+                    السعر لم يتغيّر — أكّد سعر اليوم ({formatCurrency(cur.price_per_gram)})
+                  </Button>
+                )}
               </CardContent>
             </Card>
           );
