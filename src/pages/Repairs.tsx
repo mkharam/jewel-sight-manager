@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
@@ -44,6 +45,7 @@ interface RepairTicket {
   received_at: string;
   promised_at: string | null;
   delivered_at: string | null;
+  synced_at: string;
   branch?: { name: string } | null;
 }
 
@@ -51,6 +53,8 @@ const isOverdue = (t: RepairTicket) =>
   OPEN.includes(t.status) && !!t.promised_at && new Date(t.promised_at).getTime() < Date.now();
 
 export default function Repairs() {
+  const { roles } = useAuth();
+  const isAdmin = roles.includes("admin");
   const [q, setQ] = useState("");
   const [branchFilter, setBranchFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("open");
@@ -105,6 +109,10 @@ export default function Repairs() {
     () => tickets.filter((t) => branchFilter === "all" || t.branch_id === branchFilter),
     [tickets, branchFilter],
   );
+  const lastSynced = useMemo(
+    () => tickets.reduce<string | null>((m, t: any) => (!m || t.synced_at > m ? t.synced_at : m), null),
+    [tickets],
+  );
   const stats = {
     open: scoped.filter((t) => OPEN.includes(t.status)).length,
     ready: scoped.filter((t) => t.status === "ready").length,
@@ -117,6 +125,7 @@ export default function Repairs() {
       <div className="flex items-center gap-2">
         <Wrench className="size-5 text-primary" />
         <h1 className="text-xl font-bold">الصيانة</h1>
+        {lastSynced && <span className="mr-auto text-xs text-muted-foreground">آخر مزامنة: {formatDate(lastSynced)}</span>}
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -131,13 +140,15 @@ export default function Repairs() {
           <SearchIcon className="absolute right-2.5 top-2.5 size-4 text-muted-foreground" />
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="رقم التذكرة، الزبون، الهاتف…" className="pr-8" />
         </div>
-        <Select value={branchFilter} onValueChange={setBranchFilter}>
-          <SelectTrigger><SelectValue placeholder="الفرع" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">كل الفروع</SelectItem>
-            {branches.map((b: any) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        {isAdmin && (
+          <Select value={branchFilter} onValueChange={setBranchFilter}>
+            <SelectTrigger><SelectValue placeholder="الفرع" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">كل الفروع</SelectItem>
+              {branches.map((b: any) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
         <Select value={staffFilter} onValueChange={setStaffFilter}>
           <SelectTrigger><SelectValue placeholder="الموظف" /></SelectTrigger>
           <SelectContent>

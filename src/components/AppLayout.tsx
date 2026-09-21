@@ -48,6 +48,8 @@ const sharedExtras: NavItem[] = [
 // سعر الذهب: المدير العام والمشرف فقط — ليس الموظف.
 const managerExtras: NavItem[] = [
   { to: "/gold-price", label: "سعر الذهب", icon: Coins },
+  // الصيانة: المدير العام يرى كل الفروع، والمشرف فرعه وحده (تفرضه RLS).
+  { to: "/admin/repairs", label: "الصيانة", icon: Wrench },
 ];
 
 // أمور إدارية/حسابية — للمدير العام فقط: تقارير الأرباح، سجل المبيعات، التعديل الجماعي،
@@ -59,7 +61,6 @@ const adminExtras: NavItem[] = [
   { to: "/stock-take", label: "جرد ميداني", icon: ClipboardCheck },
   { to: "/reports", label: "التقارير", icon: BarChart3 },
   { to: "/sales", label: "المبيعات", icon: Receipt },
-  { to: "/admin/repairs", label: "الصيانة", icon: Wrench },
   { to: "/admin/products", label: "إدارة القطع", icon: ListChecks },
 ];
 

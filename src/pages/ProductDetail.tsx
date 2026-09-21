@@ -115,6 +115,12 @@ export default function ProductDetail() {
     return () => { supabase.removeChannel(ch); };
   }, [id, qc]);
 
+  // يجب أن تُستدعى كل الخطاطيف قبل أي return مبكّر، وإلا اختلف عددها بين التحميل
+  // والعرض فانهارت الصفحة ("Rendered more hooks than during the previous render").
+  const pricesVisible = usePriceVisibleFor(
+    product ? (product.promo_price ?? product.sale_price ?? priceForPiece(product, goldPrices).price?.total ?? null) : null,
+  );
+
   if (isLoading) return <div className="p-8 text-center text-muted-foreground">جارٍ التحميل...</div>;
   if (!product) return <div className="p-8 text-center">القطعة غير موجودة</div>;
 
@@ -141,7 +147,6 @@ export default function ProductDetail() {
   // النظر عن حالتها (قطعة محجوزة قد تحتاج صورة أوضح للزبون).
   // سعر القطعة اليوم = وزنها × سعر غرام عيارها + الأجرة. راجع src/lib/pricing.ts
   const computedPrice = priceForPiece(product, goldPrices);
-  const pricesVisible = usePriceVisibleFor(product.promo_price ?? product.sale_price ?? computedPrice.price?.total ?? null);
   const todayPrice = pricesVisible ? computedPrice.price : null;
   const priceGap = pricesVisible ? computedPrice.gap : null;
   const canAddPhoto = isAdmin || (!!product.branch_id && product.branch_id === profile?.branch_id);
