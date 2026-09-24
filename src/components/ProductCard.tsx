@@ -56,7 +56,7 @@ interface ProductCardProps {
   lastQuote?: LatestQuote | null;
 }
 
-export type PhotoMatchTier = "exact" | "very_close" | "similar_look" | "same_attributes";
+export type PhotoMatchTier = "exact" | "very_close" | "similar_look" | "same_attributes" | "might_like";
 export type PhotoMatchInfo = { tier: PhotoMatchTier; reasons: string[] };
 
 export const MATCH_TIER_META: Record<PhotoMatchTier, { label: string; badge: string }> = {
@@ -64,6 +64,7 @@ export const MATCH_TIER_META: Record<PhotoMatchTier, { label: string; badge: str
   very_close: { label: "✨ قريبة جداً", badge: "bg-gold-gradient text-primary-foreground" },
   similar_look: { label: "👀 شكل مشابه", badge: "bg-sky-600 text-white" },
   same_attributes: { label: "🎨 نفس الأوصاف", badge: "bg-black/70 text-white" },
+  might_like: { label: "💡 ممكن تعجبه", badge: "bg-rose-600 text-white" },
 };
 
 const QUICK_STATUSES: ProductStatus[] = ["available", "reserved", "sold"];

@@ -10,7 +10,8 @@
 //             matchCount?: number }
 // Response: { analysis: {...}, matches: [{ product_id, similarity, visual, textual, kind, reasons }] }
 //   kind: "exact" نفس التصميم | "very_close" قريبة جداً | "similar_look" شكل مشابه |
-//   "same_attributes" تشترك في الأوصاف (لون الذهب/الأحجار/الطراز) دون تشابه بصري قوي.
+//   "same_attributes" تشترك في الأوصاف (لون الذهب/الأحجار/الطراز) دون تشابه بصري قوي |
+//   "might_like" ذوق قريب — اقتراحات إضافية "ممكن تعجب الزبون".
 //   reasons: أسباب بالعربية يقرؤها الموظف للزبون ("نفس لون الذهب"، "نفس الأحجار: خضراء").
 
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
@@ -31,7 +32,7 @@ Deno.serve(async (req) => {
     const imageBase64: string | undefined = body?.imageBase64;
     const mimeType: string = body?.mimeType ?? "image/jpeg";
     const categories: { id: string; name: string }[] = body?.categories ?? [];
-    const matchCount: number = Math.min(Math.max(Number(body?.matchCount ?? 70), 1), 100);
+    const matchCount: number = Math.min(Math.max(Number(body?.matchCount ?? 140), 1), 150);
 
     if (!imageBase64) return json({ error: "imageBase64 required" }, 400);
 
@@ -73,7 +74,7 @@ Deno.serve(async (req) => {
       similarity: r.score,
       visual: r.visual,
       textual: r.textual,
-      kind: r.kind as "exact" | "very_close" | "similar_look" | "same_attributes",
+      kind: r.kind as "exact" | "very_close" | "similar_look" | "same_attributes" | "might_like",
       reasons: (r.reasons ?? []) as string[],
     }));
 
