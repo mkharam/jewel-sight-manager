@@ -8,9 +8,10 @@
 //
 // Request:  { imageBase64: string, mimeType?: string, categories?: {id,name}[],
 //             matchCount?: number }
-// Response: { analysis: {...}, matches: [{ product_id, similarity, visual, textual, kind }] }
-//   kind: "exact" تطابق بصري شبه تام | "similar" شبيه بصرياً | "same_attributes" يشترك
-//   في الأوصاف (لون/شكل/نوع) دون تطابق بصري قوي.
+// Response: { analysis: {...}, matches: [{ product_id, similarity, visual, textual, kind, reasons }] }
+//   kind: "exact" نفس التصميم | "very_close" قريبة جداً | "similar_look" شكل مشابه |
+//   "same_attributes" تشترك في الأوصاف (لون الذهب/الأحجار/الطراز) دون تشابه بصري قوي.
+//   reasons: أسباب بالعربية يقرؤها الموظف للزبون ("نفس لون الذهب"، "نفس الأحجار: خضراء").
 
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -30,7 +31,7 @@ Deno.serve(async (req) => {
     const imageBase64: string | undefined = body?.imageBase64;
     const mimeType: string = body?.mimeType ?? "image/jpeg";
     const categories: { id: string; name: string }[] = body?.categories ?? [];
-    const matchCount: number = Math.min(Math.max(Number(body?.matchCount ?? 12), 1), 100);
+    const matchCount: number = Math.min(Math.max(Number(body?.matchCount ?? 70), 1), 100);
 
     if (!imageBase64) return json({ error: "imageBase64 required" }, 400);
 
@@ -52,15 +53,14 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { data: rows, error } = await supabase.rpc("match_product_images_hybrid", {
-      query_image_embedding: imageEmbedding as unknown as string,
-      query_text_embedding: (textEmbedding ?? null) as unknown as string | null,
-      match_count: matchCount * 3, // نجلب أكثر ثم نوحّد حسب القطعة
-      // الوصف يُرجّح أكثر من الصورة عمداً: الوصف يلتقط تركيبة القطعة الكاملة (فكرة
-      // "طقم زهور وأوراق"، طراز تجاري معروف…) بينما التشابه البصري وحده قد يُطابق حسب
-      // زاوية/إضاءة/خلفية الصورة فقط دون التقاط الفكرة العامة للتصميم. راجع توثيق الوصف
-      // الموسّع في buildSystemPrompt (lovable-ai.ts).
-      image_weight: 0.35,
+    // التصنيف كله في قاعدة البيانات (match_products_tiered): كل قطعة تُقاس نسبةً لبقية المخزون
+    // لنفس الصورة لا بعتبة ثابتة، وتُقارن أوصافها (لون الذهب، ألوان الأحجار، الطراز) بما قرأه
+    // الذكاء الاصطناعي من صورة الزبون. راجع migration 20260924120000_photo_search_tiers.sql.
+    const { data: rows, error } = await supabase.rpc("match_products_tiered", {
+      q_image: imageEmbedding as unknown as string,
+      q_text: (textEmbedding ?? null) as unknown as string | null,
+      q_labels: analysis,
+      max_results: matchCount,
     });
 
     if (error) {
@@ -68,30 +68,14 @@ Deno.serve(async (req) => {
       return json({ error: error.message }, 500);
     }
 
-    // عدة صور قد تخصّ نفس القطعة — نُبقي أفضل صورة لكل قطعة.
-    const best = new Map<string, { product_id: string; similarity: number; visual: number | null; textual: number | null }>();
-    for (const r of (rows ?? []) as any[]) {
-      const cur = best.get(r.product_id);
-      if (!cur || r.score > cur.similarity) {
-        best.set(r.product_id, {
-          product_id: r.product_id,
-          similarity: r.score,
-          visual: r.visual_similarity,
-          textual: r.text_similarity,
-        });
-      }
-    }
-
-    // تصنيف النتيجة بدل رقم واحد مبهم — الموظف يحتاج يعرف هل هي نفس القطعة أم قطعة
-    // تشبهها أم قطعة تشترك معها في الأوصاف فقط، ليعرض على الزبون البدائل المناسبة.
-    const matches = Array.from(best.values())
-      .map((m) => ({
-        ...m,
-        kind: (m.visual ?? 0) >= 0.92 ? "exact" : (m.visual ?? 0) >= 0.75 ? "similar" : "same_attributes",
-      }))
-      .filter((m) => (m.visual ?? 0) >= 0.35 || (m.textual ?? 0) >= 0.5)
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, matchCount);
+    const matches = ((rows ?? []) as any[]).map((r) => ({
+      product_id: r.product_id,
+      similarity: r.score,
+      visual: r.visual,
+      textual: r.textual,
+      kind: r.kind as "exact" | "very_close" | "similar_look" | "same_attributes",
+      reasons: (r.reasons ?? []) as string[],
+    }));
 
     return json({ analysis, matches });
   } catch (e) {
