@@ -49,11 +49,22 @@ interface ProductCardProps {
   selected?: boolean;
   onToggleSelect?: (id: string) => void;
   onStatusChanged?: () => void;
-  /** نسبة تشابه البحث بالصورة (0..1) — تُعرض كشارة منفصلة عن شارة العيار لتفادي التراكب. */
-  similarity?: number;
+  /** مستوى تطابق البحث بالصورة وأسبابه — شارة على الصورة وأسباب قصيرة تحت الاسم يقرؤها الموظف
+   *  للزبون مباشرة ("نفس لون الذهب"). النسبة المئوية لم تعد تعني شيئاً: الدرجة نسبية للمخزون. */
+  match?: PhotoMatchInfo;
   /** آخر سعر أُعطي لزبون في هذه القطعة (راجع useLatestQuotes) — يُعرض حين لا سعر بيع مثبّت. */
   lastQuote?: LatestQuote | null;
 }
+
+export type PhotoMatchTier = "exact" | "very_close" | "similar_look" | "same_attributes";
+export type PhotoMatchInfo = { tier: PhotoMatchTier; reasons: string[] };
+
+export const MATCH_TIER_META: Record<PhotoMatchTier, { label: string; badge: string }> = {
+  exact: { label: "🎯 مطابقة", badge: "bg-green-600 text-white" },
+  very_close: { label: "✨ قريبة جداً", badge: "bg-gold-gradient text-primary-foreground" },
+  similar_look: { label: "👀 شكل مشابه", badge: "bg-sky-600 text-white" },
+  same_attributes: { label: "🎨 نفس الأوصاف", badge: "bg-black/70 text-white" },
+};
 
 const QUICK_STATUSES: ProductStatus[] = ["available", "reserved", "sold"];
 
@@ -61,7 +72,7 @@ export default function ProductCard({
   product,
   selectable,
   selected,
-  similarity,
+  match,
   lastQuote,
   onToggleSelect,
   onStatusChanged,
@@ -136,9 +147,9 @@ export default function ProductCard({
         )}
         {/* شارة نسبة تشابه البحث بالصورة — أسفل يمين الصورة تحديداً كي لا تتراكب أبداً
             مع شارتي الحالة (أعلى يمين) والعيار (أعلى يسار). */}
-        {typeof similarity === "number" && (
-          <span className="absolute bottom-2 right-2 z-10 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/70 text-white backdrop-blur shadow">
-            {Math.round(similarity * 100)}%
+        {match && (
+          <span className={`absolute bottom-2 right-2 z-10 text-[10px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur shadow ${MATCH_TIER_META[match.tier].badge}`}>
+            {MATCH_TIER_META[match.tier].label}
           </span>
         )}
         {selectable && (
@@ -147,6 +158,15 @@ export default function ProductCard({
       </div>
       <div className="p-3 space-y-1.5">
         <h3 className="font-semibold text-sm line-clamp-1">{product.name}</h3>
+        {match && match.reasons.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {match.reasons.slice(0, 2).map((r) => (
+              <span key={r} className="text-[10px] leading-tight px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+                {r}
+              </span>
+            ))}
+          </div>
+        )}
         {product.sku && (
           <p className="text-[11px] font-mono text-primary/80 truncate tracking-wide" dir="ltr">
             {product.sku}

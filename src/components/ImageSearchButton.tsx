@@ -7,6 +7,7 @@ import { toast } from "@/hooks/use-toast";
 import { compressImage } from "@/lib/image-compress";
 import { cn } from "@/lib/utils";
 import { clearResume, readResume, saveResume } from "@/lib/resume";
+import type { PhotoMatchTier } from "@/components/ProductCard";
 
 interface Analysis {
   name_ar?: string;
@@ -27,14 +28,16 @@ export interface PhotoMatch {
   visual?: number | null;
   /** تشابه وصف الذكاء الاصطناعي — لون الحجر ونوع القطعة والشكل. */
   textual?: number | null;
-  /** تصنيف جاهز من الخادم: مطابق / شبيه / يشترك في الأوصاف. راجع image-search. */
-  kind?: "exact" | "similar" | "same_attributes";
+  /** مستوى جاهز من الخادم، نسبةً لبقية المخزون لا بعتبة ثابتة. راجع match_products_tiered. */
+  kind?: PhotoMatchTier;
+  /** أسباب قصيرة بالعربية ("نفس لون الذهب"، "نفس الأحجار: خضراء"). */
+  reasons?: string[];
 }
 
 interface Props {
   categories?: { id: string; name: string }[];
-  /** Called with matches (with similarity scores) ordered best first. */
-  onResults: (payload: { matches: PhotoMatch[]; analysis: Analysis }) => void;
+  /** Called with matches ordered best first, plus the customer's photo to pin above the results. */
+  onResults: (payload: { matches: PhotoMatch[]; analysis: Analysis; photo: string | null }) => void;
   /** "icon" = زر دائري صغير بأيقونة الكاميرا فقط (يُستخدم ملاصقاً لمربع البحث). */
   variant?: "button" | "icon";
   className?: string;
@@ -44,6 +47,12 @@ interface Props {
 // نحفظ الصورة ونتيجتها ليجد النافذة كما تركها حتى لو قتل آيفون التطبيق، ونعيد المحاولة
 // بصمت إن انقطع الطلب بسبب الخروج بدل إظهار خطأ أحمر. راجع src/lib/resume.ts.
 const RESUME_KEY = "imageSearch";
+const TIER_SHORT: Record<PhotoMatchTier, string> = {
+  exact: "🎯 مطابقة",
+  very_close: "✨ قريبة جداً",
+  similar_look: "👀 شكل مشابه",
+  same_attributes: "🎨 نفس الأوصاف",
+};
 type Saved = { base64: string; mimeType: string; analysis: Analysis | null; matches: PhotoMatch[] | null };
 
 // انقطاع الشبكة/تعليق التطبيق في الخلفية — لا خطأ حقيقي من الخادم. Safari: "Load failed".
@@ -157,25 +166,10 @@ export default function ImageSearchButton({ categories, onResults, variant = "bu
 
   const apply = () => {
     if (!matches || !analysis) return;
-    onResults({ matches, analysis });
+    onResults({ matches, analysis, photo: previewUrl });
     setOpen(false);
     reset();
-    // التصنيف يأتي جاهزاً من الخادم الآن (بصري + وصفي)، ونصف للموظف ما وجدناه فعلاً
-    // بالتفصيل بدل رقم واحد: مطابقة تامة، شبيهة شكلاً، أو تشترك في الأوصاف فقط.
-    const n = matches.length;
-    const exact = matches.filter((m) => (m.kind ?? (m.similarity >= 0.92 ? "exact" : "similar")) === "exact").length;
-    const similar = matches.filter((m) => m.kind === "similar").length;
-    const sameAttrs = matches.filter((m) => m.kind === "same_attributes").length;
-    const parts = [
-      similar ? `${similar} شبيهة` : "",
-      sameAttrs ? `${sameAttrs} بنفس الأوصاف` : "",
-    ].filter(Boolean);
-    toast({
-      title: exact > 0 ? `🎯 ${exact} قطعة مطابقة` : n > 0 ? `${n} قطعة مشابهة` : "لا توجد نتائج",
-      description: n > 0
-        ? (parts.length ? parts.join(" · ") : "أعلى القطع تشابهاً معروضة")
-        : "لم نجد قطعاً مشابهة بالصورة",
-    });
+    if (!matches.length) toast({ title: "لا توجد نتائج", description: "لم نجد قطعاً مشابهة بالصورة" });
   };
 
   return (
@@ -328,13 +322,24 @@ export default function ImageSearchButton({ categories, onResults, variant = "bu
                     </span>
                   ))}
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  {matches.length > 0
-                    ? `عثرنا على ${matches.length} قطعة مشابهة`
-                    : "لا توجد قطع مشابهة في المخزون بعد. تأكد من تحليل الصور عند إضافة القطع."}
-                </p>
-                <Button onClick={apply} className="w-full bg-gold-gradient text-primary-foreground shadow-gold mt-2">
-                  عرض القطع المشابهة
+                {matches.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold">
+                    {(["exact", "very_close", "similar_look", "same_attributes"] as const).map((k) => {
+                      const n = matches.filter((m) => m.kind === k).length;
+                      return n ? (
+                        <span key={k} className="px-2 py-0.5 rounded-full bg-card border border-border">
+                          {TIER_SHORT[k]} {n}
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    لا توجد قطع مشابهة في المخزون بعد. تأكد من تحليل الصور عند إضافة القطع.
+                  </p>
+                )}
+                <Button onClick={apply} className="w-full h-12 text-base bg-gold-gradient text-primary-foreground shadow-gold mt-2">
+                  عرض {matches.length} قطعة
                 </Button>
               </div>
             )}
