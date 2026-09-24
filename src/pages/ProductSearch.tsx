@@ -71,15 +71,19 @@ type SavedScrollState = {
 
 // ترتيب المستويات في العرض، ونصوص الأقسام. "similar" قيمة قديمة من استجابات مخزّنة قبل
 // المستويات الأربعة — تُعامَل كـ"قريبة جداً".
-const TIER_ORDER: PhotoMatchTier[] = ["exact", "very_close", "similar_look", "same_attributes"];
+const TIER_ORDER: PhotoMatchTier[] = ["exact", "very_close", "similar_look", "same_attributes", "might_like"];
 const TIER_SECTION: Record<PhotoMatchTier, { title: string; subtitle: string }> = {
   exact: { title: "🎯 مطابقة", subtitle: "نفس التصميم — موجود في المخزون" },
   very_close: { title: "✨ قريبة جداً", subtitle: "تصميم قريب جداً — أقرب بديل للزبون" },
   similar_look: { title: "👀 شكل مشابه", subtitle: "نفس الفكرة والشكل العام" },
   same_attributes: { title: "🎨 نفس الأوصاف", subtitle: "نفس لون الذهب أو الأحجار أو الطراز — خيارات إضافية" },
+  might_like: { title: "💡 قطع ممكن تعجب الزبون", subtitle: "ذوق قريب من طلبه — اقترحها إن لم يجد ما يريده بالضبط" },
 };
+// الأقسام الطويلة تبدأ مطوية على الآيفون: أول 12 قطعة وزر "عرض الكل" — بدل تمرير ~80 قطعة
+// قبل الوصول لقسم ممكن تعجبه.
+const TIER_INITIAL: Partial<Record<PhotoMatchTier, number>> = { similar_look: 12, same_attributes: 12, might_like: 12 };
 const toTier = (kind: string | undefined): PhotoMatchTier =>
-  kind === "exact" || kind === "very_close" || kind === "similar_look" || kind === "same_attributes"
+  kind === "exact" || kind === "very_close" || kind === "similar_look" || kind === "same_attributes" || kind === "might_like"
     ? kind
     : kind === "similar" ? "very_close" : "same_attributes";
 
@@ -285,7 +289,7 @@ export default function ProductSearch() {
       // تستخدم عتبة ثابتة تجعل كل المخزون تقريباً "مشابهاً".
       const { data, error } = await (supabase.rpc as any)("match_products_tiered", {
         anchor_product: similarTo,
-        max_results: 70,
+        max_results: 140,
       });
       if (cancelled) return;
       setSimilarLoading(false);
@@ -513,7 +517,7 @@ export default function ProductSearch() {
     // الدرجة المركّبة — وإلا صارت قطعة تشترك في الوصف فقط تظهر تحت "مطابقة تماماً".
     // نسقط للعتبات القديمة إن غاب kind (استجابة قديمة مخزّنة مثلاً).
     const byId = new Map(similarMatches.map((m) => [m.product_id, m]));
-    const buckets: Record<PhotoMatchTier, any[]> = { exact: [], very_close: [], similar_look: [], same_attributes: [] };
+    const buckets: Record<PhotoMatchTier, any[]> = { exact: [], very_close: [], similar_look: [], same_attributes: [], might_like: [] };
     // products مرتّبة أصلاً بترتيب الخادم (الأقرب أولاً) — نحافظ عليه داخل كل مستوى.
     for (const p of products as any[]) {
       const m = byId.get(p.id);
@@ -917,6 +921,7 @@ export default function ProductSearch() {
               title={TIER_SECTION[t].title}
               subtitle={TIER_SECTION[t].subtitle}
               products={similarityBuckets[t]}
+              initialVisible={TIER_INITIAL[t]}
               quotes={latestQuotes}
             />
           ))}
@@ -964,14 +969,18 @@ function SimilaritySection({
   title,
   subtitle,
   products,
+  initialVisible,
   quotes,
 }: {
   tier: PhotoMatchTier;
   title: string;
   subtitle: string;
   products: any[];
+  initialVisible?: number;
   quotes?: Map<string, import("@/hooks/useLatestQuotes").LatestQuote>;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const limit = !expanded && initialVisible && products.length > initialVisible + 2 ? initialVisible : products.length;
   return (
     // scroll-mt: رأس التطبيق + شريط المستويات الثابت لا يغطيان عنوان القسم عند القفز إليه.
     <section id={`tier-${tier}`} className="scroll-mt-[calc(env(safe-area-inset-top)+11rem)]">
@@ -983,10 +992,16 @@ function SimilaritySection({
         <p className="text-[11px] text-muted-foreground">{subtitle}</p>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-        {products.map((p: any) => (
+        {products.slice(0, limit).map((p: any) => (
           <ProductCard key={p.id} product={p} match={p._match} lastQuote={quotes?.get(p.id) ?? null} />
         ))}
       </div>
+      {limit < products.length && (
+        <Button variant="outline" className="w-full h-11 mt-3" onClick={() => setExpanded(true)}>
+          عرض الكل ({products.length})
+          <ChevronDown className="size-4 mr-1" />
+        </Button>
+      )}
     </section>
   );
 }

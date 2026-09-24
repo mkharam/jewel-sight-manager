@@ -52,6 +52,7 @@ const TIER_SHORT: Record<PhotoMatchTier, string> = {
   very_close: "✨ قريبة جداً",
   similar_look: "👀 شكل مشابه",
   same_attributes: "🎨 نفس الأوصاف",
+  might_like: "💡 ممكن تعجبه",
 };
 type Saved = { base64: string; mimeType: string; analysis: Analysis | null; matches: PhotoMatch[] | null };
 
@@ -93,7 +94,7 @@ export default function ImageSearchButton({ categories, onResults, variant = "bu
     setMatches(null);
     try {
       const { data, error } = await supabase.functions.invoke("image-search", {
-        body: { imageBase64: base64, mimeType, categories, matchCount: 60 },
+        body: { imageBase64: base64, mimeType, categories, matchCount: 140 },
       });
 
       if (error) throw error;
@@ -324,7 +325,7 @@ export default function ImageSearchButton({ categories, onResults, variant = "bu
                 </div>
                 {matches.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold">
-                    {(["exact", "very_close", "similar_look", "same_attributes"] as const).map((k) => {
+                    {(["exact", "very_close", "similar_look", "same_attributes", "might_like"] as const).map((k) => {
                       const n = matches.filter((m) => m.kind === k).length;
                       return n ? (
                         <span key={k} className="px-2 py-0.5 rounded-full bg-card border border-border">
