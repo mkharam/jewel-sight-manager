@@ -49,7 +49,19 @@ function PageLoader() {
   );
 }
 
-const queryClient = new QueryClient();
+// العودة للتطبيق (من الواتساب مثلاً) تُحدّث البيانات في الخلفية مع إبقاء المعروض كما هو —
+// لا شاشات تحميل ولا قفز. staleTime يمنع موجة طلبات عند كل خروج وعودة سريعين: ما جُلب
+// خلال آخر 30 ثانية لا يُعاد جلبه. الحالات/الأسعار/الإشعارات تتحدّث؛ ما يكتبه الموظف ونتائج
+// البحث بالصورة حالة محلية لا تمسّها هذه الإعدادات إطلاقاً.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+    },
+  },
+});
 
 const App = () => (
   <ErrorBoundary>

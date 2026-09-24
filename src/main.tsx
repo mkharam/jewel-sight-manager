@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
+import { markUpdateReady } from "@/lib/resume";
 
 createRoot(document.getElementById("root")!).render(<App />);
 
@@ -16,11 +17,13 @@ if ("serviceWorker" in navigator) {
           updateViaCache: "none",
           scope: import.meta.env.BASE_URL,
         });
-        // تحديث فوري عند نزول نسخة جديدة حتى لا يبقى المستخدم على نسخة قديمة
+        // نسخة جديدة نزلت: لا نعيد التحميل فوراً — كان هذا يمسح ما على الشاشة لحظة عودة
+        // الموظف من الواتساب (بحث، نتائج صورة، نموذج نصف معبّأ) لأن فحص التحديث يجري عند
+        // العودة بالضبط. نؤجّله لأول تنقّل بين الصفحات. راجع useResumeRoute في resume.ts.
         reg.addEventListener("updatefound", () => {
           const sw = reg.installing;
           sw?.addEventListener("statechange", () => {
-            if (sw.state === "installed" && navigator.serviceWorker.controller) window.location.reload();
+            if (sw.state === "installed" && navigator.serviceWorker.controller) markUpdateReady();
           });
         });
         reg.update().catch(() => {});
@@ -33,9 +36,9 @@ if ("serviceWorker" in navigator) {
         // مرة تعود فيها الصفحة للظهور (فتح من الأيقونة، عودة من الخلفية).
         const checkForUpdate = () => { if (document.visibilityState === "visible") reg.update().catch(() => {}); };
         document.addEventListener("visibilitychange", checkForUpdate);
-        // bfcache: عودة الصفحة من الأمام/الخلف على أندرويد أحياناً تُرجع نسخة مخزّنة
-        // بلا أي تنفيذ جافاسكربت جديد إطلاقاً — إعادة تحميل كاملة أضمن هنا.
-        window.addEventListener("pageshow", (e) => { if (e.persisted) window.location.reload(); });
+        // bfcache: أندرويد يُرجع الصفحة من الذاكرة كما تركها الموظف تماماً — وهذا بالضبط ما
+        // نريده، فلا نعيد التحميل (كان يمسح الشاشة). نكتفي بفحص التحديث كما في العودة العادية.
+        window.addEventListener("pageshow", (e) => { if (e.persisted) reg.update().catch(() => {}); });
       } catch {
         /* ignore */
       }

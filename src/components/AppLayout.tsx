@@ -10,7 +10,8 @@ import { cn } from "@/lib/utils";
 import NotificationsBell from "@/components/NotificationsBell";
 import InstallPrompt from "@/components/InstallPrompt";
 import StaleGoldPriceBanner from "@/components/StaleGoldPriceBanner";
-import { useUploadQueuePendingCount } from "@/lib/uploadQueue";
+import { uploadQueue, useUploadQueuePendingCount } from "@/lib/uploadQueue";
+import { useResumeRoute } from "@/lib/resume";
 import { ensurePushEnabled } from "@/lib/push";
 import { resumePendingUploads } from "@/lib/uploadRunner";
 
@@ -77,6 +78,9 @@ export default function AppLayout() {
   const isManager = roles.includes("manager");
   const qc = useQueryClient();
   const branchId = profile?.branch_id ?? null;
+
+  // العودة لنفس الصفحة بعد الخروج للواتساب وغيره. راجع src/lib/resume.ts.
+  useResumeRoute(() => uploadQueue.getItems().some((i) => i.status !== "done" && i.status !== "error"));
 
   // نتأكد من تفعيل إشعارات الجهاز عند كل فتح للتطبيق بدل انتظار أن يتذكّر الموظف
   // فتح الجرس والضغط على "تفعيل" يدوياً — إن كان الإذن ممنوحاً فعلاً لكن الاشتراك ضاع
