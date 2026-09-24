@@ -23,6 +23,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { expandQuery, matchScore } from "@/lib/arabic-search";
+import { readResume, saveResume } from "@/lib/resume";
 
 interface Filters {
   q: string;
@@ -46,37 +47,12 @@ const initialFilters: Filters = {
 
 const UNASSIGNED_BRANCH = "__unassigned__";
 
-// نحفظ مكان الموظف في نتائج البحث (الفلاتر، عدد الصفحات المحمَّلة، موضع التمرير) قبل
-// فتح تفاصيل قطعة — بحيث لما يدوس "رجوع" يرجع لنفس مكانه بالظبط في الكتالوج، لا لأول
-// الصفحة بفلاتر فاضية من جديد. نميّز "رجوع" (POP) عن فتح جديد/رابط مباشر عبر
-// useNavigationType أدناه — فتح جديد يبقى يبدأ فاضياً كما طُلب سابقاً، فقط الرجوع
-// الفعلي بزر الرجوع/الجهاز يستعيد الحالة. sessionStorage لا localStorage: يُمحى تلقائياً
-// عند إغلاق التبويب بدل أن يبقى "عالقاً" لجلسات لاحقة غير مرتبطة.
-const SCROLL_STATE_KEY = "lamaa.searchScrollState.v1";
-type SavedScrollState = { filters: Filters; pages: number; scrollY: number; loadId?: string };
-
-// useNavigationType() تُرجع "POP" أيضاً عند أول عرض لفتحة جديدة للتطبيق، لا عند الرجوع
-// وحده — فكان الموظف يفتح التطبيق من جديد فيجد بحثه وفلاتره القديمة كما تركها، وهو
-// عكس المطلوب تماماً. LOAD_ID يُولَّد مرة واحدة لكل تحميل فعلي لملفات الجافاسكربت
-// ويُحفظ مع الحالة، فنستعيدها فقط إن كان من حفظها هو نفس هذه الفتحة — أي أن الانتقال
-// تمّ داخل التطبيق (فتح قطعة ثم رجوع) لا فتحاً جديداً.
-const LOAD_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
-
-function readSavedScrollState(): SavedScrollState | null {
-  try {
-    const raw = sessionStorage.getItem(SCROLL_STATE_KEY);
-    if (!raw) return null;
-    const saved = JSON.parse(raw) as SavedScrollState;
-    if (saved.loadId !== LOAD_ID) {
-      // حالة خلّفتها فتحة سابقة — نتخلّص منها كي لا تُستعاد لاحقاً بالغلط.
-      sessionStorage.removeItem(SCROLL_STATE_KEY);
-      return null;
-    }
-    return saved;
-  } catch {
-    return null;
-  }
-}
+// نحفظ مكان الموظف في نتائج البحث (الفلاتر، عدد الصفحات المحمَّلة، موضع التمرير، ونتائج
+// البحث بالصورة) — بحيث لما يرجع يجد نفس مكانه بالظبط، لا أول الصفحة بفلاتر فاضية.
+// نستعيد فقط عند "رجوع" (POP): زر الرجوع من قطعة، أو عودة من الواتساب حتى لو قتل آيفون
+// التطبيق في الخلفية. الفتح بعد مدة طويلة يبقى بداية نظيفة — راجع src/lib/resume.ts.
+type PhotoMatchState = { product_id: string; similarity: number; visual?: number | null; textual?: number | null; kind?: string };
+type SavedScrollState = { filters: Filters; pages: number; scrollY: number; similarMatches?: PhotoMatchState[] | null };
 
 /** تنظيف نص البحث من الرموز التي تُفسد صياغة فلتر PostgREST. */
 const sanitizeTerm = (s: string) => s.replace(/[,(){}"\\]/g, " ").trim();
@@ -88,9 +64,9 @@ export default function ProductSearch() {
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   // "رجوع" فعلي من صفحة تفاصيل قطعة (POP) يستعيد الفلاتر/عدد الصفحات المحفوظة؛ أي دخول
-  // آخر (فتح جديد، رابط مباشر) يبدأ فاضياً كالمعتاد. راجع SCROLL_STATE_KEY أعلى الملف.
+  // آخر (فتح جديد، رابط مباشر) يبدأ فاضياً كالمعتاد. راجع SavedScrollState أعلى الملف.
   const navigationType = useNavigationType();
-  const restoredState = useRef(navigationType === "POP" ? readSavedScrollState() : null).current;
+  const restoredState = useRef(navigationType === "POP" ? readResume<SavedScrollState>("search") : null).current;
   const [filters, setFilters] = useState<Filters>(restoredState?.filters ?? initialFilters);
   const [debounced, setDebounced] = useState(filters);
   const [pages, setPages] = useState(restoredState?.pages ?? 1); // كم صفحة تم تحميلها
@@ -264,9 +240,7 @@ export default function ProductSearch() {
   });
 
   // Image-search results — when set, overrides normal query with similarity-ranked matches.
-  const [similarMatches, setSimilarMatches] = useState<
-    { product_id: string; similarity: number; visual?: number | null; textual?: number | null; kind?: string }[] | null
-  >(null);
+  const [similarMatches, setSimilarMatches] = useState<PhotoMatchState[] | null>(restoredState?.similarMatches ?? null);
   const similarIds = useMemo(() => similarMatches?.map((m) => m.product_id) ?? null, [similarMatches]);
 
   // "قطع مشابهة" من صفحة القطعة: /?similar=<productId> — يستخدم البصمة المحفوظة (بدون تحليل جديد)
@@ -433,10 +407,10 @@ export default function ProductSearch() {
 
 
   // نحفظ الفلاتر/عدد الصفحات/موضع التمرير حتى يكون آخر موضع فعلي قبل فتح أي قطعة جاهزاً
-  // للاستعادة عند "رجوع". راجع SCROLL_STATE_KEY أعلى الملف.
+  // للاستعادة عند "رجوع". راجع SavedScrollState أعلى الملف.
   //
   // مهم: الكتابة مخنوقة بـrequestAnimationFrame لا مع كل حدث تمرير. الكتابة المباشرة
-  // (JSON.stringify + sessionStorage.setItem وكلاهما متزامن) كانت تعمل عشرات المرات في
+  // (JSON.stringify + localStorage.setItem وكلاهما متزامن) كانت تعمل عشرات المرات في
   // الثانية على أكثر صفحة استخداماً في التطبيق، فتُسبّب تهنيجاً محسوساً أثناء التمرير على
   // هواتف متوسطة. rAF يضمن كتابة واحدة كحد أقصى لكل إطار رسم، والقيمة المحفوظة تبقى
   // محدَّثة لحظة مغادرة الصفحة وهو كل ما يهم للاستعادة.
@@ -445,7 +419,7 @@ export default function ProductSearch() {
     const write = () => {
       frame = 0;
       try {
-        sessionStorage.setItem(SCROLL_STATE_KEY, JSON.stringify({ filters, pages, scrollY: window.scrollY, loadId: LOAD_ID }));
+        saveResume<SavedScrollState>("search", { filters, pages, scrollY: window.scrollY, similarMatches });
       } catch {}
     };
     const onScroll = () => {
@@ -461,7 +435,7 @@ export default function ProductSearch() {
       // آخر حركة تمرير قبل فتح القطعة مباشرة — وهي بالضبط الحالة التي نستعيدها.
       write();
     };
-  }, [filters, pages]);
+  }, [filters, pages, similarMatches]);
 
   // استعادة موضع التمرير مرة واحدة فقط بعد أن يحمّل عدد الصفحات المستعاد فعلياً (وإلا
   // نُمرّر لمكان لم يُحمَّل بعد المحتوى الذي يشغله). تُستهلك (تُصفَّر) فور التنفيذ.
