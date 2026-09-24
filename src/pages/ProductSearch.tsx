@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams, useNavigationType } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { deleteProducts } from "@/lib/productImages";
 import { useAuth } from "@/hooks/useAuth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -178,8 +179,7 @@ export default function ProductSearch() {
     setBulkBusy(true);
     try {
       const ids = Array.from(selectedIds);
-      const { error } = await supabase.from("products").delete().in("id", ids);
-      if (error) throw error;
+      await deleteProducts(ids);
       toast.success(`تم حذف ${ids.length} قطعة`);
       exitSelection();
       refreshProducts();

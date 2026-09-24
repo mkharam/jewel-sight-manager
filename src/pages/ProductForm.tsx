@@ -3,6 +3,7 @@ import { useNavigate, useParams, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
+import { removeUnreferencedFiles } from "@/lib/productImages";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -317,7 +318,7 @@ export default function ProductForm() {
     }
   };
 
-  const removeExisting = async (imgId: string, path: string) => {
+  const removeExisting = async (imgId: string, path: string, thumbPath?: string | null) => {
     const ok = await confirm({ title: "حذف هذه الصورة؟", confirmLabel: "حذف", destructive: true });
     if (!ok) return;
 
@@ -329,8 +330,8 @@ export default function ProductForm() {
     if (error) return toast.error(error.message || "تعذّر حذف الصورة");
 
     // الملف نفسه: فشل حذفه لا يترك أثراً مرئياً (لا سطر يشير إليه) فلا نُفزع الموظف به.
-    const { error: storageErr } = await supabase.storage.from("product-images").remove([path]);
-    if (storageErr) console.warn("storage cleanup failed", storageErr);
+    // مع المصغّرة — كانت تبقى يتيمة في التخزين بعد حذف الصورة الكاملة.
+    await removeUnreferencedFiles([path, thumbPath]);
 
     setExistingImages((arr) => arr.filter((i) => i.id !== imgId));
     toast.success("تم حذف الصورة");
@@ -515,7 +516,7 @@ export default function ProductForm() {
                   {/* مصغّرة مضغوطة بدل الصورة الكاملة — تحميل أسرع بكثير في شبكة تعديل قطعة فيها صور كثيرة */}
                   <img src={getThumbUrl(img)!} className="w-full h-full object-contain" alt="" loading="lazy" decoding="async" />
                   {img.is_primary && <Star className="absolute top-1 right-1 size-4 fill-primary text-primary drop-shadow" />}
-                  <button type="button" onClick={() => removeExisting(img.id, img.storage_path)} className="absolute top-1 left-1 size-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center transition-transform hover:scale-110 active:scale-95">
+                  <button type="button" onClick={() => removeExisting(img.id, img.storage_path, img.thumb_path)} className="absolute top-1 left-1 size-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center transition-transform hover:scale-110 active:scale-95">
                     <X className="size-3" />
                   </button>
                 </div>

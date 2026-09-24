@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { deleteProducts } from "@/lib/productImages";
 import { attachStaffNames } from "@/lib/staffNames";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -161,8 +162,11 @@ export default function ProductDetail() {
       destructive: true,
     });
     if (!ok) return;
-    const { error } = await supabase.from("products").delete().eq("id", id!);
-    if (error) return toast.error(error.message);
+    try {
+      await deleteProducts([id!]);
+    } catch (e) {
+      return toast.error(e instanceof Error ? e.message : "تعذّر الحذف");
+    }
     await supabase.from("activity_log").insert({
       actor_id: user?.id, action: "delete", entity_type: "product", entity_id: id,
       details: { name: product.name },

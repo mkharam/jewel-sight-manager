@@ -19,6 +19,7 @@ import { listPending, prunePending, removePending, savePending } from "@/lib/pen
 import { isPdf, pdfToImageFiles } from "@/lib/pdf-to-images";
 import { uploadQueue } from "@/lib/uploadQueue";
 import { normalizeAr } from "@/lib/arabic-search";
+import { deleteProducts, removeUnreferencedFiles } from "@/lib/productImages";
 
 export type UploadOptions = {
   userId: string;
@@ -219,7 +220,12 @@ export async function saveCapturedPiece(
   });
 
   const { path, thumbPath } = await uploadFile(file, opts.userId, Math.floor(Math.random() * 1_000_000));
-  const saved = await saveUnanalyzedProduct(path, thumbPath, opts, weightGrams, barcodeValue, karat ?? null, null);
+  const saved = await saveUnanalyzedProduct(path, thumbPath, opts, weightGrams, barcodeValue, karat ?? null, null)
+    .catch(async (e) => {
+      // النسخة المحلية باقية وستُرفع من جديد عند الاستئناف — لا نترك هذه النسخة يتيمة.
+      await removeUnreferencedFiles([path, thumbPath]);
+      throw e;
+    });
   await removePending(pendingId);
   return saved;
 }
@@ -251,8 +257,7 @@ export async function updateCapturedPiece(
 /** تراجع عن قطعة سبق حفظها فعلاً (خطأ تصوير) — يحذفها نهائياً مع صورتها. يرمي عند الفشل
  *  حتى لا تختفي من الشاشة بينما تبقى في المخزون فعلياً بلا أي أثر يدل عليها. */
 export async function deleteCapturedPiece(productId: string): Promise<void> {
-  const { error } = await supabase.from("products").delete().eq("id", productId);
-  if (error) throw error;
+  await deleteProducts([productId]);
 }
 
 /**
@@ -359,6 +364,7 @@ export async function analyzeCapturedPiece(
 async function saveTrayPieces(
   file: File,
   storagePath: string,
+  storageThumbPath: string | null,
   opts: UploadOptions,
   categories: { id: string; name: string }[],
 ) {
@@ -453,11 +459,16 @@ async function saveTrayPieces(
     if (imgErr) {
       console.warn("product image insert failed — removing the orphaned product", imgErr);
       await supabase.from("products").delete().eq("id", prod.id);
+      if (piecePath !== storagePath) await removeUnreferencedFiles([piecePath, pieceThumbPath]);
       continue;
     }
 
     await saveStoneColors(prod.id, a.gemstones);
   }
+
+  // صورة الصينية الكاملة تبقى فقط إن سقطت إليها قطعة واحدة على الأقل (فشل القص)؛ غير ذلك
+  // كل قطعة لها صورتها المقصوصة، فكانت صورة الصينية ومصغّرتها تبقيان يتيمتين بعد كل صينية.
+  await removeUnreferencedFiles([storagePath, storageThumbPath]);
 
   return pieces.length;
 }
@@ -605,12 +616,14 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
   const concurrency = 3;
   const stagger = 350;
   await pool(entries, concurrency, async (entry, k) => {
+    let uploaded: (string | null)[] = [];
     try {
       const { path, thumbPath } = await uploadFile(entry.file, opts.userId, k);
+      uploaded = [path, thumbPath];
 
       if (opts.trayMode) {
         uploadQueue.update(entry.id, { status: "analyzing", label: "جارٍ التحليل…" });
-        const n = await saveTrayPieces(entry.file, path, opts, categories);
+        const n = await saveTrayPieces(entry.file, path, thumbPath, opts, categories);
         uploadQueue.update(entry.id, { status: "done", label: `تم حفظ ${n} قطعة` });
       } else {
         const saved = await saveUnanalyzedProduct(path, thumbPath, opts, entry.weightGrams, entry.barcodeValue, entry.karat, entry.itemType);
@@ -639,6 +652,9 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
       ok++;
     } catch (e: any) {
       failed++;
+      // الصورة رُفعت لكن القطعة لم تُحفظ — السجل المحلي سيعيد رفعها عند الاستئناف، فهذه
+      // النسخة لن يشير إليها أحد. removeUnreferencedFiles لا يحذف ما حُفظ فعلاً.
+      await removeUnreferencedFiles(uploaded);
       // نُبقي السجل في IndexedDB ليُستأنف لاحقاً بدل فقدان الصورة.
       uploadQueue.update(entry.id, { status: "error", message: e?.message ?? "فشل الرفع" });
     }

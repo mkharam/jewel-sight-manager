@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { Navigate, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { deleteProducts } from "@/lib/productImages";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
@@ -168,8 +169,7 @@ export default function AdminProducts() {
     setBusy(true);
     try {
       const ids = Array.from(selectedIds);
-      const { error } = await supabase.from("products").delete().in("id", ids);
-      if (error) throw error;
+      await deleteProducts(ids);
       toast.success(`تم حذف ${ids.length} قطعة`);
       clearSelection();
       refresh();

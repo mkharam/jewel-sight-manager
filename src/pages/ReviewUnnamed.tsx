@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { deleteProducts } from "@/lib/productImages";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -210,8 +211,7 @@ export default function ReviewUnnamed() {
     if (!ok) return;
     setSavingIds((s) => new Set(s).add(row.id));
     try {
-      const { error } = await supabase.from("products").delete().eq("id", row.id);
-      if (error) throw error;
+      await deleteProducts([row.id]);
       qc.setQueryData<Row[]>(queryKey, (prev) => (prev ?? []).filter((r) => r.id !== row.id));
       setSelected((s) => { const next = new Set(s); next.delete(row.id); return next; });
     } catch (e: any) {
@@ -232,8 +232,7 @@ export default function ReviewUnnamed() {
     setBulkBusy(true);
     try {
       const ids = Array.from(selected);
-      const { error } = await supabase.from("products").delete().in("id", ids);
-      if (error) throw error;
+      await deleteProducts(ids);
       toast.success(`تم حذف ${ids.length} قطعة`);
       qc.setQueryData<Row[]>(queryKey, (prev) => (prev ?? []).filter((r) => !selected.has(r.id)));
       setSelected(new Set());
