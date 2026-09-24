@@ -13,7 +13,7 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { embedText, friendlyError } from "../_shared/lovable-ai.ts";
 
-const CHAT_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.1-flash-lite", "gemini-flash-latest"];
+const CHAT_MODELS = ["gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-flash-latest"];
 
 const SYSTEM_PROMPT =
   `أنت "مساعد مخرّم" — مساعد ذكي داخلي لموظفي محل مجوهرات، تتحدث العربية دائماً بأسلوب مختصر ومباشر ومهني.\n` +
