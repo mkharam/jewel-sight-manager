@@ -82,8 +82,13 @@ export function formatDate(d: string | Date | null | undefined) {
   }).format(date);
 }
 
+// ضبط VITE_R2_PUBLIC_URL هو مفتاح الانتقال إلى Cloudflare R2 — القراءة والرفع والحذف كلها
+// تتبعه (راجع productImages.ts). بدونه يبقى كل شيء على تخزين Supabase كما كان.
+export const R2_PUBLIC_URL = (import.meta.env.VITE_R2_PUBLIC_URL as string | undefined)?.replace(/\/$/, "") || null;
+
 export function getImageUrl(path: string | null | undefined) {
   if (!path) return null;
+  if (R2_PUBLIC_URL) return `${R2_PUBLIC_URL}/${path}`;
   const base = import.meta.env.VITE_SUPABASE_URL;
   return `${base}/storage/v1/object/public/product-images/${path}`;
 }

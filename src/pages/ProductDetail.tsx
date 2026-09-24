@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { deleteProducts } from "@/lib/productImages";
+import { deleteProducts, uploadProductImage } from "@/lib/productImages";
 import { attachStaffNames } from "@/lib/staffNames";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -214,8 +214,7 @@ export default function ProductDetail() {
       const branchPrefix = product.branch_id ? `branch-${product.branch_id}` : "unassigned";
       const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
       const path = `${branchPrefix}/${id}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
-      const { error: upErr } = await supabase.storage.from("product-images").upload(path, file);
-      if (upErr) throw upErr;
+      await uploadProductImage(path, file);
       const { error: insErr } = await supabase.from("product_images").insert({
         product_id: id!,
         storage_path: path,
