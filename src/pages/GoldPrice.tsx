@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Coins, Save, AlertTriangle, Eye, EyeOff } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useShowPricesSetting, usePriceRangeSetting } from "@/hooks/useAppSettings";
-import { KARAT_OPTIONS, formatCurrency, formatDate } from "@/lib/constants";
+import { KARAT_OPTIONS, formatCurrency, formatDate, normalizeDecimalInput } from "@/lib/constants";
 import { businessToday } from "@/lib/dates";
 import GoldSpotSuggestion from "@/components/GoldSpotSuggestion";
 import { suggestedPrice } from "@/lib/luxury";
@@ -201,11 +201,11 @@ export default function GoldPrice() {
           <div className="flex items-end gap-2 flex-wrap">
             <div>
               <Label className="text-xs">من</Label>
-              <Input type="number" inputMode="numeric" className="w-32" value={rangeMin} onChange={(e) => setRangeMin(e.target.value)} placeholder="بلا حد أدنى" />
+              <Input type="text" inputMode="numeric" dir="ltr" className="w-32" value={rangeMin} onChange={(e) => setRangeMin(normalizeDecimalInput(e.target.value))} placeholder="بلا حد أدنى" />
             </div>
             <div>
               <Label className="text-xs">إلى</Label>
-              <Input type="number" inputMode="numeric" className="w-32" value={rangeMax} onChange={(e) => setRangeMax(e.target.value)} placeholder="بلا حد أعلى" />
+              <Input type="text" inputMode="numeric" dir="ltr" className="w-32" value={rangeMax} onChange={(e) => setRangeMax(normalizeDecimalInput(e.target.value))} placeholder="بلا حد أعلى" />
             </div>
             <Button size="sm" disabled={savingRange} onClick={() => saveRange(true)}>حفظ النطاق</Button>
           </div>
@@ -249,12 +249,12 @@ export default function GoldPrice() {
                   <div>
                     <Label className="text-xs">سعر الجرام</Label>
                     <Input inputMode="decimal" value={form[k]?.price ?? ""}
-                      onChange={(e) => setForm((f) => ({ ...f, [k]: { price: e.target.value, making: f[k]?.making ?? "" } }))} />
+                      onChange={(e) => setForm((f) => ({ ...f, [k]: { price: normalizeDecimalInput(e.target.value), making: f[k]?.making ?? "" } }))} />
                   </div>
                   <div>
                     <Label className="text-xs">المصنعية / غ</Label>
                     <Input inputMode="decimal" value={form[k]?.making ?? ""}
-                      onChange={(e) => setForm((f) => ({ ...f, [k]: { price: f[k]?.price ?? "", making: e.target.value } }))} />
+                      onChange={(e) => setForm((f) => ({ ...f, [k]: { price: f[k]?.price ?? "", making: normalizeDecimalInput(e.target.value) } }))} />
                   </div>
                 </div>
                 <Button size="sm" className="w-full" onClick={() => save(k)}>
@@ -277,7 +277,7 @@ export default function GoldPrice() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs">الوزن (غ)</Label>
-              <Input inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value)} />
+              <Input inputMode="decimal" dir="ltr" value={weight} onChange={(e) => setWeight(normalizeDecimalInput(e.target.value))} />
             </div>
             <div>
               <Label className="text-xs">العيار</Label>

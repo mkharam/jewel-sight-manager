@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tag, AlertTriangle, Clock } from "lucide-react";
-import { formatCurrency, formatDate } from "@/lib/constants";
+import { formatCurrency, formatDate, normalizeDecimalInput } from "@/lib/constants";
 import { toast } from "sonner";
 
 interface Props {
@@ -149,11 +149,11 @@ export default function QuickQuoteSheet({ productId, productName, branchId, trig
           <div>
             <Label>السعر المعروض *</Label>
             <Input
-              type="number"
+              type="text"
               step="0.01"
               inputMode="decimal"
               value={price}
-              onChange={(e) => setPrice(e.target.value)}
+              onChange={(e) => setPrice(normalizeDecimalInput(e.target.value))}
               required
               autoFocus
               className="text-lg h-12 font-bold"

@@ -1,3 +1,4 @@
+import { normalizeDecimalInput } from "@/lib/constants";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -142,9 +143,9 @@ export default function ReorderRequestDialog({
           )}
           <div className="grid grid-cols-2 gap-3">
             <div><Label>اسم الزبون</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
-            <div><Label>الهاتف</Label><Input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" /></div>
+            <div><Label>الهاتف</Label><Input value={phone} onChange={(e) => setPhone(normalizeDecimalInput(e.target.value).replace(/\./g, ""))} inputMode="tel" dir="ltr" /></div>
           </div>
-          <div><Label>الكمية</Label><Input type="number" min={1} value={quantity} onChange={(e) => setQuantity(e.target.value)} inputMode="numeric" dir="ltr" className="w-24" /></div>
+          <div><Label>الكمية</Label><Input type="text" value={quantity} onChange={(e) => setQuantity(normalizeDecimalInput(e.target.value).replace(/\./g, ""))} inputMode="numeric" dir="ltr" className="w-24" /></div>
           <div><Label>ملاحظات</Label><Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="مثال: نفس الشكل بمقاس أكبر" /></div>
         </div>
         <DialogFooter>

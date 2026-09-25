@@ -1,3 +1,4 @@
+import { normalizeDecimalInput } from "@/lib/constants";
 import { useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -546,7 +547,7 @@ function ExpensesCard({
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5"><Label>المبلغ (د.ل) *</Label><Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" /></div>
+                <div className="space-y-1.5"><Label>المبلغ (د.ل) *</Label><Input value={amount} onChange={(e) => setAmount(normalizeDecimalInput(e.target.value))} inputMode="decimal" /></div>
                 <div className="space-y-1.5">
                   <Label>الفرع (اختياري)</Label>
                   <Select value={branchId} onValueChange={setBranchId}>

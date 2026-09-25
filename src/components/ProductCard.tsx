@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import SellDialog from "@/components/SellDialog";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -96,8 +97,16 @@ export default function ProductCard({
   // تغيير الحالة السريع تعديل — يقتصر على المدير العام أو المشرف على قطع فرعه فقط.
   const canEditStatus = isAdmin || (isManager && product.branch_id === profile?.branch_id);
 
+  const [sellOpen, setSellOpen] = useState(false);
+
   const quickSetStatus = async (next: ProductStatus) => {
     if (next === product.status) return;
+    // "مبيع" يفتح نافذة البيع بدل تغيير الحالة فقط: التغيير المباشر كان يجعل القطعة مبيعة
+    // بلا سجل بيع (بلا سعر ولا بائع) فلا تظهر في المبيعات ولا التقارير.
+    if (next === "sold") {
+      setSellOpen(true);
+      return;
+    }
     setPending(next);
     try {
       const { error } = await supabase.from("products").update({ status: next }).eq("id", product.id);
@@ -295,6 +304,13 @@ export default function ProductCard({
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
+            <SellDialog
+              product={product}
+              suggestedPrice={todayPrice?.total ?? null}
+              open={sellOpen}
+              onOpenChange={setSellOpen}
+              hideTrigger
+            />
           </div>
           )}
         </>
