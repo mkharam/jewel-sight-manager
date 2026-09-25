@@ -24,7 +24,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { expandQuery, matchScore } from "@/lib/arabic-search";
-import { readResume, saveResume } from "@/lib/resume";
+import { clearResume, readResume, saveResume } from "@/lib/resume";
 
 interface Filters {
   q: string;
@@ -60,13 +60,14 @@ type PhotoMatchState = {
   kind?: string;
   reasons?: string[];
 };
-type SavedScrollState = {
-  filters: Filters;
-  pages: number;
-  scrollY: number;
-  similarMatches?: PhotoMatchState[] | null;
+type SavedScrollState = { filters: Filters; pages: number; scrollY: number };
+// نتائج البحث بالصورة تُحفظ منفصلة عن موضع التمرير: صورة الزبون (~150KB) و140 نتيجة كانت
+// تُعاد كتابتها مع كل إطار تمرير (حتى 60 مرة بالثانية) فتُقطّع التمرير على الآيفون. هذه
+// تُكتب فقط حين تتغيّر، وموضع التمرير يبقى خفيفاً.
+type SavedPhotoState = {
+  similarMatches: PhotoMatchState[] | null;
   /** صورة الزبون (data URL مضغوطة) — تُثبَّت فوق النتائج للمقارنة. */
-  photoQuery?: string | null;
+  photoQuery: string | null;
 };
 
 // ترتيب المستويات في العرض، ونصوص الأقسام. "similar" قيمة قديمة من استجابات مخزّنة قبل
@@ -100,6 +101,7 @@ export default function ProductSearch() {
   // آخر (فتح جديد، رابط مباشر) يبدأ فاضياً كالمعتاد. راجع SavedScrollState أعلى الملف.
   const navigationType = useNavigationType();
   const restoredState = useRef(navigationType === "POP" ? readResume<SavedScrollState>("search") : null).current;
+  const restoredPhoto = useRef(navigationType === "POP" ? readResume<SavedPhotoState>("searchPhoto") : null).current;
   const [filters, setFilters] = useState<Filters>(restoredState?.filters ?? initialFilters);
   const [debounced, setDebounced] = useState(filters);
   const [pages, setPages] = useState(restoredState?.pages ?? 1); // كم صفحة تم تحميلها
@@ -272,8 +274,8 @@ export default function ProductSearch() {
   });
 
   // Image-search results — when set, overrides normal query with similarity-ranked matches.
-  const [similarMatches, setSimilarMatches] = useState<PhotoMatchState[] | null>(restoredState?.similarMatches ?? null);
-  const [photoQuery, setPhotoQuery] = useState<string | null>(restoredState?.photoQuery ?? null);
+  const [similarMatches, setSimilarMatches] = useState<PhotoMatchState[] | null>(restoredPhoto?.similarMatches ?? null);
+  const [photoQuery, setPhotoQuery] = useState<string | null>(restoredPhoto?.photoQuery ?? null);
   const similarIds = useMemo(() => similarMatches?.map((m) => m.product_id) ?? null, [similarMatches]);
 
   // "قطع مشابهة" من صفحة القطعة: /?similar=<productId> — يستخدم البصمة المحفوظة (بدون تحليل جديد)
@@ -461,7 +463,7 @@ export default function ProductSearch() {
     const write = () => {
       frame = 0;
       try {
-        saveResume<SavedScrollState>("search", { filters, pages, scrollY: window.scrollY, similarMatches, photoQuery });
+        saveResume<SavedScrollState>("search", { filters, pages, scrollY: window.scrollY });
       } catch {}
     };
     const onScroll = () => {
@@ -477,7 +479,14 @@ export default function ProductSearch() {
       // آخر حركة تمرير قبل فتح القطعة مباشرة — وهي بالضبط الحالة التي نستعيدها.
       write();
     };
-  }, [filters, pages, similarMatches, photoQuery]);
+  }, [filters, pages]);
+
+  // نتائج الصورة تُحفظ فقط عند تغيّرها — راجع SavedPhotoState. فتح البحث من جديد (لا رجوع)
+  // يبدأ بلا نتائج فيمسح المحفوظ، فلا تعود نتائج قديمة لاحقاً بالغلط.
+  useEffect(() => {
+    if (!similarMatches && !photoQuery) clearResume("searchPhoto");
+    else saveResume<SavedPhotoState>("searchPhoto", { similarMatches, photoQuery });
+  }, [similarMatches, photoQuery]);
 
   // استعادة موضع التمرير مرة واحدة فقط بعد أن يحمّل عدد الصفحات المستعاد فعلياً (وإلا
   // نُمرّر لمكان لم يُحمَّل بعد المحتوى الذي يشغله). تُستهلك (تُصفَّر) فور التنفيذ.
