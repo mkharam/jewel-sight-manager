@@ -801,7 +801,7 @@ export default function ProductSearch() {
       {similarIds !== null && similarityBuckets && (
         // شريط ثابت أعلى الشاشة على الآيفون: صورة الزبون للمقارنة بنظرة، وأزرار المستويات
         // بعددها تنقل مباشرة لقسمها بدل التمرير الطويل بين عشرات القطع.
-        <div className="sticky top-[calc(env(safe-area-inset-top)+3.5rem)] sm:top-[calc(env(safe-area-inset-top)+4rem)] z-20 -mx-3 px-3 sm:-mx-4 sm:px-4 pt-2 pb-2 bg-background/95 backdrop-blur border-b border-border/60 space-y-2">
+        <div className="sticky top-[calc(env(safe-area-inset-top)+3.5rem)] sm:top-[calc(env(safe-area-inset-top)+4rem)] z-20 -mx-3 px-3 sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6 pt-2 pb-2 bg-background/95 backdrop-blur border-b border-border/60 space-y-2">
           <div className="flex items-center gap-3">
             {photoQuery ? (
               <img src={photoQuery} alt="صورة الزبون" className="size-14 shrink-0 rounded-xl object-cover border-2 border-primary/40" />
