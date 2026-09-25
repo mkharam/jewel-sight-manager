@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams, useNavigationType } from "react-router-dom";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useSearchParams, useNavigationType } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteProducts } from "@/lib/productImages";
@@ -7,7 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store, CheckSquare, Trash2, Loader2, ArrowUpDown, ChevronDown, Coins } from "lucide-react";
+import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store, CheckSquare, Trash2, Loader2, ArrowUpDown, ChevronDown, Coins, ScanBarcode } from "lucide-react";
 import ProductCard, { MATCH_TIER_META, type PhotoMatchTier } from "@/components/ProductCard";
 import { useLatestQuotes } from "@/hooks/useLatestQuotes";
 import { useGoldPrices } from "@/hooks/useGoldPrices";
@@ -93,6 +93,9 @@ const sanitizeTerm = (s: string) => s.replace(/[,(){}"\\]/g, " ").trim();
 
 const PAGE_SIZE = 48;
 
+// مكتبة قراءة الباركود كبيرة — تُحمَّل فقط عند الضغط على زر المسح.
+const BarcodeScanDialog = lazy(() => import("@/components/BarcodeScanDialog"));
+
 export default function ProductSearch() {
   const { profile, roles } = useAuth();
   const queryClient = useQueryClient();
@@ -109,6 +112,26 @@ export default function ProductSearch() {
   const pendingScrollRestore = useRef(restoredState?.scrollY ?? null);
   const [showAiTags, setShowAiTags] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
+  const [scanOpen, setScanOpen] = useState(false);
+
+  // باركود الوسم يفتح القطعة مباشرة إن طابق قطعة واحدة (الحالة المعتادة: زبون يشير لقطعة
+  // في الخزانة)؛ وإلا يُكتب في مربع البحث فيرى الموظف ما يطابقه بدل "لم يُعثر".
+  const onBarcode = async (raw: string) => {
+    const code = raw.replace(/[^A-Za-z0-9\-_.]/g, "");
+    if (!code) return;
+    const { data } = await supabase
+      .from("products")
+      .select("id")
+      .or(`barcode_value.eq.${code},sku.eq.${code}`)
+      .limit(2);
+    if (data?.length === 1) {
+      navigate(`/products/${data[0].id}`);
+      return;
+    }
+    setFilters((f) => ({ ...f, q: code }));
+    if (!data?.length) toast.info(`لا توجد قطعة بالباركود ${code}`);
+  };
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   // Bulk selection mode
@@ -637,7 +660,18 @@ export default function ProductSearch() {
                 }}
               />
             </div>
-          <div className="grid grid-cols-2 gap-2">
+          {/* اختصارات الموظف اليومية: مسح وسم القطعة، المساعد الذكي، الفلترة. */}
+          <div className="grid grid-cols-3 gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            className="h-12 w-full"
+            onClick={() => setScanOpen(true)}
+          >
+            <ScanBarcode className="size-4 ml-1.5" />
+            باركود
+          </Button>
           <AiAssistantSheet className="h-12" />
           <Sheet>
             <SheetTrigger asChild>
@@ -736,8 +770,20 @@ export default function ProductSearch() {
       <MySalesCard />
       <MyWorkCard />
 
+      {scanOpen && (
+        <Suspense fallback={null}>
+          <BarcodeScanDialog open={scanOpen} onOpenChange={setScanOpen} onDetect={(t) => void onBarcode(t)} />
+        </Suspense>
+      )}
+
       {/* فلاتر سريعة Chips */}
       <div className="flex gap-2 overflow-x-auto -mx-3 px-3 pb-1 scrollbar-none">
+        {/* "متوفر" أولاً: حين يقف زبون أمام الموظف لا تفيده القطع المبيعة أو المحجوزة. */}
+        <Chip
+          active={filters.status === "available"}
+          onClick={() => setFilters((f) => ({ ...f, status: f.status === "available" ? "all" : "available" }))}
+        >متوفر فقط</Chip>
+        <div className="w-px bg-border mx-1 shrink-0" />
         {KARAT_OPTIONS.map((k) => (
           <Chip
             key={k}
