@@ -143,7 +143,7 @@ export default function AiAssistantSheet({ className }: { className?: string }) 
       <SheetTrigger asChild>
         <Button type="button" variant="outline" size="lg" className={cn("h-12 w-full", className)} title="مساعد مخرّم الذكي">
           <Bot className="size-4 ml-1.5" />
-          المساعد
+          مساعد مخرّم
         </Button>
       </SheetTrigger>
       <SheetContent side="bottom" className="h-[85dvh] flex flex-col p-0">
