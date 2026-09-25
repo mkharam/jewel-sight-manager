@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Bell, Wrench, Landmark, BookmarkCheck, Recycle } from "lucide-react";
+import { Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -15,61 +15,82 @@ import { useResumeRoute } from "@/lib/resume";
 import { ensurePushEnabled } from "@/lib/push";
 import { resumePendingUploads } from "@/lib/uploadRunner";
 
-type NavItem = { to: string; label: string; icon: any; end?: boolean; badgeKey?: "transfers" | "uploads" | "reorders" | "weights" };
+type BadgeKey = "transfers" | "uploads" | "reorders" | "weights";
+type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean; badgeKey?: BadgeKey };
+type NavSection = { title: string; items: NavItem[] };
 
-const baseNav: NavItem[] = [
-  { to: "/", label: "البحث", icon: Search, end: true },
-  { to: "/chat", label: "المحادثة", icon: MessagesSquare },
-  { to: "/inquiries", label: "استفسارات", icon: MessageCircle },
-  { to: "/upload", label: "رفع", icon: Upload, badgeKey: "uploads" },
-];
+// مصدر واحد لكل التنقّل، مقسّم بأقسام واضحة — كان هناك ست قوائم متداخلة (أساسية، إضافات
+// سطح المكتب، مشتركة، مشرف، مدير، موظف) فتتكرّر العناصر وتظهر للمدير 20 رابطاً في صف واحد
+// أعلى الشاشة على الآيباد والكمبيوتر. الآن: شريط جانبي بأقسام على الشاشات الكبيرة، ونفس
+// الأقسام داخل «المزيد» على الهاتف.
+function buildNav(isAdmin: boolean, isManager: boolean): NavSection[] {
+  const sections: NavSection[] = [
+    {
+      title: "الرئيسية",
+      items: [
+        { to: "/", label: "البحث", icon: Search, end: true },
+        { to: "/chat", label: "المحادثة", icon: MessagesSquare },
+        { to: "/inquiries", label: "الاستفسارات", icon: MessageCircle },
+        { to: "/upload", label: "رفع قطع", icon: Upload, badgeKey: "uploads" },
+        // الإشعارات ليست هنا: الجرس في الرأس ظاهر على كل الشاشات ويفتح صفحتها الكاملة.
+      ],
+    },
+    {
+      title: "العمل اليومي",
+      items: [
+        { to: "/transfers", label: "التحويلات", icon: ArrowLeftRight, badgeKey: "transfers" },
+        { to: "/reorders", label: "إعادة الطلب", icon: PackagePlus, badgeKey: "reorders" },
+        { to: "/reservations", label: "الحجوزات", icon: BookmarkCheck },
+        { to: "/customers", label: "العملاء", icon: Users },
+        { to: "/weights", label: "قطع بلا وزن", icon: Scale, badgeKey: "weights" },
+      ],
+    },
+  ];
+  // سعر الذهب والإقفال والصيانة وشراء الكسر: المدير العام والمشرف فقط.
+  if (isAdmin || isManager) {
+    sections.push({
+      title: "الفرع",
+      items: [
+        { to: "/gold-price", label: "سعر الذهب", icon: Coins },
+        { to: "/closing", label: "إقفال اليوم", icon: Landmark },
+        { to: "/admin/repairs", label: "الصيانة", icon: Wrench },
+        { to: "/buybacks", label: "شراء الكسر", icon: Recycle },
+      ],
+    });
+  }
+  // الأرباح والمبيعات والجرد وإدارة الموظفين: المدير العام فقط.
+  if (isAdmin) {
+    sections.push({
+      title: "الإدارة",
+      items: [
+        { to: "/daily-summary", label: "الملخّص اليومي", icon: CalendarDays },
+        { to: "/reports", label: "التقارير", icon: BarChart3 },
+        { to: "/sales", label: "المبيعات", icon: Receipt },
+        { to: "/stock-take", label: "الجرد", icon: ClipboardCheck },
+        { to: "/admin/products", label: "إدارة القطع", icon: ListChecks },
+        { to: "/staff", label: "الموظفون", icon: Users },
+      ],
+    });
+  }
+  return sections;
+}
 
-// الشريط السفلي للموظف: عمله اليومي هو تسجيل سعر لزبون، وطلب إعادة قطعة، وتسجيل
-// استفسار — وكان «إعادة الطلب» مدفوناً داخل «المزيد». تسجيل السعر يبدأ من القطعة
-// نفسها (داخل صفحتها) فمكانه البحث. المحادثة تبقى في الشريط فيصير ستة أعمدة.
-const employeeMobileNav: NavItem[] = [
-  { to: "/", label: "البحث", icon: Search, end: true },
-  { to: "/chat", label: "المحادثة", icon: MessagesSquare },
-  { to: "/inquiries", label: "استفسارات", icon: MessageCircle },
-  { to: "/reorders", label: "إعادة طلب", icon: PackagePlus, badgeKey: "reorders" },
-  { to: "/upload", label: "رفع", icon: Upload, badgeKey: "uploads" },
-];
+// الشريط السفلي على الهاتف: أربع/خمس صفحات يومية + «المزيد». الموظف عمله اليومي تسجيل
+// استفسار وطلب إعادة قطعة، فيحصل «إعادة الطلب» على مكان في الشريط بدل دفنه في «المزيد».
+const MOBILE_BAR = ["/", "/chat", "/inquiries", "/upload"];
+const MOBILE_BAR_STAFF = ["/", "/chat", "/inquiries", "/reorders", "/upload"];
 
-const desktopExtras: NavItem[] = [
-  { to: "/transfers", label: "تحويلات", icon: ArrowLeftRight, badgeKey: "transfers" },
-  { to: "/notifications", label: "الإشعارات", icon: Bell },
-];
-
-// مفيد للعمل اليومي — يراه المشرف والموظف بلا فرق بينهما، بخلاف الأمور الإدارية أدناه.
-const sharedExtras: NavItem[] = [
-  { to: "/weights", label: "قطع بلا وزن", icon: Scale, badgeKey: "weights" },
-  { to: "/customers", label: "العملاء", icon: Users },
-  { to: "/reservations", label: "الحجوزات", icon: BookmarkCheck },
-  { to: "/reorders", label: "طلبات إعادة الطلب", icon: PackagePlus, badgeKey: "reorders" },
-];
-
-// سعر الذهب: المدير العام والمشرف فقط — ليس الموظف.
-const managerExtras: NavItem[] = [
-  { to: "/gold-price", label: "سعر الذهب", icon: Coins },
-  // الصيانة: المدير العام يرى كل الفروع، والمشرف فرعه وحده (تفرضه RLS).
-  { to: "/admin/repairs", label: "الصيانة", icon: Wrench },
-  // إقفال اليوم: المشرف يقفل فرعه، والمدير العام يراجع كل الفروع.
-  { to: "/closing", label: "إقفال اليوم", icon: Landmark },
-  // شراء الذهب القديم: مال يخرج من الدرج — المدير العام والمشرف فقط.
-  { to: "/buybacks", label: "شراء الكسر", icon: Recycle },
-];
-
-// أمور إدارية/حسابية — للمدير العام فقط: تقارير الأرباح، سجل المبيعات، التعديل الجماعي،
-// وإدارة الموظفين.
-const adminExtras: NavItem[] = [
-  // أول ما يريد المالك رؤيته كل يوم — ملخّص شامل الفروع بدل فتح خمس صفحات.
-  { to: "/daily-summary", label: "الملخّص اليومي", icon: CalendarDays },
-  // الجرد الميداني للإدارة فقط — الموظف يبحث ويسجّل ويطلب، والجرد قرار إداري.
-  { to: "/stock-take", label: "جرد ميداني", icon: ClipboardCheck },
-  { to: "/reports", label: "التقارير", icon: BarChart3 },
-  { to: "/sales", label: "المبيعات", icon: Receipt },
-  { to: "/admin/products", label: "إدارة القطع", icon: ListChecks },
-];
+function CountBadge({ count, className }: { count: number; className?: string }) {
+  if (count <= 0) return null;
+  return (
+    <span className={cn(
+      "min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center",
+      className,
+    )}>
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
 
 export default function AppLayout() {
   const { profile, roles, user } = useAuth();
@@ -197,30 +218,19 @@ export default function AppLayout() {
 
   const [moreOpen, setMoreOpen] = useState(false);
 
-  // الشريط السفلي: 4 أساسية + زر «المزيد» يفتح بقية الصفحات. الموظف يحصل على ترتيب
-  // خاص به مبني على عمله اليومي (راجع employeeMobileNav)، والمدير يبقى على الترتيب العام.
   const isStaff = !isAdmin && !isManager;
-  const mobileNav: NavItem[] = isStaff ? employeeMobileNav : baseNav;
-  const moreItems: NavItem[] = [
-    ...desktopExtras,
-    // «إعادة الطلب» صار في الشريط السفلي للموظف فلا نكرّره هنا
-    ...sharedExtras.filter((i) => !(isStaff && i.to === "/reorders")),
-    ...((isAdmin || isManager) ? managerExtras : []),
-    ...(isAdmin ? [...adminExtras, { to: "/staff", label: "موظفون", icon: Users }] : []),
-  ];
-
-  // تنبيه مجمّع على زر «المزيد»: التحويلات المعلّقة كانت تظهر داخل القائمة فقط، فلا
-  // يعرف الموظف بوجودها ما لم يفتحها. النقطة تظهر إن كان أي عنصر بالداخل يحمل عدداً.
-  const moreBadgeCount = moreItems.reduce((n, i) => n + (i.badgeKey ? badges[i.badgeKey] ?? 0 : 0), 0);
-
-  // المشرف والموظف يريان نفس الشيء تقريباً — بضاعة كل الفروع والاستفسارات وما يفيد
-  // العمل اليومي، بدون أي فرق بينهما في التنقّل عدا سعر الذهب (للمشرف والمدير فقط).
-  // صلاحيات التعديل/الحذف تُضبط داخل كل صفحة (مثلاً ProductDetail) لا من القائمة.
-  const desktopNav: NavItem[] = isAdmin
-    ? [...baseNav, ...desktopExtras, ...sharedExtras, ...managerExtras, ...adminExtras, { to: "/staff", label: "موظفون", icon: Users }]
-    : isManager
-      ? [...baseNav, ...desktopExtras, ...sharedExtras, ...managerExtras]
-      : [...baseNav, ...desktopExtras, ...sharedExtras];
+  const sections = buildNav(isAdmin, isManager);
+  const allItems = sections.flatMap((sec) => sec.items);
+  const barPaths = isStaff ? MOBILE_BAR_STAFF : MOBILE_BAR;
+  const mobileBar = barPaths.map((to) => allItems.find((i) => i.to === to)!).filter(Boolean);
+  // «المزيد» = كل ما ليس في الشريط السفلي، بنفس الأقسام.
+  const moreSections = sections
+    .map((sec) => ({ ...sec, items: sec.items.filter((i) => !barPaths.includes(i.to)) }))
+    .filter((sec) => sec.items.length > 0);
+  const countOf = (i: NavItem) => (i.badgeKey ? badges[i.badgeKey] ?? 0 : 0);
+  // تنبيه مجمّع على زر «المزيد» حتى لا تختفي التحويلات المعلّقة داخله دون أن يعرف بها أحد.
+  const moreBadgeCount = moreSections.reduce((n, sec) => n + sec.items.reduce((m, i) => m + countOf(i), 0), 0);
+  const roleLabel = isAdmin ? "مدير عام" : isManager ? "مدير فرع" : "موظف";
 
   const signOut = async () => {
     await supabase.auth.signOut();
@@ -232,8 +242,10 @@ export default function AppLayout() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
+      {/* الرأس بسيط الآن: الشعار، الإشعارات، الحساب. التنقّل انتقل للشريط الجانبي (آيباد/كمبيوتر)
+          أو الشريط السفلي (هاتف) بدل صف روابط مزدحم هنا. */}
       <header className="sticky top-0 z-30 border-b border-border bg-card/95 backdrop-blur shadow-card safe-area-pt">
-        <div className="container mx-auto px-3 sm:px-4 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-4">
+        <div className="px-3 sm:px-4 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-4">
           <Link to="/" className="flex items-center gap-2">
             {/* شعار المتجر الفعلي بدل أيقونة عامة — نفس النقش الذهبي على الحقل الزمرّدي */}
             <img
@@ -249,77 +261,82 @@ export default function AppLayout() {
             </div>
           </Link>
 
-          <nav className="hidden md:flex items-center gap-1">
-            {desktopNav.map((item) => {
-              const count = item.badgeKey ? badges[item.badgeKey] : 0;
-              return (
-                <NavLink key={item.to} to={item.to} end={item.end}
-                  className={({ isActive }) => cn(
-                    "px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 relative",
-                    isActive ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
-                  )}>
-                  <item.icon className="size-4" />
-                  {item.label}
-                  {count > 0 && (
-                    <span className="ml-1 min-w-5 h-5 px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center">
-                      {count > 99 ? "99+" : count}
-                    </span>
-                  )}
-                </NavLink>
-              );
-            })}
-          </nav>
-
           <div className="flex items-center gap-1 sm:gap-2">
             <NotificationsBell />
             <div className="hidden sm:block text-left">
               <p className="text-sm font-semibold leading-tight">{profile?.full_name ?? "—"}</p>
-              <p className="text-[11px] text-muted-foreground leading-tight">
-                {roles.includes("admin") ? "مدير عام" : roles.includes("manager") ? "مدير فرع" : "موظف"}
-              </p>
+              <p className="text-[11px] text-muted-foreground leading-tight">{roleLabel}</p>
             </div>
-            <Button variant="ghost" size="icon" onClick={signOut} aria-label="خروج">
+            <Button variant="ghost" size="icon" onClick={signOut} aria-label="خروج" title="تسجيل الخروج">
               <LogOut className="size-4" />
             </Button>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 container mx-auto px-3 sm:px-4 py-3 sm:py-4 pb-28 md:pb-8">
-        <StaleGoldPriceBanner />
-        <Outlet />
-      </main>
+      <div className="flex flex-1">
+        {/* الشريط الجانبي (يمين الشاشة في العربية): آيباد = أيقونات بعناوين صغيرة تحتها لتوفير
+            العرض، كمبيوتر = أيقونة واسم وأقسام معنونة. */}
+        <aside className="hidden md:block shrink-0 w-[88px] lg:w-60 border-l border-border bg-card/60">
+          <nav
+            aria-label="التنقّل"
+            className="sticky top-[calc(env(safe-area-inset-top)+4rem)] max-h-[calc(100dvh-env(safe-area-inset-top)-4rem)] overflow-y-auto py-3 px-2 lg:px-3 space-y-4"
+          >
+            {sections.map((sec, si) => (
+              <div key={sec.title} className="space-y-1">
+                <p className="hidden lg:block px-3 pb-1 text-[11px] font-bold text-muted-foreground">{sec.title}</p>
+                {si > 0 && <div className="lg:hidden mx-3 mb-2 border-t border-border" />}
+                {sec.items.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.end}
+                    title={item.label}
+                    className={({ isActive }) => cn(
+                      "relative flex items-center rounded-xl transition-colors",
+                      "flex-col gap-1 py-2 text-[10px] font-semibold text-center",
+                      "lg:flex-row lg:gap-3 lg:px-3 lg:py-2.5 lg:text-sm lg:font-medium lg:text-right",
+                      isActive ? "bg-primary/12 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary/70",
+                    )}
+                  >
+                    <item.icon className="size-5 shrink-0" />
+                    <span className="leading-tight lg:flex-1">{item.label}</span>
+                    <CountBadge count={countOf(item)} className="absolute top-1 left-2 lg:static" />
+                  </NavLink>
+                ))}
+              </div>
+            ))}
+          </nav>
+        </aside>
+
+        <main className="flex-1 min-w-0 px-3 sm:px-4 lg:px-6 py-3 sm:py-4 pb-28 md:pb-8">
+          <div className="mx-auto w-full max-w-7xl">
+            <StaleGoldPriceBanner />
+            <Outlet />
+          </div>
+        </main>
+      </div>
 
       <nav data-mobile-bottom-nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-card/95 backdrop-blur safe-area-pb">
-        {/* عدد الأعمدة يتبع طول الشريط: خمسة للمدير، ستة للموظف (بند إضافي: إعادة الطلب) */}
-        <div className={cn("grid", mobileNav.length >= 5 ? "grid-cols-6" : "grid-cols-5")}>
-          {mobileNav.map((item) => {
-            const count = item.badgeKey ? badges[item.badgeKey] : 0;
-            return (
-              <NavLink key={item.to} to={item.to} end={item.end}
-                className={({ isActive }) => cn(
-                  "min-h-[64px] py-2 flex flex-col items-center justify-center gap-1 text-[11px] font-semibold transition-colors relative select-none",
-                  isActive ? "text-primary" : "text-muted-foreground active:bg-muted/40"
-                )}>
-                {({ isActive }) => (
-                  <>
-                    <div className={cn(
-                      "relative flex items-center justify-center rounded-xl transition-colors h-8 w-12",
-                      isActive && "bg-primary/12"
-                    )}>
-                      <item.icon className="size-[22px]" />
-                      {count > 0 && (
-                        <span className="absolute -top-1 left-1 min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center">
-                          {count > 9 ? "9+" : count}
-                        </span>
-                      )}
-                    </div>
-                    <span className={cn("leading-none", mobileNav.length >= 5 && "text-[10px]")}>{item.label}</span>
-                  </>
-                )}
-              </NavLink>
-            );
-          })}
+        <div className={cn("grid", mobileBar.length >= 5 ? "grid-cols-6" : "grid-cols-5")}>
+          {mobileBar.map((item) => (
+            <NavLink key={item.to} to={item.to} end={item.end}
+              className={({ isActive }) => cn(
+                "min-h-[64px] py-2 flex flex-col items-center justify-center gap-1 font-semibold transition-colors relative select-none",
+                mobileBar.length >= 5 ? "text-[10px]" : "text-[11px]",
+                isActive ? "text-primary" : "text-muted-foreground active:bg-muted/40"
+              )}>
+              {({ isActive }) => (
+                <>
+                  <div className={cn("relative flex items-center justify-center rounded-xl transition-colors h-8 w-12", isActive && "bg-primary/12")}>
+                    <item.icon className="size-[22px]" />
+                    <CountBadge count={countOf(item)} className="absolute -top-1 left-1" />
+                  </div>
+                  <span className="leading-none">{item.label}</span>
+                </>
+              )}
+            </NavLink>
+          ))}
 
           <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
             <SheetTrigger asChild>
@@ -330,42 +347,38 @@ export default function AppLayout() {
               >
                 <div className="relative flex items-center justify-center rounded-xl h-8 w-12">
                   <MoreHorizontal className="size-[22px]" />
-                  {moreBadgeCount > 0 && (
-                    <span className="absolute -top-1 left-1 min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center">
-                      {moreBadgeCount > 9 ? "9+" : moreBadgeCount}
-                    </span>
-                  )}
+                  <CountBadge count={moreBadgeCount} className="absolute -top-1 left-1" />
                 </div>
-                <span>المزيد</span>
+                <span className="leading-none">المزيد</span>
               </button>
             </SheetTrigger>
-            <SheetContent side="bottom" className="rounded-t-2xl pb-8">
+            <SheetContent side="bottom" className="rounded-t-2xl pb-8 max-h-[85dvh] overflow-y-auto">
               <SheetHeader className="text-right">
                 <SheetTitle>المزيد</SheetTitle>
               </SheetHeader>
-              <div className="grid grid-cols-3 gap-3 mt-4">
-                {moreItems.map((item) => {
-                  const count = item.badgeKey ? badges[item.badgeKey] : 0;
-                  return (
-                    <NavLink
-                      key={item.to}
-                      to={item.to}
-                      onClick={() => setMoreOpen(false)}
-                      className={({ isActive }) => cn(
-                        "relative flex flex-col items-center justify-center gap-2 rounded-xl border border-border p-3 min-h-[86px] text-xs font-semibold",
-                        isActive ? "bg-secondary text-primary" : "text-foreground active:bg-muted/50"
-                      )}
-                    >
-                      <item.icon className="size-6" />
-                      <span className="text-center leading-tight">{item.label}</span>
-                      {count > 0 && (
-                        <span className="absolute top-1.5 left-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center">
-                          {count > 9 ? "9+" : count}
-                        </span>
-                      )}
-                    </NavLink>
-                  );
-                })}
+              <div className="mt-3 space-y-4">
+                {moreSections.map((sec) => (
+                  <div key={sec.title}>
+                    <p className="mb-2 text-xs font-bold text-muted-foreground">{sec.title}</p>
+                    <div className="grid grid-cols-3 gap-2.5">
+                      {sec.items.map((item) => (
+                        <NavLink
+                          key={item.to}
+                          to={item.to}
+                          onClick={() => setMoreOpen(false)}
+                          className={({ isActive }) => cn(
+                            "relative flex flex-col items-center justify-center gap-2 rounded-xl border border-border p-3 min-h-[80px] text-xs font-semibold",
+                            isActive ? "bg-secondary text-primary" : "text-foreground active:bg-muted/50"
+                          )}
+                        >
+                          <item.icon className="size-6" />
+                          <span className="text-center leading-tight">{item.label}</span>
+                          <CountBadge count={countOf(item)} className="absolute top-1.5 left-1.5" />
+                        </NavLink>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             </SheetContent>
           </Sheet>
