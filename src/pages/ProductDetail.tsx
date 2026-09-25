@@ -28,6 +28,7 @@ import { invalidateInventoryAndSales } from "@/lib/queryInvalidation";
 import { useGoldPrices } from "@/hooks/useGoldPrices";
 import { priceForPiece, PRICE_GAP_LABEL } from "@/lib/pricing";
 import { usePriceVisibleFor } from "@/hooks/useAppSettings";
+import { pieceShareText, sharePiece, useShareImageFile } from "@/lib/sharePiece";
 
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
@@ -121,6 +122,9 @@ export default function ProductDetail() {
   const pricesVisible = usePriceVisibleFor(
     product ? (product.promo_price ?? product.sale_price ?? priceForPiece(product, goldPrices).price?.total ?? null) : null,
   );
+  // صورة "إرسال للزبون" تُجهَّز مسبقاً (راجع useShareImageFile) — قبل أي return مبكّر.
+  const sharePhoto = product?.images?.find((i: { is_primary: boolean }) => i.is_primary) ?? product?.images?.[0];
+  const shareFile = useShareImageFile(getImageUrl(sharePhoto?.storage_path));
 
   if (isLoading) return <div className="p-8 text-center text-muted-foreground">جارٍ التحميل...</div>;
   if (!product) return <div className="p-8 text-center">القطعة غير موجودة</div>;
@@ -149,6 +153,21 @@ export default function ProductDetail() {
   // سعر القطعة اليوم = وزنها × سعر غرام عيارها + الأجرة. راجع src/lib/pricing.ts
   const computedPrice = priceForPiece(product, goldPrices);
   const todayPrice = pricesVisible ? computedPrice.price : null;
+  // "إرسال للزبون": السعر المُرسَل هو نفسه المعروض للموظف هنا (عرض ← بيع ← سعر اليوم)، ولا
+  // سعر إطلاقاً إن كانت الأسعار مخفية عنه.
+  const sharePrice = pricesVisible ? (product.promo_price ?? product.sale_price ?? todayPrice?.total ?? null) : null;
+  const onShare = async () => {
+    const text = pieceShareText({
+      name: product.name,
+      sku: product.sku,
+      karat: product.karat,
+      colorLabel: GOLD_COLORS.find((c) => c.value === product.gold_color)?.label ?? null,
+      weight_grams: product.weight_grams,
+      price: sharePrice,
+    });
+    const r = await sharePiece(text, shareFile);
+    if (r === "copied") toast.success("نُسخت تفاصيل القطعة — الصقها في الواتساب");
+  };
   const priceGap = pricesVisible ? computedPrice.gap : null;
   const canAddPhoto = isAdmin || (!!product.branch_id && product.branch_id === profile?.branch_id);
   const canDeleteOwnUpload = canManageBranchProduct;
@@ -219,6 +238,9 @@ export default function ProductDetail() {
           <ArrowRight className="size-4 ml-1" /> رجوع
         </Button>
         <div className="flex gap-2">
+          <Button size="sm" onClick={onShare} className="bg-gold-gradient text-primary-foreground shadow-gold">
+            <Share2 className="size-4 ml-1" /> إرسال للزبون
+          </Button>
           {canEditProduct && (
             <Link to={`/products/${id}/edit`}>
               <Button variant="outline" size="sm"><Edit className="size-4 ml-1" /> تعديل</Button>
