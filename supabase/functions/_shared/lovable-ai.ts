@@ -372,7 +372,7 @@ export async function analyzeJewelryImageGroq(params: {
 // حدة (per-model quota) فالتنقّل يضاعف الطاقة اليومية المتاحة فعلياً.
 // سبتمبر 2026: أوقفت جوجل gemini-2.5-flash و gemini-2.5-flash-lite (404 "no longer available")
 // فتعطّل البحث بالصورة كلياً — بدائلهما هنا كما سمّتها رسالة الخطأ نفسها.
-const GEMINI_VISION_MODELS = [
+export const GEMINI_VISION_MODELS = [
   "gemini-3.6-flash", // دقة عالية للنصوص الصغيرة والوسوم — الخيار الأول
   "gemini-3.5-flash-lite", // حصة يومية أوفر، دقة أقل قليلاً — عند نفاد الأول
   "gemini-3.1-flash-lite", // بديل حديث بحصة معقولة

@@ -1,3 +1,4 @@
+import { normalizeDecimalInput } from "@/lib/constants";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -94,9 +95,9 @@ export default function ReserveDialog({
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div><Label>اسم الزبون *</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
-            <div><Label>الهاتف</Label><Input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" /></div>
-            <div><Label>العربون (د.ل) *</Label><Input value={deposit} onChange={(e) => setDeposit(e.target.value)} inputMode="decimal" /></div>
-            <div><Label>السعر المتفق عليه</Label><Input value={price} onChange={(e) => setPrice(e.target.value)} inputMode="decimal" /></div>
+            <div><Label>الهاتف</Label><Input value={phone} onChange={(e) => setPhone(normalizeDecimalInput(e.target.value).replace(/\./g, ""))} inputMode="tel" dir="ltr" /></div>
+            <div><Label>العربون (د.ل) *</Label><Input value={deposit} onChange={(e) => setDeposit(normalizeDecimalInput(e.target.value))} inputMode="decimal" dir="ltr" /></div>
+            <div><Label>السعر المتفق عليه</Label><Input value={price} onChange={(e) => setPrice(normalizeDecimalInput(e.target.value))} inputMode="decimal" dir="ltr" /></div>
           </div>
           <div>
             <Label>ينتهي الحجز في</Label>
