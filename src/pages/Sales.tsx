@@ -191,6 +191,9 @@ export default function Sales() {
                 <p className="font-mono font-bold text-primary">{formatCurrency(s.final_price)}</p>
                 {s.discount > 0 && <p className="text-[11px] text-muted-foreground">خصم {formatCurrency(s.discount)}</p>}
                 <p className="text-[11px] text-muted-foreground">{formatDate(s.sold_at)}</p>
+                <Link to={`/sales/${s.id}/receipt`} className="text-[11px] font-semibold text-primary inline-flex items-center gap-0.5">
+                  <Receipt className="size-3" /> الإيصال
+                </Link>
               </div>
             </div>
             {canReturn && !s.returned_at && (
