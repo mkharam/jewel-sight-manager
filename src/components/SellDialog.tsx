@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -45,7 +46,13 @@ export default function SellDialog({
   onOpenChange?: (open: boolean) => void;
   hideTrigger?: boolean;
 }) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const navigate = useNavigate();
+  // البيع يُسجَّل في فرع البائع — حيث تمّ فعلاً — لا في فرع القطعة. 61% من القطع بلا فرع
+  // و"القادسية" بلا قطع مسجّلة إطلاقاً، وسياسة RLS تسمح للموظف بالبيع في فرعه فقط، فكان
+  // كل بيع لقطعة بلا فرع أو من فرع آخر يُرفض بـ403 (هكذا فشل البيع في القادسية).
+  // المدير العام بلا فرع: يبقى فرع القطعة.
+  const saleBranchId = profile?.branch_id ?? product.branch_id ?? null;
   const qc = useQueryClient();
   const [innerOpen, setInnerOpen] = useState(false);
   const open = controlledOpen ?? innerOpen;
@@ -85,7 +92,7 @@ export default function SellDialog({
     if (!trimmedName) return null;
     const { data: created, error: custErr } = await supabase
       .from("customers")
-      .insert({ full_name: trimmedName, phone: trimmedPhone || null, branch_id: product.branch_id, created_by: user?.id ?? null })
+      .insert({ full_name: trimmedName, phone: trimmedPhone || null, branch_id: saleBranchId, created_by: user?.id ?? null })
       .select("id")
       .single();
     if (custErr) { console.warn("تعذّر إنشاء سجل العميل", custErr); return null; }
@@ -97,13 +104,13 @@ export default function SellDialog({
     if (!price || !(priceNum > 0)) return toast.error("اكتب السعر النهائي");
     setSaving(true);
     const customerId = await resolveCustomerId();
-    const { error } = await supabase.from("sales").insert({
+    const { data: sale, error } = await supabase.from("sales").insert({
       product_id: product.id,
       product_name_snapshot: product.name,
       sku_snapshot: product.sku ?? null,
       weight_grams: product.weight_grams,
       karat: product.karat,
-      branch_id: product.branch_id ?? null,
+      branch_id: saleBranchId,
       customer_id: customerId,
       customer_name: name.trim() || null,
       customer_phone: phone.trim() || null,
@@ -113,9 +120,13 @@ export default function SellDialog({
       sold_by: user?.id ?? null,
       notes: notes.trim() || null,
       amar_invoice_number: amarInvoice.trim() || null,
-    });
+    }).select("id").single();
     setSaving(false);
-    if (error) return toast.error(error.message);
+    if (error) {
+      // رفض صلاحيات (موظف بلا فرع مثلاً) — رسالة مفهومة بدل نص قاعدة البيانات الإنجليزي.
+      const denied = error.code === "42501" || /row-level security/i.test(error.message);
+      return toast.error(denied ? "لا يمكن تسجيل البيع — حسابك غير مرتبط بفرع. راجع المدير." : error.message);
+    }
     toast.success(`تم تسجيل البيع — ${formatCurrency(priceNum)}`);
     setOpen(false);
     qc.invalidateQueries({ queryKey: ["product", product.id] });
@@ -123,6 +134,8 @@ export default function SellDialog({
     // الكتالوج وبطاقة "مبيعاتي" ولوحة الصدارة وتنبيه نقص المخزون — كانت كلها تبقى على
     // بياناتها القديمة بعد البيع حتى إعادة تحميل الصفحة. راجع lib/queryInvalidation.
     invalidateInventoryAndSales(qc);
+    // الإيصال مباشرة بعد البيع: طباعة أو إرسال للزبون على الواتساب.
+    if (sale?.id) navigate(`/sales/${sale.id}/receipt`);
   };
 
   return (

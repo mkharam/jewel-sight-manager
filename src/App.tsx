@@ -40,6 +40,7 @@ const LiveAdd = lazy(() => import("@/pages/LiveAdd"));
 const AdminProducts = lazy(() => import("@/pages/AdminProducts"));
 const Notifications = lazy(() => import("@/pages/Notifications"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
+const SaleReceipt = lazy(() => import("@/pages/SaleReceipt"));
 
 function PageLoader() {
   return (
@@ -85,6 +86,8 @@ const App = () => (
             <Routes>
               <Route path="/auth" element={<Auth />} />
               <Route path="/index" element={<Navigate to="/" replace />} />
+              {/* الإيصال خارج AppLayout حتى يُطبع بلا شريط تنقّل. */}
+              <Route path="/sales/:id/receipt" element={<ProtectedRoute><SaleReceipt /></ProtectedRoute>} />
               <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
                 <Route path="/" element={<ProductSearch />} />
                 <Route path="/products" element={<ProductSearch />} />
