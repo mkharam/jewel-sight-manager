@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { BadgeCheck, ChevronDown } from "lucide-react";
+import { BadgeCheck, ChevronDown, Minus, Plus } from "lucide-react";
 import { PAYMENT_METHODS } from "@/lib/luxury";
 import { formatCurrency, normalizeDecimalInput } from "@/lib/constants";
 import { invalidateInventoryAndSales } from "@/lib/queryInvalidation";
@@ -19,6 +19,8 @@ type Product = {
   id: string; name: string; sku?: string | null; karat: string | null;
   weight_grams: number | null; branch_id?: string | null;
   sale_price: number | null; promo_price: number | null;
+  /** المتوفر من القطعة — إن زاد عن 1 يختار الموظف كم قطعة يبيع. */
+  quantity?: number;
 };
 
 // أرقام الهاتف تُكتب غالباً بلوحة عربية (٠٩١…) — نحوّلها لأرقام لاتينية فقط.
@@ -58,8 +60,17 @@ export default function SellDialog({
   const open = controlledOpen ?? innerOpen;
   const setOpen = (v: boolean) => { onOpenChange?.(v); if (controlledOpen === undefined) setInnerOpen(v); };
   const [saving, setSaving] = useState(false);
+  // سعر القطعة الواحدة؛ الخانة تحمل إجمالي البيع (سعر × العدد) ما لم يكتب الموظف سعراً بنفسه.
   const base = product.promo_price ?? product.sale_price ?? (suggestedPrice ? Math.round(suggestedPrice) : null);
+  const available = Math.max(product.quantity ?? 1, 1);
+  const [qty, setQty] = useState(1);
+  const [priceTouched, setPriceTouched] = useState(false);
   const [price, setPrice] = useState(base ? String(base) : "");
+  const changeQty = (next: number) => {
+    const q = Math.min(Math.max(next, 1), available);
+    setQty(q);
+    if (!priceTouched && base) setPrice(String(base * q));
+  };
   const [method, setMethod] = useState(PAYMENT_METHODS[0]);
   const [showMore, setShowMore] = useState(false);
   const [discount, setDiscount] = useState("");
@@ -69,7 +80,7 @@ export default function SellDialog({
   const [amarInvoice, setAmarInvoice] = useState("");
   // سعر اليوم يُحمَّل بعد الصفحة بلحظة — نملأ الخانة عند فتح النافذة إن كانت ما زالت فارغة.
   useEffect(() => {
-    if (open && !price && base) setPrice(String(base));
+    if (open && !price && base) setPrice(String(base * qty));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, base]);
 
@@ -115,6 +126,7 @@ export default function SellDialog({
       customer_name: name.trim() || null,
       customer_phone: phone.trim() || null,
       final_price: priceNum,
+      quantity: qty,
       discount: Number(discount || 0),
       payment_method: method,
       sold_by: user?.id ?? null,
@@ -153,12 +165,27 @@ export default function SellDialog({
           <DialogDescription>تصبح القطعة «مبيعة» فوراً وتختفي من المتوفر.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
+          {available > 1 && (
+            <div>
+              <Label>العدد <span className="text-muted-foreground font-normal">(المتوفر {available})</span></Label>
+              <div className="mt-1.5 flex items-center gap-3">
+                <Button type="button" size="icon" variant="outline" className="size-11" onClick={() => changeQty(qty - 1)} disabled={qty <= 1} aria-label="أقل">
+                  <Minus className="size-5" />
+                </Button>
+                <span className="min-w-8 text-center text-2xl font-bold tabular-nums">{qty}</span>
+                <Button type="button" size="icon" variant="outline" className="size-11" onClick={() => changeQty(qty + 1)} disabled={qty >= available} aria-label="أكثر">
+                  <Plus className="size-5" />
+                </Button>
+              </div>
+            </div>
+          )}
+
           <div>
-            <Label htmlFor="sell-price">السعر النهائي (د.ل)</Label>
+            <Label htmlFor="sell-price">{available > 1 ? "الإجمالي (د.ل)" : "السعر النهائي (د.ل)"}</Label>
             <Input
               id="sell-price"
               value={price}
-              onChange={(e) => setPrice(normalizeDecimalInput(e.target.value))}
+              onChange={(e) => { setPriceTouched(true); setPrice(normalizeDecimalInput(e.target.value)); }}
               inputMode="decimal"
               dir="ltr"
               className="h-14 text-2xl font-bold text-center"
@@ -210,7 +237,7 @@ export default function SellDialog({
         </div>
         <DialogFooter>
           <Button onClick={submit} disabled={saving || !(priceNum > 0)} size="lg" className="w-full h-12 text-base">
-            {saving ? "جارٍ الحفظ..." : priceNum > 0 ? `تأكيد البيع — ${formatCurrency(priceNum)}` : "اكتب السعر"}
+            {saving ? "جارٍ الحفظ..." : priceNum > 0 ? `تأكيد البيع${qty > 1 ? ` (${qty} قطع)` : ""} — ${formatCurrency(priceNum)}` : "اكتب السعر"}
           </Button>
         </DialogFooter>
       </DialogContent>

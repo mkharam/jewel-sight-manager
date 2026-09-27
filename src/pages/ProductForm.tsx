@@ -42,6 +42,7 @@ const schema = z.object({
   item_type: z.string().max(50).nullable(),
   weight_grams: z.number().nonnegative().nullable(),
   ring_size: z.string().max(20).nullable(),
+  quantity: z.number().int().min(0),
   status: z.enum(["available","reserved","sold","in_transfer","damaged","lost","in_repair","stock_discrepancy","archived"]),
   cost_price: z.number().nonnegative().nullable(),
   sale_price: z.number().nonnegative().nullable(),
@@ -69,7 +70,7 @@ export default function ProductForm() {
     name: "", sku: "", category_id: "", branch_id: "",
     // أغلب المخزون 18K — نفس منطق الرفع بالجملة (Upload.tsx/BulkCameraCapture): نبدأ
     // بالقيمة الغالبة كافتراض بدل حقل فارغ، والموظف يبدّلها يدوياً إن كانت القطعة 21K.
-    karat: "18K", gold_color: "", item_type: "", weight_grams: "", ring_size: "",
+    karat: "18K", gold_color: "", item_type: "", weight_grams: "", ring_size: "", quantity: "1",
     status: "available" as keyof typeof PRODUCT_STATUS,
     cost_price: "", sale_price: "", promo_price: "",
     description: "", internal_notes: "",
@@ -116,7 +117,7 @@ export default function ProductForm() {
         category_id: data.category_id ?? "", branch_id: data.branch_id ?? "",
         karat: data.karat ?? "", gold_color: data.gold_color ?? "", item_type: data.item_type ?? "",
         weight_grams: data.weight_grams?.toString() ?? "",
-        ring_size: data.ring_size ?? "", status: data.status,
+        ring_size: data.ring_size ?? "", quantity: String(data.quantity ?? 1), status: data.status,
         cost_price: data.cost_price?.toString() ?? "",
         sale_price: data.sale_price?.toString() ?? "",
         promo_price: data.promo_price?.toString() ?? "",
@@ -209,6 +210,7 @@ export default function ProductForm() {
       karat: form.karat || null, gold_color: form.gold_color || null, item_type: form.item_type || null,
       weight_grams: form.weight_grams ? parseFloat(form.weight_grams) : null,
       ring_size: form.ring_size || null, status: form.status,
+      quantity: form.quantity ? parseInt(form.quantity, 10) : 1,
       cost_price: form.cost_price ? parseFloat(form.cost_price) : null,
       sale_price: form.sale_price ? parseFloat(form.sale_price) : null,
       promo_price: form.promo_price ? parseFloat(form.promo_price) : null,
@@ -422,6 +424,16 @@ export default function ProductForm() {
           <div className="grid grid-cols-2 gap-3">
             <Field label="المقاس">
               <Input value={form.ring_size} onChange={(e) => setForm({ ...form, ring_size: e.target.value })} maxLength={20} dir="ltr" />
+            </Field>
+            {/* قطع متطابقة (خواتم، أساور…) تُسجَّل مرة واحدة بعددها بدل تكرار القطعة. */}
+            <Field label="الكمية">
+              <Input
+                type="text"
+                inputMode="numeric"
+                value={form.quantity}
+                onChange={(e) => setForm({ ...form, quantity: normalizeDecimalInput(e.target.value).replace(/\./g, "") })}
+                dir="ltr"
+              />
             </Field>
           </div>
           <div className="rounded-xl border border-border p-3 space-y-3">

@@ -37,6 +37,8 @@ export interface ProductCardData {
   ring_size: string | null;
   sale_price: number | null;
   promo_price: number | null;
+  /** عدد القطع المتطابقة المتوفرة — يُعرض "×N" على البطاقة حين يزيد عن 1. */
+  quantity?: number;
   status: ProductStatus;
   branch_id?: string | null;
   branch?: { name: string } | null;
@@ -167,7 +169,14 @@ export default function ProductCard({
         )}
       </div>
       <div className="p-3 space-y-1.5">
-        <h3 className="font-semibold text-sm line-clamp-1">{product.name}</h3>
+        <div className="flex items-center gap-1.5">
+          <h3 className="font-semibold text-sm line-clamp-1 flex-1">{product.name}</h3>
+          {(product.quantity ?? 1) > 1 && (
+            <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-primary/12 text-primary text-[11px] font-bold tabular-nums" title="الكمية المتوفرة">
+              ×{product.quantity}
+            </span>
+          )}
+        </div>
         {match && match.reasons.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {match.reasons.slice(0, 2).map((r) => (

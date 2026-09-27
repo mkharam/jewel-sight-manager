@@ -80,7 +80,7 @@ export default function AdminProducts() {
       let query = supabase
         .from("products")
         .select(
-          "id,name,sku,karat,gold_color,item_type,weight_grams,status,branch_id,category_id,branch:branches(name),category:categories(name),images:product_images(storage_path,thumb_path,is_primary)",
+          "id,name,sku,karat,gold_color,item_type,weight_grams,quantity,status,branch_id,category_id,branch:branches(name),category:categories(name),images:product_images(storage_path,thumb_path,is_primary)",
         )
         .order("created_at", { ascending: false })
         .limit(PAGE_SIZE * pages);
