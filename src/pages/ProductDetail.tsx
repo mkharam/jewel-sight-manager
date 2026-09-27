@@ -21,6 +21,7 @@ import QuickQuoteSheet from "@/components/QuickQuoteSheet";
 import SellDialog from "@/components/SellDialog";
 import ReserveDialog from "@/components/ReserveDialog";
 import ReorderRequestDialog from "@/components/ReorderRequestDialog";
+import QuantityControl from "@/components/QuantityControl";
 import ImageLightbox from "@/components/ImageLightbox";
 import EditOwnProductSheet from "@/components/EditOwnProductSheet";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
@@ -380,6 +381,7 @@ export default function ProductDetail() {
                 }
               />
               <Spec label="الوزن" value={formatWeight(product.weight_grams)} />
+              <QuantityControl productId={product.id} quantity={product.quantity ?? 1} status={product.status} canEdit={canEditProduct} />
               {product.ring_size && <Spec label="المقاس" value={product.ring_size} />}
               {product.item_type && <Spec label="النوع" value={product.item_type} />}
               <Spec label="الفرع" value={product.branch?.name} icon={<MapPin className="size-3.5" />} />
@@ -467,7 +469,7 @@ export default function ProductDetail() {
               <SellDialog product={{
                 id: product.id, name: product.name, sku: product.sku, karat: product.karat,
                 weight_grams: product.weight_grams, branch_id: product.branch_id,
-                sale_price: product.sale_price, promo_price: product.promo_price,
+                sale_price: product.sale_price, promo_price: product.promo_price, quantity: product.quantity,
               }} suggestedPrice={todayPrice?.total ?? null} />
               <ReserveDialog productId={product.id} productName={product.name} branchId={product.branch_id} defaultPrice={product.promo_price ?? product.sale_price} />
             </div>
@@ -476,7 +478,7 @@ export default function ProductDetail() {
             <SellDialog product={{
               id: product.id, name: product.name, sku: product.sku, karat: product.karat,
               weight_grams: product.weight_grams, branch_id: product.branch_id,
-              sale_price: product.sale_price, promo_price: product.promo_price,
+              sale_price: product.sale_price, promo_price: product.promo_price, quantity: product.quantity,
             }} suggestedPrice={todayPrice?.total ?? null} />
           )}
 

@@ -794,6 +794,7 @@ export type Database = {
           making_charge: number | null
           name: string
           promo_price: number | null
+          quantity: number
           received_at: string | null
           ring_size: string | null
           sale_price: number | null
@@ -826,6 +827,7 @@ export type Database = {
           making_charge?: number | null
           name: string
           promo_price?: number | null
+          quantity?: number
           received_at?: string | null
           ring_size?: string | null
           sale_price?: number | null
@@ -858,6 +860,7 @@ export type Database = {
           making_charge?: number | null
           name?: string
           promo_price?: number | null
+          quantity?: number
           received_at?: string | null
           ring_size?: string | null
           sale_price?: number | null
@@ -1105,6 +1108,7 @@ export type Database = {
           payment_method: string | null
           product_id: string | null
           product_name_snapshot: string | null
+          quantity: number
           return_reason: string | null
           returned_at: string | null
           returned_by: string | null
@@ -1128,6 +1132,7 @@ export type Database = {
           payment_method?: string | null
           product_id?: string | null
           product_name_snapshot?: string | null
+          quantity?: number
           return_reason?: string | null
           returned_at?: string | null
           returned_by?: string | null
@@ -1151,6 +1156,7 @@ export type Database = {
           payment_method?: string | null
           product_id?: string | null
           product_name_snapshot?: string | null
+          quantity?: number
           return_reason?: string | null
           returned_at?: string | null
           returned_by?: string | null

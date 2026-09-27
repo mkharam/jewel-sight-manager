@@ -18,6 +18,7 @@ type SaleRow = {
   karat: string | null;
   weight_grams: number | null;
   final_price: number;
+  quantity: number | null;
   discount: number | null;
   payment_method: string | null;
   customer_name: string | null;
@@ -42,6 +43,7 @@ export function receiptText(s: SaleRow): string {
     s.product_name_snapshot ?? "",
     [s.karat, s.weight_grams != null ? formatWeight(s.weight_grams) : null].filter(Boolean).join(" · "),
     s.sku_snapshot ? `رقم القطعة: ${s.sku_snapshot}` : "",
+    (s.quantity ?? 1) > 1 ? `العدد: ${s.quantity}` : "",
     s.discount ? `الخصم: ${formatCurrency(s.discount)}` : "",
     `المبلغ: ${formatCurrency(s.final_price)}${s.payment_method ? ` (${s.payment_method})` : ""}`,
     "",
@@ -122,6 +124,7 @@ export default function SaleReceipt() {
             <Row label="رقم القطعة" value={sale.sku_snapshot} ltr />
             <Row label="العيار" value={sale.karat} />
             <Row label="الوزن" value={sale.weight_grams != null ? formatWeight(sale.weight_grams) : null} />
+            {(sale.quantity ?? 1) > 1 && <Row label="العدد" value={String(sale.quantity)} />}
             {!!sale.discount && <Row label="الخصم" value={formatCurrency(sale.discount)} />}
           </dl>
 

@@ -57,6 +57,29 @@ describe("SellDialog", () => {
     expect(await screen.findByText("RECEIPT PAGE")).toBeInTheDocument();
   });
 
+  it("sells several of a multi-quantity piece at count × price", async () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter initialEntries={["/products/p1"]}>
+          <Routes>
+            <Route path="/products/p1" element={<SellDialog product={{ ...piece, sale_price: 1000, quantity: 3 }} open onOpenChange={() => {}} hideTrigger />} />
+            <Route path="/sales/:id/receipt" element={<p>RECEIPT PAGE</p>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const price = screen.getByLabelText("الإجمالي (د.ل)") as HTMLInputElement;
+    expect(price.value).toBe("1000");
+    fireEvent.click(screen.getByRole("button", { name: "أكثر" }));
+    expect(price.value).toBe("2000");
+    fireEvent.click(screen.getByRole("button", { name: "أكثر" }));
+    expect(screen.getByRole("button", { name: "أكثر" })).toBeDisabled(); // لا يتجاوز المتوفر (3)
+    fireEvent.click(screen.getByRole("button", { name: "أقل" }));
+    fireEvent.click(screen.getByRole("button", { name: /تأكيد البيع \(2 قطع\)/ }));
+    await waitFor(() => expect(insert).toHaveBeenCalledTimes(1));
+    expect(insert.mock.calls[0][0]).toMatchObject({ quantity: 2, final_price: 2000 });
+  });
+
   it("won't confirm without a price", () => {
     open();
     expect(screen.getByRole("button", { name: "اكتب السعر" })).toBeDisabled();
