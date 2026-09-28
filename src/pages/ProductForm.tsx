@@ -3,7 +3,7 @@ import { useNavigate, useParams, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
-import { removeUnreferencedFiles } from "@/lib/productImages";
+import { removeUnreferencedFiles, uploadProductImage } from "@/lib/productImages";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -273,8 +273,7 @@ export default function ProductForm() {
         const file = newFiles[i];
         const ext = file.name.split(".").pop();
         const path = `${branchPrefix}/${productId}/${Date.now()}-${i}.${ext}`;
-        const { error: upErr } = await supabase.storage.from("product-images").upload(path, file);
-        if (upErr) throw upErr;
+        await uploadProductImage(path, file);
         const isPrimary = totalImages === newFiles.length && i === primaryIndex;
         const { data: imgRow, error: imgErr } = await supabase
           .from("product_images")

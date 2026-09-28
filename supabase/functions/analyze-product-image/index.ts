@@ -11,6 +11,7 @@ import {
   friendlyError,
   type JewelryAnalysis,
 } from "../_shared/lovable-ai.ts";
+import { downloadProductImage } from "../_shared/product-image.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -126,10 +127,12 @@ async function analyzeFromRecord(record: { id: string; storage_path: string; ai_
   const labels = record.ai_labels as Record<string, unknown> | null;
   if (labels && Object.keys(labels).length > 0) return { skipped: "already analyzed" };
 
-  const { data: file, error: dlErr } = await admin.storage
-    .from("product-images")
-    .download(record.storage_path);
-  if (dlErr || !file) return { error: "download failed", detail: dlErr?.message };
+  let file: Blob;
+  try {
+    file = await downloadProductImage(admin, record.storage_path);
+  } catch (e) {
+    return { error: "download failed", detail: e instanceof Error ? e.message : String(e) };
+  }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
   let binary = "";

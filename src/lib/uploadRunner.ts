@@ -19,7 +19,7 @@ import { listPending, prunePending, removePending, savePending } from "@/lib/pen
 import { isPdf, pdfToImageFiles } from "@/lib/pdf-to-images";
 import { uploadQueue } from "@/lib/uploadQueue";
 import { normalizeAr } from "@/lib/arabic-search";
-import { deleteProducts, removeUnreferencedFiles } from "@/lib/productImages";
+import { deleteProducts, removeUnreferencedFiles, uploadProductImage } from "@/lib/productImages";
 
 export type UploadOptions = {
   userId: string;
@@ -95,15 +95,6 @@ async function saveStoneColors(productId: string, gemstones: string[] | undefine
     .insert(stones.map((s) => ({ product_id: productId, color: s.color, stone_type: s.stoneType, quantity: 1 })) as any);
 }
 
-// مسارات التخزين فريدة ولا يُعاد استخدامها أبداً (طابع زمني + عشوائي)، فمحتوى أي مسار
-// ثابت للأبد — نطلب تخزينها سنة بدل الساعة الافتراضية.
-// القيمة عدد ثوانٍ كنص، وهذا ما يوثّقه supabase-js ويحوّله إلى max-age.
-// ملاحظة مهمة: خطة المشروع الحالية تُرجع no-cache للملفات العامة مهما ضبطنا هنا (التخزين
-// المؤقت عبر CDN ميزة مدفوعة، كما هو حال تحويل الصور) — تحققنا من ذلك عملياً برفع ملف
-// وضبط الترويسة صراحةً ثم قراءتها. فالقيمة هنا صحيحة وتصير فعّالة تلقائياً إن رُقّيت
-// الخطة، لكن مكسب السرعة اليوم يأتي كله من حجم المصغّرة لا من التخزين المؤقت.
-const IMMUTABLE_CACHE = "31536000";
-
 async function uploadFile(file: File, userId: string, k: number): Promise<{ path: string; thumbPath: string | null }> {
   let lastErr: any;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -111,10 +102,7 @@ async function uploadFile(file: File, userId: string, k: number): Promise<{ path
       const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
       const stem = `imports/${userId}/${Date.now()}-${k}-${Math.random().toString(36).slice(2, 7)}`;
       const path = `${stem}.${ext || "jpg"}`;
-      const { error } = await supabase.storage
-        .from("product-images")
-        .upload(path, file, { cacheControl: IMMUTABLE_CACHE });
-      if (error) throw error;
+      await uploadProductImage(path, file);
 
       // المصغّرة إضافة تحسينية — فشلها لا يمنع نجاح الرفع، والعرض يسقط للصورة الكاملة.
       let thumbPath: string | null = null;
@@ -122,10 +110,8 @@ async function uploadFile(file: File, userId: string, k: number): Promise<{ path
         const thumb = await makeThumbnail(file);
         if (thumb) {
           const tp = `${stem}-thumb.jpg`;
-          const { error: tErr } = await supabase.storage
-            .from("product-images")
-            .upload(tp, thumb, { cacheControl: IMMUTABLE_CACHE });
-          if (!tErr) thumbPath = tp;
+          await uploadProductImage(tp, thumb);
+          thumbPath = tp;
         }
       } catch { /* تجاهل — الصورة الكاملة كافية */ }
 

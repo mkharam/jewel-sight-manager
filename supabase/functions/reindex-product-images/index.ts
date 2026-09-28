@@ -17,8 +17,7 @@ import {
   embedText,
   friendlyError,
 } from "../_shared/lovable-ai.ts";
-
-const BUCKET = "product-images";
+import { downloadProductImage } from "../_shared/product-image.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -89,12 +88,11 @@ Deno.serve(async (req) => {
       if (rateLimited) break; // لا نُهدر الوقت إن كانت كل المزودات مشغولة
 
       try {
-        const file = await admin.storage.from(BUCKET).download(img.storage_path);
-        if (file.error || !file.data) throw new Error("تعذّر تحميل الصورة من التخزين");
+        const file = await downloadProductImage(admin, img.storage_path);
 
-        const buf = new Uint8Array(await file.data.arrayBuffer());
+        const buf = new Uint8Array(await file.arrayBuffer());
         const imageBase64 = base64FromBytes(buf);
-        const mimeType = file.data.type || guessMime(img.storage_path);
+        const mimeType = file.type || guessMime(img.storage_path);
 
         const { analysis, provider } = await withRetry(() =>
           analyzeWithFallback({
