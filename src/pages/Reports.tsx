@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { BarChart3, Download, TrendingUp, ArrowLeftRight, Package, DollarSign, Clock, AlertTriangle, Receipt, Undo2, Wallet, Plus, Trash2 } from "lucide-react";
 import ReindexImagesCard from "@/components/ReindexImagesCard";
 import GenerateThumbsCard from "@/components/GenerateThumbsCard";
+import MigrateToR2Card from "@/components/MigrateToR2Card";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
 import { toast } from "sonner";
 
@@ -319,6 +320,7 @@ export default function Reports() {
       {/* صيانة الذكاء الاصطناعي — إعادة فهرسة الصور غير المحلَّلة */}
       <ReindexImagesCard />
       <GenerateThumbsCard />
+      <MigrateToR2Card />
 
       {/* Aging report per branch */}
       <Card>

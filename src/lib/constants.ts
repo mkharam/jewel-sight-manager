@@ -82,13 +82,17 @@ export function formatDate(d: string | Date | null | undefined) {
   }).format(date);
 }
 
-// ضبط VITE_R2_PUBLIC_URL هو مفتاح الانتقال إلى Cloudflare R2 — القراءة والرفع والحذف كلها
-// تتبعه (راجع productImages.ts). بدونه يبقى كل شيء على تخزين Supabase كما كان.
-export const R2_PUBLIC_URL = (import.meta.env.VITE_R2_PUBLIC_URL as string | undefined)?.replace(/\/$/, "") || null;
+// صور القطع على Cloudflare R2: القراءة من الرابط العام للحاوية، والرفع والحذف عبر Worker
+// "product-images" (cloudflare/product-images-worker.js) الذي يتحقق من الصلاحيات بجلسة المستخدم.
+// الرابطان عامّان وليسا سرّاً. IMAGES_ON_R2 هو مفتاح الانتقال — القراءة والرفع والحذف كلها
+// تتبعه (راجع productImages.ts)، ولا يُفعَّل إلا بعد نسخ الصور الموجودة (بطاقة "نقل الصور").
+export const R2_PUBLIC_URL = "https://pub-41d26d25a78a436ca6fa2faf8d75af34.r2.dev";
+export const R2_WORKER_URL = "https://product-images.mohamedmkharm.workers.dev";
+export const IMAGES_ON_R2 = false;
 
 export function getImageUrl(path: string | null | undefined) {
   if (!path) return null;
-  if (R2_PUBLIC_URL) return `${R2_PUBLIC_URL}/${path}`;
+  if (IMAGES_ON_R2) return `${R2_PUBLIC_URL}/${path}`;
   const base = import.meta.env.VITE_SUPABASE_URL;
   return `${base}/storage/v1/object/public/product-images/${path}`;
 }

@@ -5,7 +5,7 @@
 // تراكم قرابة 1GB من الصور اليتيمة (أكثر من 75% من الحاوية) وتجاوز المشروع حصة التخزين.
 // كل حذف لقطعة يجب أن يمرّ من هنا.
 import { supabase } from "@/integrations/supabase/client";
-import { R2_PUBLIC_URL } from "@/lib/constants";
+import { IMAGES_ON_R2, R2_WORKER_URL } from "@/lib/constants";
 
 const BUCKET = "product-images";
 const CHUNK = 100;
@@ -18,31 +18,47 @@ function chunks<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-/** نداء دالة product-images-r2 — الوحيدة التي تملك مفتاح R2 (لا يُشحن للمتصفح). */
-async function r2(action: "sign-upload" | "delete", files: unknown[]) {
-  const { data, error } = await supabase.functions.invoke("product-images-r2", { body: { action, files } });
-  if (error) throw error;
-  if (data?.error) throw new Error(data.error);
-  return data;
+const encodePath = (p: string) => p.split("/").map(encodeURIComponent).join("/");
+
+/**
+ * نداء Worker الصور على Cloudflare بجلسة المستخدم نفسه — الـWorker يسأل قاعدة البيانات
+ * (نفس دوال صلاحيات التخزين) قبل أي رفع أو حذف، فلا مفتاح سرّي في المتصفح ولا في الـWorker.
+ */
+export async function r2Worker(method: "PUT" | "DELETE" | "POST", route: string, body?: BodyInit, headers: Record<string, string> = {}) {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("انتهت الجلسة — سجّل الدخول من جديد");
+  const res = await fetch(`${R2_WORKER_URL}${route}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+      ...headers,
+    },
+    body,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json?.error ? `تعذّر حفظ الصورة (${json.error})` : `تعذّر حفظ الصورة (${res.status})`);
+  return json;
 }
 
 /**
- * رفع صورة قطعة إلى مكان تخزينها الحالي: Cloudflare R2 إن ضُبط VITE_R2_PUBLIC_URL، وإلا
- * تخزين Supabase. كل رفع لصور القطع يمرّ من هنا حتى يكفي تغيير الإعداد للانتقال.
+ * رفع صورة قطعة إلى مكان تخزينها الحالي: Cloudflare R2 إن فُعّل IMAGES_ON_R2، وإلا تخزين
+ * Supabase. كل رفع لصور القطع يمرّ من هنا حتى يكفي تغيير المفتاح للانتقال.
  */
 export async function uploadProductImage(path: string, file: Blob, opts: { upsert?: boolean } = {}): Promise<void> {
   const contentType = file.type || "image/jpeg";
-  if (!R2_PUBLIC_URL) {
+  if (!IMAGES_ON_R2) {
     const { error } = await supabase.storage
       .from(BUCKET)
       .upload(path, file, { cacheControl: IMMUTABLE_CACHE, contentType, upsert: opts.upsert });
     if (error) throw error;
     return;
   }
-  const { uploads } = await r2("sign-upload", [{ path, contentType }]);
-  const { url, headers } = uploads[0];
-  const res = await fetch(url, { method: "PUT", headers, body: file });
-  if (!res.ok) throw new Error(`تعذّر رفع الصورة (${res.status})`);
+  await r2Worker("PUT", `/o/${encodePath(path)}`, file, {
+    "Content-Type": contentType,
+    ...(opts.upsert ? { "x-upsert": "true" } : {}),
+  });
 }
 
 /**
@@ -54,11 +70,6 @@ export async function removeUnreferencedFiles(paths: (string | null | undefined)
   const unique = Array.from(new Set(paths.filter((p): p is string => !!p)));
   if (!unique.length) return;
   try {
-    // على R2 يتحقق الخادم من الإشارات بنفسه (بمفتاح الخدمة) قبل الحذف.
-    if (R2_PUBLIC_URL) {
-      for (const part of chunks(unique, CHUNK)) await r2("delete", part);
-      return;
-    }
     const stillUsed = new Set<string>();
     for (const part of chunks(unique, CHUNK)) {
       const [a, b] = await Promise.all([
@@ -70,6 +81,10 @@ export async function removeUnreferencedFiles(paths: (string | null | undefined)
       b.data?.forEach((r) => r.thumb_path && stillUsed.add(r.thumb_path));
     }
     const orphaned = unique.filter((p) => !stillUsed.has(p));
+    if (IMAGES_ON_R2) {
+      for (const p of orphaned) await r2Worker("DELETE", `/o/${encodePath(p)}`);
+      return;
+    }
     for (const part of chunks(orphaned, 1000)) {
       const { error } = await supabase.storage.from(BUCKET).remove(part);
       if (error) throw error;
