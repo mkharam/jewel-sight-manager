@@ -14,8 +14,10 @@ import { uploadQueue, useUploadQueuePendingCount } from "@/lib/uploadQueue";
 import { useResumeRoute } from "@/lib/resume";
 import { ensurePushEnabled } from "@/lib/push";
 import { resumePendingUploads } from "@/lib/uploadRunner";
+import { useActivityFeed } from "@/hooks/useActivityFeed";
+import { CHAT_SEEN_KEY, NOTIFS_SEEN_KEY, SEEN_EVENT, readSeen, setIconBadge } from "@/lib/appBadge";
 
-type BadgeKey = "transfers" | "uploads" | "reorders" | "weights";
+type BadgeKey = "transfers" | "uploads" | "reorders" | "weights" | "chat";
 type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean; badgeKey?: BadgeKey };
 type NavSection = { title: string; items: NavItem[] };
 
@@ -29,7 +31,7 @@ function buildNav(isAdmin: boolean, isManager: boolean): NavSection[] {
       title: "الرئيسية",
       items: [
         { to: "/", label: "البحث", icon: Search, end: true },
-        { to: "/chat", label: "المحادثة", icon: MessagesSquare },
+        { to: "/chat", label: "المحادثة", icon: MessagesSquare, badgeKey: "chat" },
         { to: "/inquiries", label: "الاستفسارات", icon: MessageCircle },
         { to: "/upload", label: "رفع قطع", icon: Upload, badgeKey: "uploads" },
         // الإشعارات ليست هنا: الجرس في الرأس ظاهر على كل الشاشات ويفتح صفحتها الكاملة.
@@ -213,8 +215,57 @@ export default function AppLayout() {
     return () => { supabase.removeChannel(ch); };
   }, [user, qc]);
 
+  // آخر ما قرأه المستخدم من الإشعارات والمحادثة — يتحدّث فور فتح الجرس أو المحادثة
+  // (SEEN_EVENT) أو من تبويب آخر (storage).
+  const [seen, setSeen] = useState(() => ({ notifs: readSeen(NOTIFS_SEEN_KEY), chat: readSeen(CHAT_SEEN_KEY) }));
+  useEffect(() => {
+    const refresh = () => setSeen({ notifs: readSeen(NOTIFS_SEEN_KEY), chat: readSeen(CHAT_SEEN_KEY) });
+    window.addEventListener(SEEN_EVENT, refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener(SEEN_EVENT, refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, []);
+
+  // رسائل المحادثة غير المقروءة (من الزملاء فقط، لا رسائلي).
+  const { data: unreadChat = 0 } = useQuery({
+    queryKey: ["chat-unread", user?.id, seen.chat],
+    queryFn: async () => {
+      const { count } = await supabase
+        .from("staff_messages")
+        .select("id", { count: "exact", head: true })
+        .gt("created_at", seen.chat)
+        .neq("sender_id", user!.id);
+      return count ?? 0;
+    },
+    enabled: !!user,
+    refetchInterval: 60_000,
+  });
+
+  useEffect(() => {
+    if (!user) return;
+    const ch = supabase
+      .channel("chat-unread-badge")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "staff_messages" }, () => {
+        qc.invalidateQueries({ queryKey: ["chat-unread"] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [user, qc]);
+
+  // نفس تغذية جرس الإشعارات (نفس الكاش، لا طلب إضافي).
+  const { data: feed = [] } = useActivityFeed(30);
+  const unreadNotifs = feed.filter((e) => e.item.created_at > seen.notifs).length;
+
+  // الرقم على أيقونة التطبيق في الشاشة الرئيسية.
+  useEffect(() => {
+    if (!user) return;
+    setIconBadge(unreadNotifs + unreadChat);
+  }, [user, unreadNotifs, unreadChat]);
+
   const pendingUploads = useUploadQueuePendingCount();
-  const badges: Record<string, number> = { transfers: pendingTransfers, uploads: pendingUploads, reorders: pendingReorders, weights: missingWeights };
+  const badges: Record<string, number> = { transfers: pendingTransfers, uploads: pendingUploads, reorders: pendingReorders, weights: missingWeights, chat: unreadChat };
 
   const [moreOpen, setMoreOpen] = useState(false);
 
@@ -233,6 +284,7 @@ export default function AppLayout() {
   const roleLabel = isAdmin ? "مدير عام" : isManager ? "مدير فرع" : "موظف";
 
   const signOut = async () => {
+    setIconBadge(0);
     await supabase.auth.signOut();
     // بدون هذا تبقى نتائج الحساب السابق في كاش react-query، فيفتح الموظف التطبيق على
     // جهاز استعمله المدير فيرى للحظة بياناته هو (القطع، المحادثة، العدّادات).
