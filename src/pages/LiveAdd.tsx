@@ -19,6 +19,8 @@ import { decodeBarcodeFromFile } from "@/lib/decodeBarcodeFromImage";
 import { readInfoTagLocally } from "@/lib/readInfoTag";
 import ScanBoxOverlay from "@/components/ScanBoxOverlay";
 import { normalizeDecimalInput } from "@/lib/constants";
+import { usePersistentState, hasResumeForm } from "@/lib/resume";
+import { saveDraftFiles, loadDraftFiles } from "@/lib/fileDraft";
 import type { CapturedFile } from "@/components/BulkCameraCapture";
 
 const NO_BRANCH = "__none__";
@@ -36,7 +38,9 @@ function normalizeKarat(raw: string | null): string | null {
 export default function LiveAdd() {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
-  const [branchId, setBranchId] = useState<string>(profile?.branch_id ?? NO_BRANCH);
+  // القطعة الجاري إضافتها تنجو من إغلاق الآيفون للتطبيق في الخلفية (الموظف يخرج للواتساب أو
+  // يُقفل الشاشة بين قطعة وأخرى): الفرع والباركود والوزن والعيار والنوع، وصورة القطعة نفسها.
+  const [branchId, setBranchId] = usePersistentState<string>("liveadd:branch", profile?.branch_id ?? NO_BRANCH);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -52,14 +56,34 @@ export default function LiveAdd() {
   const [flash, setFlash] = useState(false);
 
   // الحقول الثلاثة المطلوبة قبل الحفظ
-  const [barcode, setBarcode] = useState<string | null>(null);
-  const [barcodeSkipped, setBarcodeSkipped] = useState(false);
-  const [weight, setWeight] = useState("");
+  const [barcode, setBarcode] = usePersistentState<string | null>("liveadd:barcode", null);
+  const [barcodeSkipped, setBarcodeSkipped] = usePersistentState("liveadd:barcodeSkipped", false);
+  const [weight, setWeight] = usePersistentState("liveadd:weight", "");
   const [capturedBlob, setCapturedBlob] = useState<Blob | null>(null);
   const [capturedUrl, setCapturedUrl] = useState<string | null>(null);
 
-  const [karat, setKarat] = useState<string | null>(null);
-  const [itemType, setItemType] = useState<string | null>(null);
+  const [karat, setKarat] = usePersistentState<string | null>("liveadd:karat", null);
+  const [itemType, setItemType] = usePersistentState<string | null>("liveadd:itemType", null);
+
+  // صورة القطعة الملتقطة (قبل الحفظ) في IndexedDB: تُستعاد عند فتح الصفحة، وتُحدَّث مع كل
+  // التقاط/إعادة تصوير، وتُمسح بعد حفظ القطعة.
+  const photoRestored = useRef(false);
+  useEffect(() => {
+    const fields = ["liveadd:barcode", "liveadd:weight", "liveadd:karat", "liveadd:itemType"].some(hasResumeForm);
+    void loadDraftFiles("liveadd").then(([file]) => {
+      // صورة التُقطت قبل اكتمال التحميل (لحظات) تبقى هي — لا نكتب فوقها الصورة القديمة.
+      if (file) {
+        setCapturedBlob((prev) => prev ?? file);
+        setCapturedUrl((prev) => prev ?? URL.createObjectURL(file));
+      }
+      photoRestored.current = true;
+      if (file || fields) toast("↩︎ أكملنا القطعة التي كنت تضيفها", { duration: 3000 });
+    });
+  }, []);
+  useEffect(() => {
+    if (!photoRestored.current) return;
+    void saveDraftFiles("liveadd", capturedBlob ? [capturedBlob] : []);
+  }, [capturedBlob]);
 
   const [tagUploadLoading, setTagUploadLoading] = useState(false);
   const [tagLoading, setTagLoading] = useState(false);
