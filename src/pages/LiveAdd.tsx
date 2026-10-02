@@ -26,6 +26,22 @@ import type { CapturedFile } from "@/components/BulkCameraCapture";
 const NO_BRANCH = "__none__";
 type SavedItem = { id: string; url: string; weight: string; barcode: string | null };
 
+/** صورة مصغّرة صغيرة (data URL) لشريط القطع المُضافة — تُحفظ مع المسودّة وتبقى بعد إغلاق التطبيق. */
+async function makeThumb(blob: Blob, size = 96): Promise<string> {
+  try {
+    const bmp = await createImageBitmap(blob);
+    const scale = size / Math.max(bmp.width, bmp.height);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bmp.width * scale);
+    canvas.height = Math.round(bmp.height * scale);
+    canvas.getContext("2d")!.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    bmp.close();
+    return canvas.toDataURL("image/jpeg", 0.7);
+  } catch {
+    return "";
+  }
+}
+
 // يحوّل "18KB"/"21 K"/"18 كارات" إلى "18K"/"21K" المعروفتين في النظام — أي شكل آخر يُترك فارغاً
 // ليقرره الذكاء الاصطناعي لاحقاً بدل تخمين خاطئ.
 function normalizeKarat(raw: string | null): string | null {
@@ -88,7 +104,8 @@ export default function LiveAdd() {
   const [tagUploadLoading, setTagUploadLoading] = useState(false);
   const [tagLoading, setTagLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState<SavedItem[]>([]);
+  // القطع المُضافة في هذه الجلسة تبقى ظاهرة بعد الخروج والعودة — يكمل الموظف من حيث توقّف.
+  const [saved, setSaved] = usePersistentState<SavedItem[]>("liveadd:saved", []);
 
   const { data: branches } = useQuery({
     queryKey: ["branches"],
@@ -116,6 +133,10 @@ export default function LiveAdd() {
         if (track?.muted) setVideoMuted(true);
         track?.addEventListener("mute", () => setVideoMuted(true));
         track?.addEventListener("unmute", () => setVideoMuted(false));
+        // الكاميرا انقطعت من النظام (مكالمة، تطبيق آخر أخذها) والصفحة ظاهرة — نعيد تشغيلها.
+        track?.addEventListener("ended", () => {
+          if (!cancelled && document.visibilityState === "visible") setRestartKey((k) => k + 1);
+        });
 
         // عنصر <video> لا يُعرض أثناء وجود خطأ، فقد لا يكون موجوداً بعد لحظة عودة
         // getUserMedia — ننتظر ظهور العنصر بضع دورات بدل الاستسلام الصامت (شاشة سوداء
@@ -152,6 +173,30 @@ export default function LiveAdd() {
     setError(null);
     setRestartKey((k) => k + 1);
   };
+
+  // الخروج من التطبيق (واتساب، قفل الشاشة) يوقف الآيفون الكاميرا، وعند العودة تبقى الصورة
+  // سوداء أو متجمّدة. نُطفئها نحن عند الخروج ونعيد تشغيلها تلقائياً عند العودة — فيجد الموظف
+  // الكاميرا تعمل في نفس الصفحة ونفس القطعة (المسودّة محفوظة أعلاه) بلا أي ضغطة.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        setReady(false);
+      } else {
+        retryCamera();
+      }
+    };
+    // pageshow: عودة الصفحة من ذاكرة المتصفح (bfcache) دون إعادة تحميل.
+    const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) retryCamera(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // الكاميرا تعمل كقارئ باركود دائم: تفحص باستمرار طالما لم يُكتب الباركود بعد ولم
   // تُلتقط صورة القطعة بعد (بعدها لا داعي للفحص). بمجرد رؤية باركود صالح يُكتب في الحقل
@@ -393,7 +438,10 @@ export default function LiveAdd() {
         branchId: branchId === NO_BRANCH ? null : branchId,
         trayMode: false,
       });
-      setSaved((prev) => [{ id: file.name, url: capturedUrl!, weight, barcode }, ...prev].slice(0, 20));
+      // مصغّرة مستقلة لا رابط blob للصورة الكاملة: الرابط يُحرَّر في resetForNext فكانت
+      // صور الشريط تختفي، ولا ينجو أصلاً من إغلاق التطبيق.
+      const thumb = await makeThumb(capturedBlob);
+      setSaved((prev) => [{ id: file.name, url: thumb, weight, barcode }, ...prev].slice(0, 20));
       toast.success("تم حفظ القطعة — جاهز للتالية");
     } catch (e: any) {
       toast.error(e?.message ?? "فشل حفظ القطعة");
@@ -597,7 +645,12 @@ export default function LiveAdd() {
         <div className="flex gap-2 overflow-x-auto px-3 pb-3 bg-black/70">
           {saved.map((s) => (
             <div key={s.id} className="relative shrink-0">
-              <img src={s.url} alt="" className="size-12 rounded-lg object-contain bg-black border border-status-available/60" />
+              {s.url ? (
+                <img src={s.url} alt="" className="size-12 rounded-lg object-contain bg-black border border-status-available/60" />
+              ) : (
+                <div className="size-12 rounded-lg bg-black border border-status-available/60" />
+              )}
+              {s.weight && <span className="absolute bottom-0 inset-x-0 rounded-b-lg bg-black/70 text-center text-[9px] leading-4 text-white">{s.weight}غ</span>}
               <CheckCircle2 className="absolute -top-1.5 -left-1.5 size-4 text-status-available bg-black rounded-full" />
             </div>
           ))}
