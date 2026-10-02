@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { usePersistentState } from "@/lib/resume";
 import { useSearchParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -57,7 +58,9 @@ export default function Transfers() {
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [tab, setTab] = useState<"all" | "incoming" | "outgoing" | "active" | "pending">("pending");
-  const [openNew, setOpenNew] = useState(!!presetProductId);
+  // قادم من صفحة قطعة («تحويل») يفتح النافذة دائماً — لا نترك مسودّة قديمة تغلقها.
+  const [openNew, setOpenNew] = usePersistentState(presetProductId ? null : `transfers:openNew`, !!presetProductId);
+  // المسودّة تنجو من إغلاق الآيفون للتطبيق في الخلفية؛ تُمسح بعد الحفظ أو الإلغاء.
 
   const load = async () => {
     const [{ data: br }, { data: tr }] = await Promise.all([
@@ -240,11 +243,11 @@ function NewTransferDialog({ branches, myBranchId, presetProductId, presetProduc
   onCreated: () => void;
 }) {
   const { user } = useAuth();
-  const [productId, setProductId] = useState<string | null>(presetProductId);
-  const [productName, setProductName] = useState(presetProductName ?? "");
+  const [productId, setProductId, clearProductId] = usePersistentState<string | null>(`transfer:new:${presetProductId ?? ""}:productId`, presetProductId);
+  const [productName, setProductName, clearProductName] = usePersistentState(`transfer:new:${presetProductId ?? ""}:productName`, presetProductName ?? "");
   // إذا جاء من صفحة منتج → from = فرع المنتج (يُجلب لاحقاً)؛ وإلا → from = فرع الموظف
-  const [fromBranch, setFromBranch] = useState<string>(presetProductId ? "" : (myBranchId ?? ""));
-  const [toBranch, setToBranch] = useState<string>(presetProductId && myBranchId ? myBranchId : "");
+  const [fromBranch, setFromBranch, clearFromBranch] = usePersistentState<string>(`transfer:new:${presetProductId ?? ""}:fromBranch`, presetProductId ? "" : (myBranchId ?? ""));
+  const [toBranch, setToBranch, clearToBranch] = usePersistentState<string>(`transfer:new:${presetProductId ?? ""}:toBranch`, presetProductId && myBranchId ? myBranchId : "");
 
   // اجلب فرع المنتج المُمرَّر من رابط
   useEffect(() => {
@@ -261,9 +264,11 @@ function NewTransferDialog({ branches, myBranchId, presetProductId, presetProduc
       }
     })();
   }, [presetProductId, myBranchId]);
-  const [reason, setReason] = useState("");
-  const [customer, setCustomer] = useState("");
-  const [notes, setNotes] = useState("");
+  const [reason, setReason, clearReason] = usePersistentState(`transfer:new:${presetProductId ?? ""}:reason`, "");
+  const [customer, setCustomer, clearCustomer] = usePersistentState(`transfer:new:${presetProductId ?? ""}:customer`, "");
+  const [notes, setNotes, clearNotes] = usePersistentState(`transfer:new:${presetProductId ?? ""}:notes`, "");
+  // المسودّة تنجو من إغلاق الآيفون للتطبيق في الخلفية؛ تُمسح بعد الحفظ أو الإلغاء.
+  const clearDraft = () => { clearProductId(); clearProductName(); clearFromBranch(); clearToBranch(); clearReason(); clearCustomer(); clearNotes(); };
   const [saving, setSaving] = useState(false);
 
   // Live product search
@@ -300,6 +305,7 @@ function NewTransferDialog({ branches, myBranchId, presetProductId, presetProduc
     setSaving(false);
     if (error) return toast.error(error.message);
     toast.success("تم إرسال الطلب");
+    clearDraft();
     onCreated();
   };
 

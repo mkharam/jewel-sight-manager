@@ -1,4 +1,5 @@
 import { normalizeDecimalInput } from "@/lib/constants";
+import { usePersistentState } from "@/lib/resume";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -24,13 +25,15 @@ export default function ReorderRequestDialog({
 }: ReorderRequestDialogProps) {
   const { user, profile } = useAuth();
   const qc = useQueryClient();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen, clearOpen] = usePersistentState(`reorder:${productId ?? "free"}:open`, false);
   const [saving, setSaving] = useState(false);
-  const [freeName, setFreeName] = useState("");
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [quantity, setQuantity] = useState("1");
-  const [note, setNote] = useState("");
+  const [freeName, setFreeName, clearFreeName] = usePersistentState(`reorder:${productId ?? "free"}:freeName`, "");
+  const [name, setName, clearName] = usePersistentState(`reorder:${productId ?? "free"}:name`, "");
+  const [phone, setPhone, clearPhone] = usePersistentState(`reorder:${productId ?? "free"}:phone`, "");
+  const [quantity, setQuantity, clearQuantity] = usePersistentState(`reorder:${productId ?? "free"}:quantity`, "1");
+  const [note, setNote, clearNote] = usePersistentState(`reorder:${productId ?? "free"}:note`, "");
+  // المسودّة تنجو من إغلاق الآيفون للتطبيق في الخلفية؛ تُمسح بعد الحفظ أو الإلغاء.
+  const clearDraft = () => { clearOpen(); clearFreeName(); clearName(); clearPhone(); clearQuantity(); clearNote(); };
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
@@ -81,7 +84,7 @@ export default function ReorderRequestDialog({
       });
       if (error) throw error;
       toast.success("تم إرسال الطلب للمدير", { description: "سيتابع المدير طلب القطعة من المورد" });
-      setOpen(false);
+      clearDraft();
       reset();
       qc.invalidateQueries({ queryKey: ["reorder-requests"] });
       // عدّاد «إعادة طلب» في الشريط السفلي كان يبقى على رقمه حتى تحديث الصفحة.
@@ -94,7 +97,7 @@ export default function ReorderRequestDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset(); }}>
+    <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) { reset(); clearDraft(); } }}>
       <DialogTrigger asChild>
         {trigger ?? (
           <Button variant="outline" size="lg" className="w-full">

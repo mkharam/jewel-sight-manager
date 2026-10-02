@@ -6,7 +6,7 @@
 //
 // localStorage لا sessionStorage: على آيفون التطبيق المثبَّت يبدأ جلسة جديدة بعد قتله، فتضيع
 // sessionStorage بالضبط في الحالة التي نحتاجها. انتهاء الصلاحية بالوقت يعوّض عن ذلك.
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
 
 export const RESUME_WINDOW_MS = 30 * 60 * 1000;
@@ -111,3 +111,48 @@ export function useResumeRoute(uploadsActive: () => boolean) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname, location.search]);
 }
+
+/**
+ * useState يتذكّر قيمته إن أغلق الآيفون التطبيق في الخلفية (نفس نافذة العودة أعلاه): الموظف
+ * يكتب نصف نموذج، يخرج للواتساب، يعود فيجد ما كتبه. key = null يجعله useState عادياً
+ * (مثلاً قبل أن نعرف أي قطعة يخصّ). clear() بعد الحفظ الناجح أو الإلغاء.
+ */
+export function usePersistentState<T>(
+  key: string | null,
+  initial: T | (() => T),
+): [T, Dispatch<SetStateAction<T>>, () => void] {
+  const init = () => (typeof initial === "function" ? (initial as () => T)() : initial);
+  const [value, setValue] = useState<T>(() => (key ? readResume<T>("form." + key) ?? init() : init()));
+  const skip = useRef(true);
+
+  // قطعة/مفتاح آخر: نقرأ مسودّته هو.
+  const lastKey = useRef(key);
+  useEffect(() => {
+    if (lastKey.current === key) return;
+    lastKey.current = key;
+    skip.current = true;
+    setValue(key ? readResume<T>("form." + key) ?? init() : init());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  useEffect(() => {
+    // لا نكتب القيمة الأولى — فتح نموذج فارغ لا يجب أن يصنع مسودّة.
+    if (skip.current) {
+      skip.current = false;
+      return;
+    }
+    if (key) saveResume("form." + key, value);
+  }, [key, value]);
+
+  const clear = useCallback(() => {
+    if (key) clearResume("form." + key);
+    skip.current = true;
+    setValue(init());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  return [value, setValue, clear];
+}
+
+/** هل لهذا المفتاح مسودّة محفوظة؟ (لإظهار «أكملنا من حيث توقفت»). */
+export const hasResumeForm = (key: string) => readResume("form." + key) !== null;

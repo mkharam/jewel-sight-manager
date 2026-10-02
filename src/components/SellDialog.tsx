@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { usePersistentState } from "@/lib/resume";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -56,28 +57,39 @@ export default function SellDialog({
   // المدير العام بلا فرع: يبقى فرع القطعة.
   const saleBranchId = profile?.branch_id ?? product.branch_id ?? null;
   const qc = useQueryClient();
-  const [innerOpen, setInnerOpen] = useState(false);
+  // البيع يُكتب والزبون واقف، وكثيراً ما يخرج الموظف للواتساب في المنتصف (يرسل صورة، يتأكد
+  // من السعر). الآيفون قد يغلق التطبيق في الخلفية — فنحفظ النافذة مفتوحة وكل ما كُتب فيها.
+  const dk = (f: string) => `sell:${product.id}:${f}`;
+  const [innerOpen, setInnerOpen, clearOpen] = usePersistentState(dk("open"), false);
   const open = controlledOpen ?? innerOpen;
-  const setOpen = (v: boolean) => { onOpenChange?.(v); if (controlledOpen === undefined) setInnerOpen(v); };
   const [saving, setSaving] = useState(false);
   // سعر القطعة الواحدة؛ الخانة تحمل إجمالي البيع (سعر × العدد) ما لم يكتب الموظف سعراً بنفسه.
   const base = product.promo_price ?? product.sale_price ?? (suggestedPrice ? Math.round(suggestedPrice) : null);
   const available = Math.max(product.quantity ?? 1, 1);
-  const [qty, setQty] = useState(1);
-  const [priceTouched, setPriceTouched] = useState(false);
-  const [price, setPrice] = useState(base ? String(base) : "");
+  const [qty, setQty, clearQty] = usePersistentState(dk("qty"), 1);
+  const [priceTouched, setPriceTouched, clearPriceTouched] = usePersistentState(dk("priceTouched"), false);
+  const [price, setPrice, clearPrice] = usePersistentState(dk("price"), base ? String(base) : "");
   const changeQty = (next: number) => {
     const q = Math.min(Math.max(next, 1), available);
     setQty(q);
     if (!priceTouched && base) setPrice(String(base * q));
   };
-  const [method, setMethod] = useState(PAYMENT_METHODS[0]);
-  const [showMore, setShowMore] = useState(false);
-  const [discount, setDiscount] = useState("");
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [notes, setNotes] = useState("");
-  const [amarInvoice, setAmarInvoice] = useState("");
+  const [method, setMethod, clearMethod] = usePersistentState(dk("method"), PAYMENT_METHODS[0]);
+  const [showMore, setShowMore, clearShowMore] = usePersistentState(dk("showMore"), false);
+  const [discount, setDiscount, clearDiscount] = usePersistentState(dk("discount"), "");
+  const [name, setName, clearName] = usePersistentState(dk("name"), "");
+  const [phone, setPhone, clearPhone] = usePersistentState(dk("phone"), "");
+  const [notes, setNotes, clearNotes] = usePersistentState(dk("notes"), "");
+  const [amarInvoice, setAmarInvoice, clearAmar] = usePersistentState(dk("amar"), "");
+  // إغلاق النافذة (إلغاء أو بعد البيع) يمسح المسودّة — المرة القادمة تبدأ نظيفة.
+  const setOpen = (v: boolean) => {
+    onOpenChange?.(v);
+    if (controlledOpen === undefined) setInnerOpen(v);
+    if (!v) {
+      clearOpen(); clearQty(); clearPriceTouched(); clearPrice(); clearMethod(); clearShowMore();
+      clearDiscount(); clearName(); clearPhone(); clearNotes(); clearAmar();
+    }
+  };
   // سعر اليوم يُحمَّل بعد الصفحة بلحظة — نملأ الخانة عند فتح النافذة إن كانت ما زالت فارغة.
   useEffect(() => {
     if (open && !price && base) setPrice(String(base * qty));
