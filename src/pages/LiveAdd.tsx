@@ -116,6 +116,10 @@ export default function LiveAdd() {
         if (track?.muted) setVideoMuted(true);
         track?.addEventListener("mute", () => setVideoMuted(true));
         track?.addEventListener("unmute", () => setVideoMuted(false));
+        // الكاميرا انقطعت من النظام (مكالمة، تطبيق آخر أخذها) والصفحة ظاهرة — نعيد تشغيلها.
+        track?.addEventListener("ended", () => {
+          if (!cancelled && document.visibilityState === "visible") setRestartKey((k) => k + 1);
+        });
 
         // عنصر <video> لا يُعرض أثناء وجود خطأ، فقد لا يكون موجوداً بعد لحظة عودة
         // getUserMedia — ننتظر ظهور العنصر بضع دورات بدل الاستسلام الصامت (شاشة سوداء
@@ -152,6 +156,30 @@ export default function LiveAdd() {
     setError(null);
     setRestartKey((k) => k + 1);
   };
+
+  // الخروج من التطبيق (واتساب، قفل الشاشة) يوقف الآيفون الكاميرا، وعند العودة تبقى الصورة
+  // سوداء أو متجمّدة. نُطفئها نحن عند الخروج ونعيد تشغيلها تلقائياً عند العودة — فيجد الموظف
+  // الكاميرا تعمل في نفس الصفحة ونفس القطعة (المسودّة محفوظة أعلاه) بلا أي ضغطة.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        setReady(false);
+      } else {
+        retryCamera();
+      }
+    };
+    // pageshow: عودة الصفحة من ذاكرة المتصفح (bfcache) دون إعادة تحميل.
+    const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) retryCamera(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // الكاميرا تعمل كقارئ باركود دائم: تفحص باستمرار طالما لم يُكتب الباركود بعد ولم
   // تُلتقط صورة القطعة بعد (بعدها لا داعي للفحص). بمجرد رؤية باركود صالح يُكتب في الحقل
