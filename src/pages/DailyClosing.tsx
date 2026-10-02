@@ -4,6 +4,7 @@
 // الخادم (submit_daily_closing) ويُخزَّن لقطةً. المدير العام يرى كل الفروع ويعيد فتح إقفال
 // خاطئ؛ المشرف يقفل فرعه فقط. الجداول غير موجودة في types.ts المولّدة بعد، فنمرّر عبر any.
 import { useMemo, useState } from "react";
+import { usePersistentState } from "@/lib/resume";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -63,14 +64,16 @@ export default function DailyClosing() {
 
   const [branchId, setBranchId] = useState<string>(myBranch ?? "");
   const [date, setDate] = useState(businessToday());
-  const [opening, setOpening] = useState("");
-  const [cash, setCash] = useState("");
-  const [card, setCard] = useState("");
-  const [transfer, setTransfer] = useState("");
-  const [notes, setNotes] = useState("");
+  const [opening, setOpening, clearOpening] = usePersistentState(`closing:opening`, "");
+  const [cash, setCash, clearCash] = usePersistentState(`closing:cash`, "");
+  const [card, setCard, clearCard] = usePersistentState(`closing:card`, "");
+  const [transfer, setTransfer, clearTransfer] = usePersistentState(`closing:transfer`, "");
+  const [notes, setNotes, clearNotes] = usePersistentState(`closing:notes`, "");
   const [busy, setBusy] = useState(false);
-  const [expCat, setExpCat] = useState("");
-  const [expAmount, setExpAmount] = useState("");
+  const [expCat, setExpCat, clearExpCat] = usePersistentState(`closing:expCat`, "");
+  const [expAmount, setExpAmount, clearExpAmount] = usePersistentState(`closing:expAmount`, "");
+  // المسودّة تنجو من إغلاق الآيفون للتطبيق في الخلفية؛ تُمسح بعد الحفظ أو الإلغاء.
+  const clearDraft = () => { clearOpening(); clearCash(); clearCard(); clearTransfer(); clearNotes(); clearExpCat(); clearExpAmount(); };
 
   const { data: branches = [] } = useQuery({
     queryKey: ["closing-branches"],
@@ -170,6 +173,7 @@ export default function DailyClosing() {
     setBusy(false);
     if (error) return toast.error(error.message);
     toast.success("تم إقفال اليوم");
+    clearDraft();
     setOpening(""); setCash(""); setCard(""); setTransfer(""); setNotes("");
     refresh();
   };

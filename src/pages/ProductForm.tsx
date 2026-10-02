@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { usePersistentState, hasResumeForm } from "@/lib/resume";
+import ResumedNotice from "@/components/ResumedNotice";
+import { saveDraftFiles, loadDraftFiles, clearDraftFiles } from "@/lib/fileDraft";
 import { useNavigate, useParams, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
@@ -66,7 +69,11 @@ export default function ProductForm() {
   // القطعة). المشرف يقتصر على قطع فرعه — يُتحقّق من فرع القطعة الفعلي بعد تحميلها أدناه.
   const [loadedProductBranch, setLoadedProductBranch] = useState<string | null | "pending">("pending");
 
-  const [form, setForm] = useState({
+  // مسودّة النموذج تنجو من إغلاق الآيفون للتطبيق في الخلفية (واتساب، الكاميرا…).
+  const draftKey = `product:${editing ? id : "new"}`;
+  // هل وجدنا مسودّة عند الفتح؟ حينها لا نكتب فوقها بيانات القطعة من قاعدة البيانات.
+  const restoredDraft = useRef(hasResumeForm(draftKey)).current;
+  const [form, setForm, clearForm] = usePersistentState(draftKey, {
     name: "", sku: "", category_id: "", branch_id: "",
     // أغلب المخزون 18K — نفس منطق الرفع بالجملة (Upload.tsx/BulkCameraCapture): نبدأ
     // بالقيمة الغالبة كافتراض بدل حقل فارغ، والموظف يبدّلها يدوياً إن كانت القطعة 21K.
@@ -76,11 +83,28 @@ export default function ProductForm() {
     description: "", internal_notes: "",
     serial_number: "", barcode_value: "", showcase_location: "",
   });
-  const [hasStones, setHasStones] = useState(false);
-  const [stoneType, setStoneType] = useState("");
-  const [stoneColor, setStoneColor] = useState("");
+  const [hasStones, setHasStones, clearHasStones] = usePersistentState(`${draftKey}:stones`, false);
+  const [stoneType, setStoneType, clearStoneType] = usePersistentState(`${draftKey}:stoneType`, "");
+  const [stoneColor, setStoneColor, clearStoneColor] = usePersistentState(`${draftKey}:stoneColor`, "");
   const [existingImages, setExistingImages] = useState<{ id: string; storage_path: string; thumb_path?: string | null; is_primary: boolean }[]>([]);
   const [newFiles, setNewFiles] = useState<File[]>([]);
+  // الصور الجديدة (قبل الحفظ) في IndexedDB — تُستعاد مع المسودّة.
+  const filesLoaded = useRef(false);
+  useEffect(() => {
+    if (!restoredDraft) { filesLoaded.current = true; return; }
+    void loadDraftFiles(draftKey).then((files) => {
+      if (files.length) setNewFiles(files);
+      filesLoaded.current = true;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (filesLoaded.current) void saveDraftFiles(draftKey, newFiles);
+  }, [draftKey, newFiles]);
+  const discardDraft = () => {
+    clearForm(); clearHasStones(); clearStoneType(); clearStoneColor();
+    void clearDraftFiles(draftKey);
+  };
   // روابط المعاينة تُنشأ مرة واحدة لكل ملف لا داخل الرسم: كان URL.createObjectURL يُستدعى
   // في JSX مباشرة، أي رابط blob جديد لكل صورة مع كل إعادة رسم (كل حرف يُكتب في النموذج)
   // وبلا تحرير أبداً — وصور الكاميرا عدة ميغابايت، فيتراكم الضغط على ذاكرة الهاتف.
@@ -105,13 +129,16 @@ export default function ProductForm() {
 
   useEffect(() => {
     if (!editing) {
-      if (profile?.branch_id) setForm((f) => ({ ...f, branch_id: profile.branch_id! }));
+      if (profile?.branch_id) setForm((f) => ({ ...f, branch_id: f.branch_id || profile.branch_id! }));
       return;
     }
     (async () => {
       const { data } = await supabase.from("products").select("*, images:product_images(id,storage_path,thumb_path,is_primary,sort_order)").eq("id", id!).maybeSingle();
       if (!data) return;
       setLoadedProductBranch(data.branch_id ?? null);
+      setExistingImages(data.images ?? []);
+      // مسودّة تعديل لم تُحفظ: نُبقي ما كتبه الموظف بدل بيانات القطعة المحفوظة.
+      if (restoredDraft) return;
       setForm({
         name: data.name ?? "", sku: data.sku ?? "",
         category_id: data.category_id ?? "", branch_id: data.branch_id ?? "",
@@ -124,7 +151,6 @@ export default function ProductForm() {
         description: data.description ?? "", internal_notes: data.internal_notes ?? "",
         serial_number: data.serial_number ?? "", barcode_value: data.barcode_value ?? "", showcase_location: data.showcase_location ?? "",
       });
-      setExistingImages(data.images ?? []);
 
       const { data: stones } = await supabase.from("product_stones").select("*").eq("product_id", id!).limit(1);
       const s = stones?.[0];
@@ -310,6 +336,7 @@ export default function ProductForm() {
         details: { name: parsed.data.name },
       });
 
+      discardDraft();
       toast.success(editing ? "تم التحديث" : "تمت الإضافة");
       navigate(`/products/${productId}`);
     } catch (err: any) {
@@ -352,6 +379,8 @@ export default function ProductForm() {
       </Button>
 
       <h1 className="text-2xl font-bold">{editing ? "تعديل قطعة" : "إضافة قطعة جديدة"}</h1>
+
+      {restoredDraft && <ResumedNotice onDiscard={() => { discardDraft(); window.location.reload(); }} />}
 
       {(aiLoading || aiSuggestion) && (
         <div className="rounded-xl bg-gold-soft border border-primary/20 p-3 flex items-start gap-3">
@@ -562,7 +591,7 @@ export default function ProductForm() {
           <Button type="submit" disabled={saving} className="flex-1 bg-gold-gradient text-primary-foreground shadow-gold" size="lg">
             {saving ? "جارٍ الحفظ..." : editing ? "تحديث" : "إضافة القطعة"}
           </Button>
-          <Button type="button" variant="outline" size="lg" onClick={() => navigate(-1)}>إلغاء</Button>
+          <Button type="button" variant="outline" size="lg" onClick={() => { discardDraft(); navigate(-1); }}>إلغاء</Button>
         </div>
       </form>
     </div>

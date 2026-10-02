@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { usePersistentState } from "@/lib/resume";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
@@ -32,7 +33,8 @@ export default function Inquiries() {
   const { user, profile } = useAuth();
   const qc = useQueryClient();
   const [filter, setFilter] = useState<InquiryStatus | "all">("all");
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = usePersistentState(`inquiries:open`, false);
+  // المسودّة تنجو من إغلاق الآيفون للتطبيق في الخلفية؛ تُمسح بعد الحفظ أو الإلغاء.
 
   // بث مباشر — أي استفسار جديد أو تغيير حالة يظهر فوراً للجميع
   useEffect(() => {
@@ -256,10 +258,12 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick: (
 function NewInquiryForm({ defaultBranch, branches, userId, onDone }: {
   defaultBranch: string; branches: { id: string; name: string }[]; userId?: string; onDone: () => void;
 }) {
-  const [form, setForm] = useState({
+  const [form, setForm, clearForm] = usePersistentState(`inquiry:new:form`, {
     customer_name: "", customer_phone: "", description: "",
     budget: "", desired_karat: "", desired_size: "", branch_id: defaultBranch,
   });
+  // المسودّة تنجو من إغلاق الآيفون للتطبيق في الخلفية؛ تُمسح بعد الحفظ أو الإلغاء.
+  const clearDraft = () => { clearForm(); };
   const [saving, setSaving] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
@@ -280,6 +284,7 @@ function NewInquiryForm({ defaultBranch, branches, userId, onDone }: {
     setSaving(false);
     if (error) return toast.error(error.message);
     toast.success("تم تسجيل الاستفسار");
+    clearDraft();
     onDone();
   };
 

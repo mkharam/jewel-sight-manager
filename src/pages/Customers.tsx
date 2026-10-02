@@ -2,6 +2,7 @@
 // الفعلي بالمبيعات يتم عبر customer_id (راجع SellDialog/ReserveDialog — resolveCustomerId)
 // بدل الاكتفاء بالاسم كنص حر كما كان سابقاً.
 import { useMemo, useState } from "react";
+import { usePersistentState } from "@/lib/resume";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -24,12 +25,14 @@ export default function Customers() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const [q, setQ] = useState("");
-  const [openNew, setOpenNew] = useState(false);
+  const [openNew, setOpenNew] = usePersistentState(`customer:new:openNew`, false);
   const [activeCustomer, setActiveCustomer] = useState<Customer | null>(null);
 
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [notes, setNotes] = useState("");
+  const [name, setName, clearName] = usePersistentState(`customer:new:name`, "");
+  const [phone, setPhone, clearPhone] = usePersistentState(`customer:new:phone`, "");
+  const [notes, setNotes, clearNotes] = usePersistentState(`customer:new:notes`, "");
+  // المسودّة تنجو من إغلاق الآيفون للتطبيق في الخلفية؛ تُمسح بعد الحفظ أو الإلغاء.
+  const clearDraft = () => { clearName(); clearPhone(); clearNotes(); };
 
   const { data: customers, isLoading } = useQuery({
     queryKey: ["customers", q],
@@ -43,7 +46,7 @@ export default function Customers() {
     },
   });
 
-  const resetForm = () => { setName(""); setPhone(""); setNotes(""); };
+  const resetForm = () => clearDraft();
 
   const createCustomer = async () => {
     if (!name.trim()) return toast.error("اكتب اسم العميل");

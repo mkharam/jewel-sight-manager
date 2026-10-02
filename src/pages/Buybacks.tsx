@@ -5,6 +5,7 @@
 // والمقايضة لا تحرّك مالاً فلا تدخل. المشرف يسجّل لفرعه فقط، والمدير العام لكل الفروع؛ الموظف
 // العادي لا يشتري ذهباً. تعديل السجل ممنوع بعد الحفظ — يتغيّر «مصير» الكسر فقط (صُهر/بيع).
 import { useMemo, useState } from "react";
+import { usePersistentState } from "@/lib/resume";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -54,17 +55,19 @@ export default function Buybacks() {
   const { data: prices } = useGoldPrices();
 
   const [branchId, setBranchId] = useState<string>(profile?.branch_id ?? "");
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [idNumber, setIdNumber] = useState("");
-  const [karat, setKarat] = useState<string>(KARAT_OPTIONS[0]);
-  const [gross, setGross] = useState("");
-  const [net, setNet] = useState("");
-  const [perGram, setPerGram] = useState("");
-  const [total, setTotal] = useState("");
-  const [totalTouched, setTotalTouched] = useState(false);
-  const [method, setMethod] = useState(PAYOUT_METHODS[0]);
-  const [notes, setNotes] = useState("");
+  const [name, setName, clearName] = usePersistentState(`buyback:name`, "");
+  const [phone, setPhone, clearPhone] = usePersistentState(`buyback:phone`, "");
+  const [idNumber, setIdNumber, clearIdNumber] = usePersistentState(`buyback:idNumber`, "");
+  const [karat, setKarat, clearKarat] = usePersistentState<string>(`buyback:karat`, KARAT_OPTIONS[0]);
+  const [gross, setGross, clearGross] = usePersistentState(`buyback:gross`, "");
+  const [net, setNet, clearNet] = usePersistentState(`buyback:net`, "");
+  const [perGram, setPerGram, clearPerGram] = usePersistentState(`buyback:perGram`, "");
+  const [total, setTotal, clearTotal] = usePersistentState(`buyback:total`, "");
+  const [totalTouched, setTotalTouched, clearTotalTouched] = usePersistentState(`buyback:totalTouched`, false);
+  const [method, setMethod, clearMethod] = usePersistentState(`buyback:method`, PAYOUT_METHODS[0]);
+  const [notes, setNotes, clearNotes] = usePersistentState(`buyback:notes`, "");
+  // المسودّة تنجو من إغلاق الآيفون للتطبيق في الخلفية؛ تُمسح بعد الحفظ أو الإلغاء.
+  const clearDraft = () => { clearName(); clearPhone(); clearIdNumber(); clearKarat(); clearGross(); clearNet(); clearPerGram(); clearTotal(); clearTotalTouched(); clearMethod(); clearNotes(); };
   const [busy, setBusy] = useState(false);
 
   const { data: branches = [] } = useQuery({
@@ -152,6 +155,7 @@ export default function Buybacks() {
     setBusy(false);
     if (error) return toast.error(error.message);
     toast.success("تم تسجيل شراء الذهب");
+    clearDraft();
     setName(""); setPhone(""); setIdNumber(""); setGross(""); setNet(""); setPerGram(""); setTotal(""); setTotalTouched(false); setNotes("");
     qc.invalidateQueries({ queryKey: ["gold-buybacks"] });
   };
