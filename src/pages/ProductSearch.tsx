@@ -93,6 +93,9 @@ const sanitizeTerm = (s: string) => s.replace(/[,(){}"\\]/g, " ").trim();
 
 const PAGE_SIZE = 48;
 
+// الاسم المؤقت الذي تُحفظ به القطعة لحظة الرفع حتى يسمّيها التحليل (راجع uploadRunner).
+const UNANALYZED_NAME = "قطعة جديدة";
+
 export default function ProductSearch() {
   const { profile, roles } = useAuth();
   const queryClient = useQueryClient();
@@ -356,6 +359,9 @@ export default function ProductSearch() {
         // صراحةً من فلتر الحالة، فتصير الأرشفة طريقة عكوسة لإخراج بضاعة من التداول.
         if (debounced.status !== "all") q = q.eq("status", debounced.status as ProductStatus);
         else q = q.neq("status", "archived" as ProductStatus);
+        // قطعة لم يحلّلها الذكاء الاصطناعي بعد (ما زالت بالاسم المؤقت) لا تدخل الكتالوج:
+        // تظهر في صفحة الرفع ومراجعة القطع بلا اسم حتى يكتمل تحليلها، ثم تنضم تلقائياً.
+        q = q.neq("name", UNANALYZED_NAME);
         if (debounced.minWeight) q = q.gte("weight_grams", parseFloat(debounced.minWeight));
         if (debounced.maxWeight) q = q.lte("weight_grams", parseFloat(debounced.maxWeight));
         return q;
@@ -367,6 +373,7 @@ export default function ProductSearch() {
           .from("products").select(SELECT)
           .in("id", similarIds)
           .neq("status", "archived" as ProductStatus)
+          .neq("name", UNANALYZED_NAME)
           .limit(120);
         if (error) throw error;
         const idx = new Map(similarIds.map((id, i) => [id, i]));
