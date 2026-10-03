@@ -488,6 +488,10 @@ export default function LiveAdd() {
           <div className="text-center text-white p-6 space-y-2">
             <ImageOff className="size-10 mx-auto text-white/70" />
             <p className="font-semibold">{error}</p>
+            {/* نقرة = إيماءة مستخدم، يقبلها التطبيق المثبَّت على iOS دائماً لإعادة فتح الكاميرا. */}
+            <Button onClick={retryCamera} className="mt-2 bg-gold-gradient text-primary-foreground shadow-gold">
+              <RefreshCw className="size-4 ml-1" /> تشغيل الكاميرا
+            </Button>
           </div>
         ) : capturedUrl ? (
           <img src={capturedUrl} alt="" className="w-full h-full object-contain" />

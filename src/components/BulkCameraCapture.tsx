@@ -196,6 +196,26 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
     }
   };
 
+  // الخروج من التطبيق (واتساب، قفل الشاشة) يوقف الآيفون الكاميرا فتبقى الصورة سوداء عند
+  // العودة. نُطفئها عند الخروج ونعيد تشغيلها عند العودة. إن رفض التطبيق المثبَّت طلباً بلا
+  // نقرة، يظهر زر «إعادة المحاولة» المعتاد — نقرة واحدة. الصور الملتقطة محفوظة على الخادم
+  // لحظة التقاطها (saveCapturedPiece) فلا يضيع منها شيء.
+  useEffect(() => {
+    if (!open) return;
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        setReady(false);
+      } else if (!useNativeCamera) {
+        void retryCamera();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, useNativeCamera, facing]);
+
   // تبديل أمامية/خلفية — طلب مباشر من نقرة الزر لنفس سبب retryCamera، بدل الاعتماد على
   // useEffect يتفاعل مع تغيّر facing (كان هذا هو المسار غير المدعوم على iOS المثبَّت).
   const switchCamera = async () => {
@@ -470,6 +490,13 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
           <div className="text-center text-white p-6 space-y-2">
             <ImageOff className="size-10 mx-auto text-white/70" />
             <p className="font-semibold">{error}</p>
+            {/* نقرة = إيماءة مستخدم، يقبلها التطبيق المثبَّت على iOS دائماً لإعادة فتح الكاميرا. */}
+            <button
+              onClick={() => { setError(null); void retryCamera(); }}
+              className="mt-2 rounded-lg bg-gold-gradient px-4 py-2 text-sm font-semibold text-primary-foreground shadow-gold"
+            >
+              تشغيل الكاميرا
+            </button>
           </div>
         ) : (
           <video ref={videoRef} playsInline muted className="w-full h-full object-contain" />
