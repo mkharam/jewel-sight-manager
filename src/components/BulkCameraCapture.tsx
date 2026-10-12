@@ -35,7 +35,7 @@
 // هناك. لا تُضف أي طبقة جديدة بدون دليل فعلي من جهاز حقيقي.
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Camera, X, Check, Trash2, RotateCcw, SwitchCamera, ImageOff, Scale, ScanLine, Loader2, AlertCircle } from "lucide-react";
+import { Camera, X, Check, Trash2, RotateCcw, SwitchCamera, ImageOff, Scale, ScanLine, Loader2, AlertCircle, Smartphone, Video, ImagePlus } from "lucide-react";
 import { useBoxedBarcodeScanner } from "@/lib/useBoxedBarcodeScanner";
 import ScanBoxOverlay from "@/components/ScanBoxOverlay";
 import { normalizeDecimalInput } from "@/lib/constants";
@@ -44,6 +44,26 @@ import { suspendWakeLock } from "@/lib/keepAwake";
 import { toast } from "sonner";
 
 const BARCODE_SCAN_ENABLED = false;
+
+// كاميرا خارجية (مثل Sony a7 III عبر USB وبرنامج Imaging Edge Webcam، أو كرت التقاط HDMI) تظهر
+// للمتصفح كأي كاميرا ويب. نحفظ اختيار الموظف على هذا الجهاز حتى لا يعيده كل جلسة تصوير.
+const DEVICE_KEY = "bulkcam.deviceId";
+// أسماء شائعة لكاميرات Sony وكروت التقاط HDMI (تظهر للمتصفح كأي كاميرا ويب) — للتفضيل التلقائي فقط.
+const isCaptureLike = (label: string) =>
+  /sony|ilce|imaging edge|alpha|cam link|elgato|capture|hdmi|usb video|magewell|avermedia|blackmagic|decklink/i.test(label);
+const MODE_KEY = "bulkcam.external";
+const readSavedMode = () => {
+  try { return localStorage.getItem(MODE_KEY) === "1"; } catch { return false; }
+};
+const saveMode = (external: boolean) => {
+  try { if (external) localStorage.setItem(MODE_KEY, "1"); else localStorage.removeItem(MODE_KEY); } catch { /* ignore */ }
+};
+const readSavedDevice = () => {
+  try { return localStorage.getItem(DEVICE_KEY) || ""; } catch { return ""; }
+};
+const saveDevice = (id: string) => {
+  try { if (id) localStorage.setItem(DEVICE_KEY, id); else localStorage.removeItem(DEVICE_KEY); } catch { /* ignore */ }
+};
 
 type SaveState = "saving" | "saved" | "error";
 type Shot = { id: string; url: string; weight: string; barcode: string; saveState: SaveState };
@@ -90,6 +110,13 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
   const nativeCameraRef = useRef<HTMLInputElement>(null);
   const [flash, setFlash] = useState(false);
   const [facing, setFacing] = useState<"environment" | "user">("environment");
+  // كاميرا مختارة بالاسم (Sony مثلاً)؛ فارغ = الكاميرا الافتراضية الأمامية/الخلفية كما كان.
+  const [deviceId, setDeviceId] = useState<string>(readSavedDevice);
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  // وضع منفصل تماماً: «كاميرا الجهاز» (أمامية/خلفية كما كانت) أو «كاميرا خارجية» (Sony أو كرت HDMI).
+  // لا يختلطان — أزرار كل وضع تظهر فيه وحده، حتى لا يلتبس على الموظف أي كاميرا يصوّر بها.
+  const [externalMode, setExternalMode] = useState<boolean>(readSavedMode);
+  const importRef = useRef<HTMLInputElement>(null);
   const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
   // العيار يُختار قبل التصوير بدل ترك الذكاء الاصطناعي يخمّنه من الصورة لاحقاً — أغلب
   // المخزون 18K فهو الافتراضي، ويبقى ظاهراً وقابلاً للتبديل طوال الجلسة (القطع عادة
@@ -142,6 +169,51 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
     setReady(true);
   };
 
+  // قيود الفيديو: كاميرا مختارة بالاسم بأعلى دقة تقدّمها، وإلا الأمامية/الخلفية كالمعتاد.
+  const videoConstraints = (id: string, face: "environment" | "user"): MediaTrackConstraints =>
+    id
+      ? { deviceId: { exact: id }, width: { ideal: 3840 }, height: { ideal: 2160 } }
+      : { facingMode: face, width: { ideal: 1920 }, height: { ideal: 1920 } };
+
+  // أسماء الكاميرات لا تظهر قبل منح الإذن، لذا نقرأها بعد أول بثّ ناجح وعند توصيل/فصل كاميرا.
+  const refreshDevices = async () => {
+    try {
+      const all = await navigator.mediaDevices.enumerateDevices();
+      setDevices(all.filter((d) => d.kind === "videoinput"));
+    } catch { /* غير مدعوم — تبقى القائمة فارغة */ }
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    void refreshDevices();
+    navigator.mediaDevices?.addEventListener?.("devicechange", refreshDevices);
+    return () => navigator.mediaDevices?.removeEventListener?.("devicechange", refreshDevices);
+  }, [open, ready]);
+
+  // كاميرا خارجية مختارة سابقاً غير متصلة الآن: لا نرجع بصمت لكاميرا الهاتف (يلتبس الأمر على
+  // الموظف) — نُفرغ الاختيار ونُظهر قائمة الاختيار من جديد.
+  const openStream = async (id: string, face: "environment" | "user"): Promise<MediaStream> => {
+    try {
+      return await navigator.mediaDevices.getUserMedia({ video: videoConstraints(id, face), audio: false });
+    } catch (e: unknown) {
+      const name = (e as { name?: string } | null)?.name;
+      if (id && (name === "OverconstrainedError" || name === "NotFoundError")) {
+        setDeviceId("");
+        saveDevice("");
+        setReady(false);
+        toast.error("الكاميرا الخارجية غير متصلة — وصّلها ثم اخترها من القائمة");
+        throw Object.assign(new Error("device gone"), { name: "DeviceGone" });
+      }
+      throw e;
+    }
+  };
+
+  const showStreamError = (e: unknown) => {
+    const name = (e as { name?: string } | null)?.name;
+    if (name === "DeviceGone") return; // قائمة الاختيار ستظهر
+    setError(name === "NotAllowedError" ? "تم رفض إذن الكاميرا — فعّله من إعدادات المتصفح" : "تعذّر فتح الكاميرا");
+  };
+
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -154,17 +226,15 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
       try {
         // بثّ جاهز من نقرة الفتح نفسها (راجع initialStream في تعريف الـProps) —
         // نستخدمه كما هو ولا نطلب جديداً من هذا الـuseEffect (خارج نافذة الإيماءة).
-        const reusable = initialStream && initialStream.getVideoTracks().some((t) => t.readyState === "live");
-        const stream = reusable
-          ? initialStream!
-          : await navigator.mediaDevices.getUserMedia({
-              video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1920 } },
-              audio: false,
-            });
+        // الوضع الخارجي بلا كاميرا مختارة: لا بثّ، تظهر قائمة الاختيار.
+        if (externalMode && !deviceId) return;
+        // وضع الكاميرا الخارجية المحفوظ يتقدّم على البثّ الافتراضي الجاهز من نقرة الفتح.
+        const reusable = !externalMode && initialStream && initialStream.getVideoTracks().some((t) => t.readyState === "live");
+        const stream = reusable ? initialStream! : await openStream(externalMode ? deviceId : "", facing);
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
         await attachStream(stream);
-      } catch (e: any) {
-        setError(e?.name === "NotAllowedError" ? "تم رفض إذن الكاميرا — فعّله من إعدادات المتصفح" : "تعذّر فتح الكاميرا");
+      } catch (e: unknown) {
+        showStreamError(e);
       }
     })();
 
@@ -185,14 +255,12 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
   // نافذة "تفعيل المستخدم" التي يشترطها التطبيق المثبَّت على iOS. راجع تعليق
   // initialStream في تعريف الـProps أعلى الملف لتفاصيل الدليل.
   const retryCamera = async () => {
+    if (externalMode && !deviceId) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1920 } },
-        audio: false,
-      });
+      const stream = await openStream(externalMode ? deviceId : "", facing);
       await attachStream(stream);
-    } catch (e: any) {
-      setError(e?.name === "NotAllowedError" ? "تم رفض إذن الكاميرا — فعّله من إعدادات المتصفح" : "تعذّر فتح الكاميرا");
+    } catch (e: unknown) {
+      showStreamError(e);
     }
   };
 
@@ -214,7 +282,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, useNativeCamera, facing]);
+  }, [open, useNativeCamera, facing, externalMode, deviceId]);
 
   // تبديل أمامية/خلفية — طلب مباشر من نقرة الزر لنفس سبب retryCamera، بدل الاعتماد على
   // useEffect يتفاعل مع تغيّر facing (كان هذا هو المسار غير المدعوم على iOS المثبَّت).
@@ -222,13 +290,10 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
     const next = facing === "environment" ? "user" : "environment";
     setFacing(next);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: next, width: { ideal: 1920 }, height: { ideal: 1920 } },
-        audio: false,
-      });
+      const stream = await openStream("", next);
       await attachStream(stream);
-    } catch (e: any) {
-      setError(e?.name === "NotAllowedError" ? "تم رفض إذن الكاميرا — فعّله من إعدادات المتصفح" : "تعذّر فتح الكاميرا");
+    } catch (e: unknown) {
+      showStreamError(e);
     }
   };
 
@@ -367,6 +432,60 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
     if (file) saveShot(file);
   };
 
+  // اختيار كاميرا خارجية من القائمة — طلب مباشر من النقرة (نفس قاعدة retryCamera/switchCamera).
+  const pickDevice = async (id: string) => {
+    setDeviceId(id);
+    saveDevice(id);
+    if (!id) return;
+    try {
+      const stream = await openStream(id, facing);
+      await attachStream(stream);
+    } catch (e: unknown) {
+      showStreamError(e);
+    }
+  };
+
+  // التبديل بين «كاميرا الجهاز» و«كاميرا خارجية» — من نقرة مباشرة. الخارجية: نعيد آخر كاميرا
+  // مختارة، وإلا نفضّل تلقائياً كاميرا تبدو Sony أو كرت التقاط HDMI إن وُجدت، وإلا يختار الموظف.
+  const chooseMode = async (external: boolean) => {
+    if (external === externalMode) return;
+    setExternalMode(external);
+    saveMode(external);
+    setUseNativeCamera(false);
+    setError(null);
+    if (!external) {
+      try {
+        await attachStream(await openStream("", facing));
+      } catch (e: unknown) {
+        showStreamError(e);
+      }
+      return;
+    }
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    setReady(false);
+    const preferred = deviceId || devices.find((d) => isCaptureLike(d.label))?.deviceId || "";
+    if (preferred) await pickDevice(preferred);
+  };
+
+  // استيراد صور التقطتها كاميرا خارجية (من بطاقة SD أو كابل): كل صورة قطعة، بترتيب أسماء الملفات
+  // (DSC00001, DSC00002…) أي بترتيب التصوير، وتُرفع بدقتها الأصلية كاملة. تتدرّج بفاصل قصير حتى لا
+  // تُطلَق عشرات عمليات الرفع والتحليل في لحظة واحدة. بعدها يكتب الموظف وزن كل قطعة تحت صورتها.
+  const importFiles = async (list: FileList | null) => {
+    const files = Array.from(list ?? [])
+      .filter((f) => /^image\/(jpeg|png|webp)$/.test(f.type))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    if (!files.length) {
+      toast.error("اختر صور JPEG — ملفات RAW (ARW) لا يقرؤها المتصفح");
+      return;
+    }
+    toast.success(`استيراد ${files.length} صورة…`);
+    for (const f of files) {
+      saveShot(f);
+      await new Promise((r) => setTimeout(r, 250));
+    }
+  };
+
   const setWeight = (id: string, weight: string) => {
     weightsRef.current[id] = weight;
     setShots((prev) => prev.map((s) => (s.id === id ? { ...s, weight } : s)));
@@ -455,7 +574,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
         </div>
         <p className="text-sm font-semibold">{shots.length > 0 ? `${shots.length} صورة مُلتقطة` : "صوّر القطع واحدة تلو الأخرى"}</p>
         <div className="flex items-center gap-3">
-          {!useNativeCamera && (
+          {!externalMode && !useNativeCamera && (
             <>
               <button onClick={retryCamera} className="p-1" aria-label="إعادة تشغيل الكاميرا" title="إعادة تشغيل الكاميرا">
                 <RotateCcw className="size-5" />
@@ -465,6 +584,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
               </button>
             </>
           )}
+          {!externalMode && (
           <button
             onClick={() => setUseNativeCamera((v) => !v)}
             className={`p-1 ${useNativeCamera ? "text-primary" : ""}`}
@@ -473,12 +593,83 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
           >
             <Camera className="size-5" />
           </button>
+          )}
         </div>
       </div>
 
+      {/* مصدر الكاميرا: وضعان منفصلان لا يختلطان. */}
+      <div className="flex gap-2 px-4 pb-2 bg-black/60" role="group" aria-label="مصدر الكاميرا">
+        <button
+          onClick={() => void chooseMode(false)}
+          className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold border ${!externalMode ? "bg-primary text-primary-foreground border-primary" : "text-white/70 border-white/25"}`}
+        >
+          <Smartphone className="size-4" /> كاميرا الجهاز
+        </button>
+        <button
+          onClick={() => void chooseMode(true)}
+          className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold border ${externalMode ? "bg-primary text-primary-foreground border-primary" : "text-white/70 border-white/25"}`}
+        >
+          <Video className="size-4" /> كاميرا خارجية (Sony / HDMI)
+        </button>
+      </div>
+
+      {externalMode && (
+        <div className="px-4 pb-3 bg-black/60 space-y-2">
+          <select
+            value={deviceId}
+            onChange={(e) => void pickDevice(e.target.value)}
+            className="w-full h-10 rounded-lg bg-white/10 border border-white/25 text-white text-sm px-2 [&>option]:text-black"
+            aria-label="الكاميرا الخارجية"
+          >
+            <option value="" disabled>اختر الكاميرا…</option>
+            {devices.map((d, i) => (
+              <option key={d.deviceId || i} value={d.deviceId}>
+                {(d.label || `Camera ${i + 1}`) + (isCaptureLike(d.label) ? "  ★" : "")}
+              </option>
+            ))}
+          </select>
+          <div className="flex gap-2">
+            <button
+              onClick={() => importRef.current?.click()}
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs border border-white/25 text-white"
+            >
+              <ImagePlus className="size-4" /> استيراد صور من الكاميرا
+            </button>
+            <button
+              onClick={() => void retryCamera()}
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs border border-white/25 text-white"
+            >
+              <RotateCcw className="size-4" /> إعادة تشغيل
+            </button>
+          </div>
+          <p className="text-[11px] leading-relaxed text-white/55">
+            Sony a7 III: كابل USB وبرنامج Imaging Edge Webcam. أي كاميرا عبر HDMI: كرت التقاط (مثل Cam Link) يظهر هنا كأنه كاميرا.
+            ولأعلى دقة صوّر بالكاميرا ثم استورد الصور.
+          </p>
+        </div>
+      )}
+
+      <input
+        ref={importRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          void importFiles(e.target.files);
+          e.target.value = "";
+        }}
+      />
+
       {/* عرض الكاميرا */}
       <div className="relative flex-1 overflow-hidden bg-black flex items-center justify-center">
-        {useNativeCamera ? (
+        {externalMode && !deviceId ? (
+          <div className="text-center text-white p-6 space-y-2">
+            <Video className="size-10 mx-auto text-white/70" />
+            <p className="font-semibold text-sm">اختر الكاميرا الخارجية من القائمة بالأعلى</p>
+            <p className="text-xs text-white/60">لو لا تظهر: وصّلها بالحاسوب وشغّل برنامجها، ثم أعد الاختيار.</p>
+          </div>
+        ) : useNativeCamera ? (
           // كاميرا الجهاز الاحتياطية — لا معاينة حيّة، فقط زر يفتح تطبيق الكاميرا الأصلي
           // في كل مرة. راجع تعليق useNativeCamera أعلى الملف.
           <div className="text-center text-white p-6 space-y-3">
