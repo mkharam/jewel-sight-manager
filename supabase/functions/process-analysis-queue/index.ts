@@ -6,6 +6,7 @@
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { analysisToEmbeddingText, analyzeBatchWithFallback, embedImage, embedText, type JewelryAnalysis } from "../_shared/lovable-ai.ts";
+import { downloadProductImage } from "../_shared/product-image.ts";
 
 const BATCH_SIZE = 4;
 const PLACEHOLDER_NAME = "قطعة جديدة";
@@ -107,9 +108,11 @@ Deno.serve(async (req) => {
     // تحميل الصور وترميزها base64 — نتجاهل أي صورة يفشل تحميلها بدل إفشال الدفعة كاملة.
     const loaded: { id: string; base64: string; mimeType: string; productId: string; karatAlreadySet: boolean }[] = [];
     for (const row of pending) {
-      const { data: file, error: dlErr } = await admin.storage.from("product-images").download(row.storage_path);
-      if (dlErr || !file) {
-        console.error("download failed", row.storage_path, dlErr?.message);
+      let file: Blob;
+      try {
+        file = await downloadProductImage(admin, row.storage_path);
+      } catch (e) {
+        console.error("download failed", row.storage_path, e instanceof Error ? e.message : e);
         continue;
       }
       const bytes = new Uint8Array(await file.arrayBuffer());

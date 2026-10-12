@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import SellDialog from "@/components/SellDialog";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -15,7 +16,7 @@ import { ImageIcon, MapPin, MoreVertical, Check, Barcode, Tag } from "lucide-rea
 import type { LatestQuote } from "@/hooks/useLatestQuotes";
 import { useGoldPrices } from "@/hooks/useGoldPrices";
 import { priceForPiece, PRICE_GAP_LABEL } from "@/lib/pricing";
-import { usePricesVisible } from "@/hooks/useAppSettings";
+import { usePriceVisibleFor } from "@/hooks/useAppSettings";
 import { PRODUCT_STATUS, formatCurrency, formatWeight, getThumbUrl, ProductStatus } from "@/lib/constants";
 import { GOLD_COLORS } from "@/lib/luxury";
 import { supabase } from "@/integrations/supabase/client";
@@ -36,6 +37,8 @@ export interface ProductCardData {
   ring_size: string | null;
   sale_price: number | null;
   promo_price: number | null;
+  /** عدد القطع المتطابقة المتوفرة — يُعرض "×N" على البطاقة حين يزيد عن 1. */
+  quantity?: number;
   status: ProductStatus;
   branch_id?: string | null;
   branch?: { name: string } | null;
@@ -49,11 +52,23 @@ interface ProductCardProps {
   selected?: boolean;
   onToggleSelect?: (id: string) => void;
   onStatusChanged?: () => void;
-  /** نسبة تشابه البحث بالصورة (0..1) — تُعرض كشارة منفصلة عن شارة العيار لتفادي التراكب. */
-  similarity?: number;
+  /** مستوى تطابق البحث بالصورة وأسبابه — شارة على الصورة وأسباب قصيرة تحت الاسم يقرؤها الموظف
+   *  للزبون مباشرة ("نفس لون الذهب"). النسبة المئوية لم تعد تعني شيئاً: الدرجة نسبية للمخزون. */
+  match?: PhotoMatchInfo;
   /** آخر سعر أُعطي لزبون في هذه القطعة (راجع useLatestQuotes) — يُعرض حين لا سعر بيع مثبّت. */
   lastQuote?: LatestQuote | null;
 }
+
+export type PhotoMatchTier = "exact" | "very_close" | "similar_look" | "same_attributes" | "might_like";
+export type PhotoMatchInfo = { tier: PhotoMatchTier; reasons: string[] };
+
+export const MATCH_TIER_META: Record<PhotoMatchTier, { label: string; badge: string }> = {
+  exact: { label: "🎯 مطابقة", badge: "bg-green-600 text-white" },
+  very_close: { label: "✨ قريبة جداً", badge: "bg-gold-gradient text-primary-foreground" },
+  similar_look: { label: "👀 شكل مشابه", badge: "bg-sky-600 text-white" },
+  same_attributes: { label: "🎨 نفس الأوصاف", badge: "bg-black/70 text-white" },
+  might_like: { label: "💡 ممكن تعجبه", badge: "bg-rose-600 text-white" },
+};
 
 const QUICK_STATUSES: ProductStatus[] = ["available", "reserved", "sold"];
 
@@ -61,7 +76,7 @@ export default function ProductCard({
   product,
   selectable,
   selected,
-  similarity,
+  match,
   lastQuote,
   onToggleSelect,
   onStatusChanged,
@@ -74,9 +89,9 @@ export default function ProductCard({
   const { roles, profile } = useAuth();
   // سعر اليوم محسوباً من وزن القطعة وعيارها — الاستعلام مشترك ومخزَّن فلا يتكرّر لكل بطاقة.
   // الأسعار قد يُطفئها المالك حتى لا تظهر على الشاشة أمام الزبون. راجع usePricesVisible.
-  const pricesVisible = usePricesVisible();
   const { data: goldPrices } = useGoldPrices();
   const computed = priceForPiece(product, goldPrices);
+  const pricesVisible = usePriceVisibleFor(product.promo_price ?? product.sale_price ?? computed.price?.total ?? null);
   const todayPrice = pricesVisible ? computed.price : null;
   const priceGap = pricesVisible ? computed.gap : null;
   const isAdmin = roles.includes("admin");
@@ -84,8 +99,16 @@ export default function ProductCard({
   // تغيير الحالة السريع تعديل — يقتصر على المدير العام أو المشرف على قطع فرعه فقط.
   const canEditStatus = isAdmin || (isManager && product.branch_id === profile?.branch_id);
 
+  const [sellOpen, setSellOpen] = useState(false);
+
   const quickSetStatus = async (next: ProductStatus) => {
     if (next === product.status) return;
+    // "مبيع" يفتح نافذة البيع بدل تغيير الحالة فقط: التغيير المباشر كان يجعل القطعة مبيعة
+    // بلا سجل بيع (بلا سعر ولا بائع) فلا تظهر في المبيعات ولا التقارير.
+    if (next === "sold") {
+      setSellOpen(true);
+      return;
+    }
     setPending(next);
     try {
       const { error } = await supabase.from("products").update({ status: next }).eq("id", product.id);
@@ -124,6 +147,11 @@ export default function ProductCard({
         <Badge className={`absolute top-2 right-2 ${status.color} border-0 shadow-md`}>
           {status.label}
         </Badge>
+        {product.weight_grams == null && (
+          <Badge className="absolute bottom-2 left-2 bg-destructive text-destructive-foreground border-0 shadow-md">
+            بلا وزن
+          </Badge>
+        )}
         {(product.karat || product.gold_color) && (
           <Badge data-karat-badge variant="secondary" className="absolute top-2 left-2 bg-card/90 backdrop-blur border-0 shadow-sm">
             {[product.karat, GOLD_COLORS.find((c) => c.value === product.gold_color)?.label].filter(Boolean).join(" · ")}
@@ -131,9 +159,9 @@ export default function ProductCard({
         )}
         {/* شارة نسبة تشابه البحث بالصورة — أسفل يمين الصورة تحديداً كي لا تتراكب أبداً
             مع شارتي الحالة (أعلى يمين) والعيار (أعلى يسار). */}
-        {typeof similarity === "number" && (
-          <span className="absolute bottom-2 right-2 z-10 text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/70 text-white backdrop-blur shadow">
-            {Math.round(similarity * 100)}%
+        {match && (
+          <span className={`absolute bottom-2 right-2 z-10 text-[10px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur shadow ${MATCH_TIER_META[match.tier].badge}`}>
+            {MATCH_TIER_META[match.tier].label}
           </span>
         )}
         {selectable && (
@@ -141,7 +169,23 @@ export default function ProductCard({
         )}
       </div>
       <div className="p-3 space-y-1.5">
-        <h3 className="font-semibold text-sm line-clamp-1">{product.name}</h3>
+        <div className="flex items-center gap-1.5">
+          <h3 className="font-semibold text-sm line-clamp-1 flex-1">{product.name}</h3>
+          {(product.quantity ?? 1) > 1 && (
+            <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-primary/12 text-primary text-[11px] font-bold tabular-nums" title="الكمية المتوفرة">
+              ×{product.quantity}
+            </span>
+          )}
+        </div>
+        {match && match.reasons.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {match.reasons.slice(0, 2).map((r) => (
+              <span key={r} className="text-[10px] leading-tight px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+                {r}
+              </span>
+            ))}
+          </div>
+        )}
         {product.sku && (
           <p className="text-[11px] font-mono text-primary/80 truncate tracking-wide" dir="ltr">
             {product.sku}
@@ -269,6 +313,13 @@ export default function ProductCard({
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
+            <SellDialog
+              product={product}
+              suggestedPrice={todayPrice?.total ?? null}
+              open={sellOpen}
+              onOpenChange={setSellOpen}
+              hideTrigger
+            />
           </div>
           )}
         </>

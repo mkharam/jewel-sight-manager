@@ -1,7 +1,8 @@
-// واجهة القراءة الخاصة بتطبيق الصيانة (repair app) — تطبيق منفصل بقاعدة بياناته الخاصة.
+// واجهة تطبيق الصيانة (Goldsystem) — تطبيق منفصل بقاعدة بياناته الخاصة.
 // لا نمنحه مفاتيح Supabase الخاصة بالمخزون ولا وصولاً مباشراً للجداول؛ بدل ذلك يستدعي
 // هذه الدالة بمفتاح خدمة مشترك (REPAIR_API_KEY) فتُرجع له الحد الأدنى من الحقول التي
 // يحتاجها: الفروع، بحث الزبون بالهاتف، وبحث القطعة بالكود لتعبئة الوزن والعيار.
+// ويدفع إليها هو نسخة من كل تذكرة (repairs/sync) لتظهر في صفحة «الصيانة» عند المدير.
 //
 // العقد موثّق في docs/repair-api.md — أي تغيير هنا يجب أن ينعكس هناك لأن تطبيق الصيانة
 // يعتمد عليه، وهو يتدهور بلطف: إن تعذّر الوصول لهذه الدالة يُكمل الموظف بالإدخال اليدوي.
@@ -49,6 +50,17 @@ async function loadStaff(admin: ReturnType<typeof createClient>, userId: string)
     branch_id: (profile.branch_id as string | null) ?? null,
     branch_name: ((profile as any).branches?.name as string | undefined) ?? null,
   };
+}
+
+const REPAIR_STATUSES = ["received", "in_progress", "ready", "delivered", "cancelled"];
+const MAX_SYNC_BATCH = 500;
+
+/** يُرجع فقط المعرّفات الموجودة فعلاً في جدول — حتى لا تفشل الدفعة كلها بسبب مفتاح أجنبي يتيم. */
+async function existingIds(admin: ReturnType<typeof createClient>, table: string, ids: (string | null | undefined)[]) {
+  const unique = [...new Set(ids.filter((x): x is string => typeof x === "string" && x.length > 0))];
+  if (unique.length === 0) return new Set<string>();
+  const { data } = await admin.from(table).select("id").in("id", unique);
+  return new Set((data ?? []).map((r: any) => r.id as string));
 }
 
 Deno.serve(async (req) => {
@@ -233,6 +245,92 @@ Deno.serve(async (req) => {
       const { error } = await admin.from("products").update({ status }).eq("id", product_id);
       if (error) throw error;
       return json({ ok: true });
+    }
+
+    // ——— مزامنة التذاكر (تطبيق الصيانة → المخزون) ———
+    // تطبيق الصيانة يرسل لقطة كل تذكرة بمعرّفات المخزون (فرع/موظف/زبون/قطعة)،
+    // فنكتبها في repair_tickets لتُعرض في صفحة المدير. الكتابة upsert فتكرارها آمن.
+    if (route === "repairs/sync" && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const tickets: any[] = Array.isArray(body?.tickets) ? body.tickets : [];
+      if (tickets.length === 0) return json({ error: "no_tickets" }, 400);
+      if (tickets.length > MAX_SYNC_BATCH) return json({ error: "batch_too_large", max: MAX_SYNC_BATCH }, 413);
+
+      const valid = tickets.filter(
+        (t) => t && typeof t.id === "string" && typeof t.ticket_number === "string" && REPAIR_STATUSES.includes(t.status) && t.item_name && t.received_at,
+      );
+
+      // المعرّفات المرجعية قد لا تكون موجودة (زبون محذوف، موظف يدوي) — نُسقط المفقود إلى null.
+      const [branches, customers, profiles, products] = await Promise.all([
+        existingIds(admin, "branches", valid.map((t) => t.branch_id)),
+        existingIds(admin, "customers", valid.map((t) => t.customer_id)),
+        existingIds(admin, "profiles", valid.flatMap((t) => [t.received_by, t.assigned_to])),
+        existingIds(admin, "products", valid.map((t) => t.product_id)),
+      ]);
+      const ref = (set: Set<string>, id: unknown) => (typeof id === "string" && set.has(id) ? id : null);
+      const num = (v: unknown) => (v === null || v === undefined || v === "" || Number.isNaN(Number(v)) ? null : Number(v));
+      const str = (v: unknown) => (typeof v === "string" && v.length > 0 ? v : null);
+
+      // زبون الصيانة الجديد لا وجود له في المخزون بعد — نطابقه بالهاتف أو ننشئه، وإلا بقي
+      // الزبون في تطبيق الصيانة وحده ولم يظهر في قائمة زبائن المخزون.
+      const phoneKey = (v: unknown) => String(v ?? "").replace(/\D/g, "").slice(-9);
+      const resolved = new Map<string, string>(); // phoneKey → inventory customer id
+      for (const t of valid) {
+        if (ref(customers, t.customer_id)) continue;
+        const key = phoneKey(t.customer_phone);
+        if (key.length < 6 || !t.customer_name || resolved.has(key)) continue;
+        const { data: cands } = await admin.from("customers").select("id, phone").ilike("phone", `%${key.slice(-6)}%`).limit(20);
+        const hit = (cands ?? []).find((c: any) => phoneKey(c.phone) === key);
+        if (hit) {
+          resolved.set(key, hit.id as string);
+          continue;
+        }
+        const { data: created } = await admin
+          .from("customers")
+          .insert({ full_name: t.customer_name, phone: t.customer_phone, branch_id: ref(branches, t.branch_id), notes: "من تطبيق الصيانة" })
+          .select("id")
+          .single();
+        if (created) resolved.set(key, created.id as string);
+      }
+
+      const rows = valid.map((t) => ({
+        id: t.id,
+        ticket_number: t.ticket_number,
+        branch_id: ref(branches, t.branch_id),
+        customer_id: ref(customers, t.customer_id) ?? resolved.get(phoneKey(t.customer_phone)) ?? null,
+        customer_name: str(t.customer_name),
+        customer_phone: str(t.customer_phone),
+        received_by: ref(profiles, t.received_by),
+        received_by_name: str(t.received_by_name),
+        assigned_to: ref(profiles, t.assigned_to),
+        assigned_to_name: str(t.assigned_to_name),
+        product_id: ref(products, t.product_id),
+        item_code: str(t.item_code),
+        item_name: t.item_name,
+        item_type: str(t.item_type),
+        karat: str(t.karat),
+        weight_in_grams: num(t.weight_in_grams),
+        weight_out_grams: num(t.weight_out_grams),
+        problem_description: str(t.problem_description),
+        work_done: str(t.work_done),
+        estimated_cost: num(t.estimated_cost),
+        final_cost: num(t.final_cost),
+        status: t.status,
+        received_at: t.received_at,
+        promised_at: str(t.promised_at),
+        ready_at: str(t.ready_at),
+        delivered_at: str(t.delivered_at),
+        cancelled_at: str(t.cancelled_at),
+        synced_at: new Date().toISOString(),
+      }));
+
+      if (rows.length > 0) {
+        const { error } = await admin.from("repair_tickets").upsert(rows, { onConflict: "id" });
+        if (error) throw error;
+      }
+      // نُعيد الربط ليحفظه تطبيق الصيانة على سجل الزبون عنده فلا يتكرر الإنشاء.
+      const customer_links = rows.filter((r) => r.customer_id).map((r) => ({ ticket_id: r.id, customer_id: r.customer_id }));
+      return json({ ok: true, synced: rows.length, skipped: tickets.length - rows.length, customer_links });
     }
 
     if (route === "health" && req.method === "GET") return json({ ok: true });

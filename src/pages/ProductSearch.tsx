@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams, useNavigationType } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { deleteProducts } from "@/lib/productImages";
 import { useAuth } from "@/hooks/useAuth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store, CheckSquare, Trash2, Loader2, ArrowUpDown, ChevronDown, Coins } from "lucide-react";
-import ProductCard from "@/components/ProductCard";
+import ProductCard, { MATCH_TIER_META, type PhotoMatchTier } from "@/components/ProductCard";
 import { useLatestQuotes } from "@/hooks/useLatestQuotes";
 import { useGoldPrices } from "@/hooks/useGoldPrices";
 import ImageSearchButton from "@/components/ImageSearchButton";
@@ -23,6 +24,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { expandQuery, matchScore } from "@/lib/arabic-search";
+import { clearResume, readResume, saveResume } from "@/lib/resume";
 
 interface Filters {
   q: string;
@@ -46,51 +48,63 @@ const initialFilters: Filters = {
 
 const UNASSIGNED_BRANCH = "__unassigned__";
 
-// نحفظ مكان الموظف في نتائج البحث (الفلاتر، عدد الصفحات المحمَّلة، موضع التمرير) قبل
-// فتح تفاصيل قطعة — بحيث لما يدوس "رجوع" يرجع لنفس مكانه بالظبط في الكتالوج، لا لأول
-// الصفحة بفلاتر فاضية من جديد. نميّز "رجوع" (POP) عن فتح جديد/رابط مباشر عبر
-// useNavigationType أدناه — فتح جديد يبقى يبدأ فاضياً كما طُلب سابقاً، فقط الرجوع
-// الفعلي بزر الرجوع/الجهاز يستعيد الحالة. sessionStorage لا localStorage: يُمحى تلقائياً
-// عند إغلاق التبويب بدل أن يبقى "عالقاً" لجلسات لاحقة غير مرتبطة.
-const SCROLL_STATE_KEY = "lamaa.searchScrollState.v1";
-type SavedScrollState = { filters: Filters; pages: number; scrollY: number; loadId?: string };
+// نحفظ مكان الموظف في نتائج البحث (الفلاتر، عدد الصفحات المحمَّلة، موضع التمرير، ونتائج
+// البحث بالصورة) — بحيث لما يرجع يجد نفس مكانه بالظبط، لا أول الصفحة بفلاتر فاضية.
+// نستعيد فقط عند "رجوع" (POP): زر الرجوع من قطعة، أو عودة من الواتساب حتى لو قتل آيفون
+// التطبيق في الخلفية. الفتح بعد مدة طويلة يبقى بداية نظيفة — راجع src/lib/resume.ts.
+type PhotoMatchState = {
+  product_id: string;
+  similarity: number;
+  visual?: number | null;
+  textual?: number | null;
+  kind?: string;
+  reasons?: string[];
+};
+type SavedScrollState = { filters: Filters; pages: number; scrollY: number };
+// نتائج البحث بالصورة تُحفظ منفصلة عن موضع التمرير: صورة الزبون (~150KB) و140 نتيجة كانت
+// تُعاد كتابتها مع كل إطار تمرير (حتى 60 مرة بالثانية) فتُقطّع التمرير على الآيفون. هذه
+// تُكتب فقط حين تتغيّر، وموضع التمرير يبقى خفيفاً.
+type SavedPhotoState = {
+  similarMatches: PhotoMatchState[] | null;
+  /** صورة الزبون (data URL مضغوطة) — تُثبَّت فوق النتائج للمقارنة. */
+  photoQuery: string | null;
+};
 
-// useNavigationType() تُرجع "POP" أيضاً عند أول عرض لفتحة جديدة للتطبيق، لا عند الرجوع
-// وحده — فكان الموظف يفتح التطبيق من جديد فيجد بحثه وفلاتره القديمة كما تركها، وهو
-// عكس المطلوب تماماً. LOAD_ID يُولَّد مرة واحدة لكل تحميل فعلي لملفات الجافاسكربت
-// ويُحفظ مع الحالة، فنستعيدها فقط إن كان من حفظها هو نفس هذه الفتحة — أي أن الانتقال
-// تمّ داخل التطبيق (فتح قطعة ثم رجوع) لا فتحاً جديداً.
-const LOAD_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
-
-function readSavedScrollState(): SavedScrollState | null {
-  try {
-    const raw = sessionStorage.getItem(SCROLL_STATE_KEY);
-    if (!raw) return null;
-    const saved = JSON.parse(raw) as SavedScrollState;
-    if (saved.loadId !== LOAD_ID) {
-      // حالة خلّفتها فتحة سابقة — نتخلّص منها كي لا تُستعاد لاحقاً بالغلط.
-      sessionStorage.removeItem(SCROLL_STATE_KEY);
-      return null;
-    }
-    return saved;
-  } catch {
-    return null;
-  }
-}
+// ترتيب المستويات في العرض، ونصوص الأقسام. "similar" قيمة قديمة من استجابات مخزّنة قبل
+// المستويات الأربعة — تُعامَل كـ"قريبة جداً".
+const TIER_ORDER: PhotoMatchTier[] = ["exact", "very_close", "similar_look", "same_attributes", "might_like"];
+const TIER_SECTION: Record<PhotoMatchTier, { title: string; subtitle: string }> = {
+  exact: { title: "🎯 مطابقة", subtitle: "نفس التصميم — موجود في المخزون" },
+  very_close: { title: "✨ قريبة جداً", subtitle: "تصميم قريب جداً — أقرب بديل للزبون" },
+  similar_look: { title: "👀 شكل مشابه", subtitle: "نفس الفكرة والشكل العام" },
+  same_attributes: { title: "🎨 نفس الأوصاف", subtitle: "نفس لون الذهب أو الأحجار أو الطراز — خيارات إضافية" },
+  might_like: { title: "💡 قطع ممكن تعجب الزبون", subtitle: "ذوق قريب من طلبه — اقترحها إن لم يجد ما يريده بالضبط" },
+};
+// الأقسام الطويلة تبدأ مطوية على الآيفون: أول 12 قطعة وزر "عرض الكل" — بدل تمرير ~80 قطعة
+// قبل الوصول لقسم ممكن تعجبه.
+const TIER_INITIAL: Partial<Record<PhotoMatchTier, number>> = { similar_look: 12, same_attributes: 12, might_like: 12 };
+const toTier = (kind: string | undefined): PhotoMatchTier =>
+  kind === "exact" || kind === "very_close" || kind === "similar_look" || kind === "same_attributes" || kind === "might_like"
+    ? kind
+    : kind === "similar" ? "very_close" : "same_attributes";
 
 /** تنظيف نص البحث من الرموز التي تُفسد صياغة فلتر PostgREST. */
 const sanitizeTerm = (s: string) => s.replace(/[,(){}"\\]/g, " ").trim();
 
 const PAGE_SIZE = 48;
 
+// الاسم المؤقت الذي تُحفظ به القطعة لحظة الرفع حتى يسمّيها التحليل (راجع uploadRunner).
+const UNANALYZED_NAME = "قطعة جديدة";
+
 export default function ProductSearch() {
   const { profile, roles } = useAuth();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   // "رجوع" فعلي من صفحة تفاصيل قطعة (POP) يستعيد الفلاتر/عدد الصفحات المحفوظة؛ أي دخول
-  // آخر (فتح جديد، رابط مباشر) يبدأ فاضياً كالمعتاد. راجع SCROLL_STATE_KEY أعلى الملف.
+  // آخر (فتح جديد، رابط مباشر) يبدأ فاضياً كالمعتاد. راجع SavedScrollState أعلى الملف.
   const navigationType = useNavigationType();
-  const restoredState = useRef(navigationType === "POP" ? readSavedScrollState() : null).current;
+  const restoredState = useRef(navigationType === "POP" ? readResume<SavedScrollState>("search") : null).current;
+  const restoredPhoto = useRef(navigationType === "POP" ? readResume<SavedPhotoState>("searchPhoto") : null).current;
   const [filters, setFilters] = useState<Filters>(restoredState?.filters ?? initialFilters);
   const [debounced, setDebounced] = useState(filters);
   const [pages, setPages] = useState(restoredState?.pages ?? 1); // كم صفحة تم تحميلها
@@ -174,8 +188,7 @@ export default function ProductSearch() {
     setBulkBusy(true);
     try {
       const ids = Array.from(selectedIds);
-      const { error } = await supabase.from("products").delete().in("id", ids);
-      if (error) throw error;
+      await deleteProducts(ids);
       toast.success(`تم حذف ${ids.length} قطعة`);
       exitSelection();
       refreshProducts();
@@ -264,9 +277,8 @@ export default function ProductSearch() {
   });
 
   // Image-search results — when set, overrides normal query with similarity-ranked matches.
-  const [similarMatches, setSimilarMatches] = useState<
-    { product_id: string; similarity: number; visual?: number | null; textual?: number | null; kind?: string }[] | null
-  >(null);
+  const [similarMatches, setSimilarMatches] = useState<PhotoMatchState[] | null>(restoredPhoto?.similarMatches ?? null);
+  const [photoQuery, setPhotoQuery] = useState<string | null>(restoredPhoto?.photoQuery ?? null);
   const similarIds = useMemo(() => similarMatches?.map((m) => m.product_id) ?? null, [similarMatches]);
 
   // "قطع مشابهة" من صفحة القطعة: /?similar=<productId> — يستخدم البصمة المحفوظة (بدون تحليل جديد)
@@ -278,9 +290,11 @@ export default function ProductSearch() {
     let cancelled = false;
     (async () => {
       setSimilarLoading(true);
-      const { data, error } = await supabase.rpc("match_similar_products", {
-        _product_id: similarTo,
-        match_count: 24,
+      // نفس المستويات والأسباب التي يستخدمها البحث بالصورة (match_products_tiered) — كانت هذه
+      // تستخدم عتبة ثابتة تجعل كل المخزون تقريباً "مشابهاً".
+      const { data, error } = await (supabase.rpc as any)("match_products_tiered", {
+        anchor_product: similarTo,
+        max_results: 140,
       });
       if (cancelled) return;
       setSimilarLoading(false);
@@ -288,9 +302,15 @@ export default function ProductSearch() {
         toast.error("تعذّر جلب القطع المشابهة");
         return;
       }
-      const matches = (data ?? [])
-        .filter((m: any) => m.similarity >= 0.55)
-        .map((m: any) => ({ product_id: m.product_id, similarity: m.similarity }));
+      const matches: PhotoMatchState[] = ((data ?? []) as any[]).map((m) => ({
+        product_id: m.product_id,
+        similarity: m.score,
+        visual: m.visual,
+        textual: m.textual,
+        kind: m.kind,
+        reasons: m.reasons ?? [],
+      }));
+      setPhotoQuery(null);
       setSimilarMatches(matches);
       if (!matches.length) toast.info("لا توجد قطع مشابهة مفهرسة بعد");
     })();
@@ -299,6 +319,7 @@ export default function ProductSearch() {
 
   const clearSimilar = () => {
     setSimilarMatches(null);
+    setPhotoQuery(null);
     if (similarTo) {
       const next = new URLSearchParams(searchParams);
       next.delete("similar");
@@ -310,7 +331,7 @@ export default function ProductSearch() {
     queryKey: ["products", debounced, similarIds, similarIds ? 0 : pages],
     queryFn: async () => {
       const SELECT =
-        "id,name,sku,barcode_value,karat,gold_color,weight_grams,ring_size,sale_price,promo_price,status,branch_id,search_tags,description,category_id,created_at,branch:branches(name),category:categories(name),images:product_images(storage_path,thumb_path,is_primary)";
+        "id,name,sku,barcode_value,karat,gold_color,weight_grams,ring_size,sale_price,promo_price,quantity,status,branch_id,search_tags,description,category_id,created_at,branch:branches(name),category:categories(name),images:product_images(storage_path,thumb_path,is_primary)";
       const sortAsc = debounced.sortDir === "asc";
 
       // لون الحجر مُخزَّن في جدول product_stones منفصل (لا عمود مباشر على products) —
@@ -338,6 +359,9 @@ export default function ProductSearch() {
         // صراحةً من فلتر الحالة، فتصير الأرشفة طريقة عكوسة لإخراج بضاعة من التداول.
         if (debounced.status !== "all") q = q.eq("status", debounced.status as ProductStatus);
         else q = q.neq("status", "archived" as ProductStatus);
+        // قطعة لم يحلّلها الذكاء الاصطناعي بعد (ما زالت بالاسم المؤقت) لا تدخل الكتالوج:
+        // تظهر في صفحة الرفع ومراجعة القطع بلا اسم حتى يكتمل تحليلها، ثم تنضم تلقائياً.
+        q = q.neq("name", UNANALYZED_NAME);
         if (debounced.minWeight) q = q.gte("weight_grams", parseFloat(debounced.minWeight));
         if (debounced.maxWeight) q = q.lte("weight_grams", parseFloat(debounced.maxWeight));
         return q;
@@ -349,6 +373,7 @@ export default function ProductSearch() {
           .from("products").select(SELECT)
           .in("id", similarIds)
           .neq("status", "archived" as ProductStatus)
+          .neq("name", UNANALYZED_NAME)
           .limit(120);
         if (error) throw error;
         const idx = new Map(similarIds.map((id, i) => [id, i]));
@@ -433,10 +458,10 @@ export default function ProductSearch() {
 
 
   // نحفظ الفلاتر/عدد الصفحات/موضع التمرير حتى يكون آخر موضع فعلي قبل فتح أي قطعة جاهزاً
-  // للاستعادة عند "رجوع". راجع SCROLL_STATE_KEY أعلى الملف.
+  // للاستعادة عند "رجوع". راجع SavedScrollState أعلى الملف.
   //
   // مهم: الكتابة مخنوقة بـrequestAnimationFrame لا مع كل حدث تمرير. الكتابة المباشرة
-  // (JSON.stringify + sessionStorage.setItem وكلاهما متزامن) كانت تعمل عشرات المرات في
+  // (JSON.stringify + localStorage.setItem وكلاهما متزامن) كانت تعمل عشرات المرات في
   // الثانية على أكثر صفحة استخداماً في التطبيق، فتُسبّب تهنيجاً محسوساً أثناء التمرير على
   // هواتف متوسطة. rAF يضمن كتابة واحدة كحد أقصى لكل إطار رسم، والقيمة المحفوظة تبقى
   // محدَّثة لحظة مغادرة الصفحة وهو كل ما يهم للاستعادة.
@@ -445,7 +470,7 @@ export default function ProductSearch() {
     const write = () => {
       frame = 0;
       try {
-        sessionStorage.setItem(SCROLL_STATE_KEY, JSON.stringify({ filters, pages, scrollY: window.scrollY, loadId: LOAD_ID }));
+        saveResume<SavedScrollState>("search", { filters, pages, scrollY: window.scrollY });
       } catch {}
     };
     const onScroll = () => {
@@ -462,6 +487,13 @@ export default function ProductSearch() {
       write();
     };
   }, [filters, pages]);
+
+  // نتائج الصورة تُحفظ فقط عند تغيّرها — راجع SavedPhotoState. فتح البحث من جديد (لا رجوع)
+  // يبدأ بلا نتائج فيمسح المحفوظ، فلا تعود نتائج قديمة لاحقاً بالغلط.
+  useEffect(() => {
+    if (!similarMatches && !photoQuery) clearResume("searchPhoto");
+    else saveResume<SavedPhotoState>("searchPhoto", { similarMatches, photoQuery });
+  }, [similarMatches, photoQuery]);
 
   // استعادة موضع التمرير مرة واحدة فقط بعد أن يحمّل عدد الصفحات المستعاد فعلياً (وإلا
   // نُمرّر لمكان لم يُحمَّل بعد المحتوى الذي يشغله). تُستهلك (تُصفَّر) فور التنفيذ.
@@ -501,17 +533,23 @@ export default function ProductSearch() {
     // الدرجة المركّبة — وإلا صارت قطعة تشترك في الوصف فقط تظهر تحت "مطابقة تماماً".
     // نسقط للعتبات القديمة إن غاب kind (استجابة قديمة مخزّنة مثلاً).
     const byId = new Map(similarMatches.map((m) => [m.product_id, m]));
-    const exact: any[] = [], veryHigh: any[] = [], similar: any[] = [];
+    const buckets: Record<PhotoMatchTier, any[]> = { exact: [], very_close: [], similar_look: [], same_attributes: [], might_like: [] };
+    // products مرتّبة أصلاً بترتيب الخادم (الأقرب أولاً) — نحافظ عليه داخل كل مستوى.
     for (const p of products as any[]) {
       const m = byId.get(p.id);
-      const s = m?.similarity ?? 0;
-      const kind = m?.kind ?? (s >= 0.92 ? "exact" : s >= 0.8 ? "similar" : "same_attributes");
-      const row = { ...p, _sim: s, _visual: m?.visual ?? null, _textual: m?.textual ?? null };
-      if (kind === "exact") exact.push(row);
-      else if (kind === "similar") veryHigh.push(row);
-      else similar.push(row);
+      if (!m) continue;
+      const tier = toTier(m.kind);
+      buckets[tier].push({ ...p, _match: { tier, reasons: m.reasons ?? [] } });
     }
-    return { exact, veryHigh, similar };
+    // المتوفر أولاً داخل كل مستوى: الزبون يريد قطعة يأخذها اليوم، والمبيع/المحجوز يبقى ظاهراً
+    // بعدها (مفيد لطلب نسخة مشابهة) بدل أن يُخفى.
+    for (const t of TIER_ORDER) {
+      buckets[t] = buckets[t]
+        .map((p, i) => ({ p, i }))
+        .sort((a, b) => Number(b.p.status === "available") - Number(a.p.status === "available") || a.i - b.i)
+        .map(({ p }) => p);
+    }
+    return buckets;
   }, [similarMatches, products]);
 
   const activeFilterCount = useMemo(() => {
@@ -599,8 +637,10 @@ export default function ProductSearch() {
                 variant="icon"
                 className="size-16 shrink-0"
                 categories={categories ?? undefined}
-                onResults={({ matches }) => {
+                onResults={({ matches, photo }) => {
+                  setPhotoQuery(photo);
                   setSimilarMatches(matches.length > 0 ? matches : []);
+                  window.scrollTo({ top: 0 });
                 }}
               />
             </div>
@@ -705,6 +745,12 @@ export default function ProductSearch() {
 
       {/* فلاتر سريعة Chips */}
       <div className="flex gap-2 overflow-x-auto -mx-3 px-3 pb-1 scrollbar-none">
+        {/* "متوفر" أولاً: حين يقف زبون أمام الموظف لا تفيده القطع المبيعة أو المحجوزة. */}
+        <Chip
+          active={filters.status === "available"}
+          onClick={() => setFilters((f) => ({ ...f, status: f.status === "available" ? "all" : "available" }))}
+        >متوفر فقط</Chip>
+        <div className="w-px bg-border mx-1 shrink-0" />
         {KARAT_OPTIONS.map((k) => (
           <Chip
             key={k}
@@ -766,29 +812,39 @@ export default function ProductSearch() {
       )}
 
       {similarIds !== null && similarityBuckets && (
-        <div className="flex items-center justify-between rounded-xl bg-gold-soft border border-primary/20 px-3 py-2">
-          <div className="flex items-center gap-2 text-sm flex-wrap">
-            <Sparkles className="size-4 text-primary" />
-            <span className="font-semibold">{similarTo ? "قطع مشابهة لهذه القطعة" : "بحث بالصورة"}</span>
-            {similarityBuckets.exact.length > 0 && (
-              <span className="px-2 py-0.5 rounded-full bg-green-600 text-white text-[10px] font-bold">
-                🎯 {similarityBuckets.exact.length} مطابقة
-              </span>
+        // شريط ثابت أعلى الشاشة على الآيفون: صورة الزبون للمقارنة بنظرة، وأزرار المستويات
+        // بعددها تنقل مباشرة لقسمها بدل التمرير الطويل بين عشرات القطع.
+        <div className="sticky top-[calc(env(safe-area-inset-top)+3.5rem)] sm:top-[calc(env(safe-area-inset-top)+4rem)] z-20 -mx-3 px-3 sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6 pt-2 pb-2 bg-background/95 backdrop-blur border-b border-border/60 space-y-2">
+          <div className="flex items-center gap-3">
+            {photoQuery ? (
+              <img src={photoQuery} alt="صورة الزبون" className="size-14 shrink-0 rounded-xl object-cover border-2 border-primary/40" />
+            ) : (
+              <div className="size-14 shrink-0 rounded-xl bg-gold-soft flex items-center justify-center">
+                <Sparkles className="size-6 text-primary" />
+              </div>
             )}
-            {similarityBuckets.veryHigh.length > 0 && (
-              <span className="px-2 py-0.5 rounded-full bg-primary/20 text-primary text-[10px] font-bold">
-                ✨ {similarityBuckets.veryHigh.length} شبه مطابقة
-              </span>
-            )}
-            {similarityBuckets.similar.length > 0 && (
-              <span className="px-2 py-0.5 rounded-full bg-muted text-foreground text-[10px] font-semibold">
-                📌 {similarityBuckets.similar.length} مقاربة
-              </span>
-            )}
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-sm">{similarTo ? "قطع مشابهة لهذه القطعة" : "نتائج البحث بالصورة"}</p>
+              <p className="text-[11px] text-muted-foreground">
+                {TIER_ORDER.reduce((n, t) => n + similarityBuckets[t].length, 0)} خيار — المتوفر أولاً في كل قسم
+              </p>
+            </div>
+            <Button size="sm" variant="ghost" onClick={clearSimilar} className="shrink-0">
+              <X className="size-4 ml-1" /> إلغاء
+            </Button>
           </div>
-          <Button size="sm" variant="ghost" onClick={clearSimilar}>
-            <X className="size-4 ml-1" /> إلغاء
-          </Button>
+          <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1">
+            {TIER_ORDER.filter((t) => similarityBuckets[t].length > 0).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => document.getElementById(`tier-${t}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                className={`shrink-0 h-8 px-3 rounded-full text-xs font-bold shadow-sm active:scale-95 transition-transform ${MATCH_TIER_META[t].badge}`}
+              >
+                {MATCH_TIER_META[t].label} {similarityBuckets[t].length}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -879,35 +935,19 @@ export default function ProductSearch() {
           ))}
         </div>
       ) : similarityBuckets ? (
-        <div className="space-y-5">
-          {similarityBuckets.exact.length > 0 && (
+        <div className="space-y-6">
+          {TIER_ORDER.filter((t) => similarityBuckets[t].length > 0).map((t) => (
             <SimilaritySection
-              title="🎯 قطع مطابقة تماماً"
-              subtitle="نفس القطعة موجودة في مخزون آخر"
-              tone="success"
-              products={similarityBuckets.exact}
+              key={t}
+              tier={t}
+              title={TIER_SECTION[t].title}
+              subtitle={TIER_SECTION[t].subtitle}
+              products={similarityBuckets[t]}
+              initialVisible={TIER_INITIAL[t]}
               quotes={latestQuotes}
             />
-          )}
-          {similarityBuckets.veryHigh.length > 0 && (
-            <SimilaritySection
-              title="✨ قطع شبه مطابقة"
-              subtitle="تصميم قريب جداً — قد يهم العميل"
-              tone="primary"
-              products={similarityBuckets.veryHigh}
-              quotes={latestQuotes}
-            />
-          )}
-          {similarityBuckets.similar.length > 0 && (
-            <SimilaritySection
-              title="📌 قطع بنفس الأوصاف"
-              subtitle="تشترك في لون الحجر أو النوع أو الشكل — بدائل تُعرض على الزبون"
-              tone="muted"
-              products={similarityBuckets.similar}
-              quotes={latestQuotes}
-            />
-          )}
-          {similarityBuckets.exact.length === 0 && similarityBuckets.veryHigh.length === 0 && similarityBuckets.similar.length === 0 && (
+          ))}
+          {TIER_ORDER.every((t) => similarityBuckets[t].length === 0) && (
             <div className="text-center py-16 bg-muted/30 rounded-xl">
               <p className="text-muted-foreground">لم نعثر على قطع مشابهة. جرّب صورة أوضح أو أضف القطعة.</p>
             </div>
@@ -947,45 +987,44 @@ export default function ProductSearch() {
 }
 
 function SimilaritySection({
+  tier,
   title,
   subtitle,
-  tone,
   products,
+  initialVisible,
   quotes,
 }: {
+  tier: PhotoMatchTier;
   title: string;
   subtitle: string;
-  tone: "success" | "primary" | "muted";
   products: any[];
+  initialVisible?: number;
   quotes?: Map<string, import("@/hooks/useLatestQuotes").LatestQuote>;
 }) {
-  const badgeCls =
-    tone === "success"
-      ? "bg-green-600 text-white"
-      : tone === "primary"
-      ? "bg-gold-gradient text-primary-foreground"
-      : "bg-muted text-foreground";
+  const [expanded, setExpanded] = useState(false);
+  const limit = !expanded && initialVisible && products.length > initialVisible + 2 ? initialVisible : products.length;
   return (
-    <div>
-      <div className="flex items-baseline justify-between mb-2 px-1">
-        <h3 className="text-sm font-bold flex items-center gap-2">
-          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${badgeCls}`}>{products.length}</span>
+    // scroll-mt: رأس التطبيق + شريط المستويات الثابت لا يغطيان عنوان القسم عند القفز إليه.
+    <section id={`tier-${tier}`} className="scroll-mt-[calc(env(safe-area-inset-top)+11rem)]">
+      <div className="mb-2 px-1">
+        <h3 className="text-base font-bold flex items-center gap-2">
           {title}
+          <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${MATCH_TIER_META[tier].badge}`}>{products.length}</span>
         </h3>
-        <span className="text-[11px] text-muted-foreground">{subtitle}</span>
+        <p className="text-[11px] text-muted-foreground">{subtitle}</p>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-        {products.map((p: any) => (
-          <div key={p.id}>
-            <ProductCard
-              product={p}
-              similarity={typeof p._sim === "number" ? p._sim : undefined}
-              lastQuote={quotes?.get(p.id) ?? null}
-            />
-          </div>
+        {products.slice(0, limit).map((p: any) => (
+          <ProductCard key={p.id} product={p} match={p._match} lastQuote={quotes?.get(p.id) ?? null} />
         ))}
       </div>
-    </div>
+      {limit < products.length && (
+        <Button variant="outline" className="w-full h-11 mt-3" onClick={() => setExpanded(true)}>
+          عرض الكل ({products.length})
+          <ChevronDown className="size-4 mr-1" />
+        </Button>
+      )}
+    </section>
   );
 }
 

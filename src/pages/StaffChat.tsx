@@ -8,6 +8,7 @@ import { Send, Users, X } from "lucide-react";
 import { formatDate } from "@/lib/constants";
 import { useFillHeight } from "@/hooks/useFillHeight";
 import { toast } from "sonner";
+import { CHAT_SEEN_KEY, markSeen } from "@/lib/appBadge";
 
 // محادثة داخلية حيّة بين كل موظفي المحل — قناة واحدة مشتركة، بث فوري عبر Realtime.
 // المساعد الذكي انتقل إلى صفحة البحث (زر "اسأل المساعد") لأنه أداة بحث بالدرجة الأولى.
@@ -62,6 +63,12 @@ export default function StaffChat() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages.length]);
+
+  // فتح المحادثة = قراءة ما فيها؛ يختفي الرقم عن الأيقونة وعن زر المحادثة.
+  useEffect(() => {
+    const last = messages[messages.length - 1];
+    if (last) markSeen(CHAT_SEEN_KEY, last.created_at);
+  }, [messages]);
 
   const send = async () => {
     const msg = text.trim();

@@ -1,3 +1,4 @@
+import { normalizeDecimalInput } from "@/lib/constants";
 import { useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -13,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { BarChart3, Download, TrendingUp, ArrowLeftRight, Package, DollarSign, Clock, AlertTriangle, Receipt, Undo2, Wallet, Plus, Trash2 } from "lucide-react";
 import ReindexImagesCard from "@/components/ReindexImagesCard";
 import GenerateThumbsCard from "@/components/GenerateThumbsCard";
+import MigrateToR2Card from "@/components/MigrateToR2Card";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
 import { toast } from "sonner";
 
@@ -318,6 +320,7 @@ export default function Reports() {
       {/* صيانة الذكاء الاصطناعي — إعادة فهرسة الصور غير المحلَّلة */}
       <ReindexImagesCard />
       <GenerateThumbsCard />
+      <MigrateToR2Card />
 
       {/* Aging report per branch */}
       <Card>
@@ -546,7 +549,7 @@ function ExpensesCard({
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5"><Label>المبلغ (د.ل) *</Label><Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" /></div>
+                <div className="space-y-1.5"><Label>المبلغ (د.ل) *</Label><Input value={amount} onChange={(e) => setAmount(normalizeDecimalInput(e.target.value))} inputMode="decimal" /></div>
                 <div className="space-y-1.5">
                   <Label>الفرع (اختياري)</Label>
                   <Select value={branchId} onValueChange={setBranchId}>

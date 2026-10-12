@@ -16,7 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
-import { UserPlus, Trash2, KeyRound, Users, Package, Tag, ArrowLeftRight, MessageCircle, Activity, Trophy, Coins, Medal, ImagePlus } from "lucide-react";
+import { UserPlus, Trash2, KeyRound, Users, Package, Tag, ArrowLeftRight, MessageCircle, Activity, Trophy, Coins, Medal, ImagePlus, Wrench } from "lucide-react";
 import { formatDate, formatCurrency, type Period, PERIOD_LABEL, periodStartISO } from "@/lib/constants";
 import { Link } from "react-router-dom";
 
@@ -85,7 +85,7 @@ export default function Staff() {
 
   const createUser = async () => {
     if (!email || !password || !fullName) { toast.error("املأ كل الحقول"); return; }
-    if (password.length < 4) { toast.error("كلمة المرور 4 خانات على الأقل"); return; }
+    if (password.length < MIN_PASSWORD) { toast.error(`كلمة المرور ${MIN_PASSWORD} خانات على الأقل`); return; }
     if (!/^[a-zA-Z0-9._-]+$/.test(email.trim())) {
       toast.error("اسم المستخدم: أحرف إنجليزية وأرقام فقط"); return;
     }
@@ -98,7 +98,7 @@ export default function Staff() {
     });
     setBusy(false);
     if (error || (data as any)?.error) {
-      toast.error((data as any)?.error ?? error?.message ?? "فشل إنشاء الحساب");
+      toast.error(await functionErrorMessage(error, data, "فشل إنشاء الحساب"));
       return;
     }
     toast.success("تم إنشاء الحساب");
@@ -139,19 +139,19 @@ export default function Staff() {
       body: { action: "delete", user_id: u.id },
     });
     if (error || (data as any)?.error) {
-      toast.error((data as any)?.error ?? error?.message ?? "فشل الحذف"); return;
+      toast.error(await functionErrorMessage(error, data, "فشل الحذف")); return;
     }
     toast.success("تم الحذف");
     load();
   };
 
   const resetPassword = async () => {
-    if (!pwUser || !newPw || newPw.length < 4) { toast.error("كلمة مرور غير صالحة"); return; }
+    if (!pwUser || !newPw || newPw.length < MIN_PASSWORD) { toast.error(`كلمة المرور ${MIN_PASSWORD} خانات على الأقل`); return; }
     const { data, error } = await supabase.functions.invoke("admin-manage-users", {
       body: { action: "update_password", user_id: pwUser.id, password: newPw },
     });
     if (error || (data as any)?.error) {
-      toast.error((data as any)?.error ?? error?.message ?? "فشل التعديل"); return;
+      toast.error(await functionErrorMessage(error, data, "فشل التعديل")); return;
     }
     toast.success("تم تغيير كلمة المرور");
     setPwUser(null); setNewPw("");
@@ -184,7 +184,7 @@ export default function Staff() {
               </div>
               <div className="space-y-1.5">
                 <Label>كلمة المرور</Label>
-                <Input type="password" dir="ltr" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="4 خانات على الأقل" autoComplete="new-password" />
+                <Input type="password" dir="ltr" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={`${MIN_PASSWORD} خانات على الأقل`} autoComplete="new-password" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
@@ -300,7 +300,7 @@ export default function Staff() {
           <DialogHeader><DialogTitle>تغيير كلمة مرور — {pwUser?.full_name}</DialogTitle></DialogHeader>
           <div className="space-y-1.5">
             <Label>كلمة المرور الجديدة</Label>
-            <Input type="password" dir="ltr" value={newPw} onChange={(e) => setNewPw(e.target.value)} placeholder="4 خانات على الأقل" autoComplete="new-password" />
+            <Input type="password" dir="ltr" value={newPw} onChange={(e) => setNewPw(e.target.value)} placeholder={`${MIN_PASSWORD} خانات على الأقل`} autoComplete="new-password" />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPwUser(null)}>إلغاء</Button>
@@ -312,6 +312,30 @@ export default function Staff() {
   );
 }
 
+
+// نظام الدخول يرفض كلمات المرور الأقصر من 6 خانات (إعداد Supabase Auth)؛ التحقق هنا يمنع
+// الرحلة إلى الخادم ويعطي رسالة صحيحة بدل «non-2xx».
+const MIN_PASSWORD = 6;
+
+const SERVER_ERRORS: Record<string, string> = {
+  "Password should be at least 6 characters.": "كلمة المرور يجب ألا تقل عن 6 خانات",
+  "A user with this email address has already been registered": "اسم المستخدم مستخدم مسبقاً",
+  "forbidden": "لا تملك صلاحية هذا الإجراء",
+  "unauthorized": "انتهت الجلسة — سجّل الدخول من جديد",
+  "missing fields": "املأ كل الحقول",
+};
+
+/** رسالة الخطأ الفعلية من دالة الحافة: عند حالة غير 2xx يضع supabase-js الجسم في error.context. */
+async function functionErrorMessage(error: any, data: any, fallback: string): Promise<string> {
+  let msg: string | undefined = data?.error;
+  if (!msg) {
+    try { msg = (await error?.context?.json?.())?.error; } catch { /* الجسم ليس JSON */ }
+  }
+  msg = msg ?? error?.message;
+  if (!msg || /non-2xx/i.test(msg)) return fallback;
+  return SERVER_ERRORS[msg] ?? msg;
+}
+
 type EmpStat = {
   id: string;
   full_name: string;
@@ -320,6 +344,7 @@ type EmpStat = {
   quotes: number;
   transfers: number;
   inquiries: number;
+  repairs: number;
 };
 
 function ActivityPanel({ branches }: { branches: Branch[] }) {
@@ -338,12 +363,16 @@ function ActivityPanel({ branches }: { branches: Branch[] }) {
         { data: quotes },
         { data: transfers },
         { data: inquiries },
+        { data: repairRows },
       ] = await Promise.all([
         supabase.from("profiles").select("id, full_name, branch_id"),
         supabase.from("products").select("id, name, created_by, created_at, branch:branches(name)").neq("status", "archived").order("created_at", { ascending: false }).limit(50),
         supabase.from("product_quotes").select("id, price, customer_name, quoted_by, created_at, product:products(id,name)").order("created_at", { ascending: false }).limit(50),
         supabase.from("transfers").select("id, product_name_snapshot, requested_by, created_at, status, from_branch:branches!transfers_from_branch_id_fkey(name), to_branch:branches!transfers_to_branch_id_fkey(name)").order("created_at", { ascending: false }).limit(50),
         supabase.from("customer_inquiries").select("id, customer_name, created_by, created_at").order("created_at", { ascending: false }).limit(50),
+        // تذاكر الصيانة (نسخة من تطبيق الصيانة، مقروءة للمدير): الموظف المستلم = received_by.
+        // نجلب الأعمدة الخفيفة كلها لا آخر ٥٠ وحدها، حتى يكون العدّ مجموعاً حقيقياً.
+        (supabase as any).from("repair_tickets").select("id, ticket_number, item_name, customer_name, received_by, received_at").not("received_by", "is", null).order("received_at", { ascending: false }).limit(5000),
       ]);
 
 
@@ -353,8 +382,12 @@ function ActivityPanel({ branches }: { branches: Branch[] }) {
         map.set(p.id, {
           id: p.id, full_name: p.full_name,
           branch_name: p.branch_id ? branchMap.get(p.branch_id) ?? null : null,
-          products: 0, quotes: 0, transfers: 0, inquiries: 0,
+          products: 0, quotes: 0, transfers: 0, inquiries: 0, repairs: 0,
         });
+      });
+      (repairRows ?? []).forEach((r: any) => {
+        const s = map.get(r.received_by);
+        if (s) s.repairs += 1;
       });
 
       // الأعداد من قاعدة البيانات لا من الصفوف المجلوبة أعلاه: تلك محدودة بآخر ٥٠ صفاً
@@ -372,7 +405,7 @@ function ActivityPanel({ branches }: { branches: Branch[] }) {
       });
 
       const sorted = Array.from(map.values()).sort((a, b) =>
-        (b.products + b.quotes + b.transfers + b.inquiries) - (a.products + a.quotes + a.transfers + a.inquiries)
+        (b.products + b.quotes + b.transfers + b.inquiries + b.repairs) - (a.products + a.quotes + a.transfers + a.inquiries + a.repairs)
       );
       setStats(sorted);
 
@@ -409,6 +442,18 @@ function ActivityPanel({ branches }: { branches: Branch[] }) {
           icon: d.icon,
         });
       }
+      // الصيانة ليست في activity_log (تُكتب في قاعدة تطبيق آخر) فندمجها في الشريط بزمنها.
+      for (const r of (repairRows ?? []).slice(0, 100) as any[]) {
+        feed.push({
+          at: r.received_at,
+          actorId: r.received_by,
+          who: profMap.get(r.received_by) ?? "—",
+          text: `استلم تذكرة صيانة ${r.ticket_number} — ${r.item_name}${r.customer_name ? ` (${r.customer_name})` : ""}`,
+          link: "/admin/repairs",
+          icon: Wrench,
+        });
+      }
+      feed.sort((a, b) => (a.at < b.at ? 1 : -1));
       setRecent(feed);
       setLoadingState(false);
     })();
@@ -424,7 +469,7 @@ function ActivityPanel({ branches }: { branches: Branch[] }) {
       <p className="text-xs text-muted-foreground">اضغط على أي موظف لعرض ما قام به وحده.</p>
       <div className="grid gap-2 sm:grid-cols-2">
         {stats.map((s) => {
-          const total = s.products + s.quotes + s.transfers + s.inquiries;
+          const total = s.products + s.quotes + s.transfers + s.inquiries + s.repairs;
           return (
             <Card
               key={s.id}
@@ -440,11 +485,12 @@ function ActivityPanel({ branches }: { branches: Branch[] }) {
                 </div>
                 <Badge variant="secondary" className="shrink-0">{total} نشاط</Badge>
               </div>
-              <div className="grid grid-cols-4 gap-1 mt-3 text-center">
+              <div className="grid grid-cols-5 gap-1 mt-3 text-center">
                 <Stat icon={Package} label="قطع" value={s.products} />
                 <Stat icon={Tag} label="أسعار" value={s.quotes} />
                 <Stat icon={ArrowLeftRight} label="تحويلات" value={s.transfers} />
                 <Stat icon={MessageCircle} label="استفسارات" value={s.inquiries} />
+                <Stat icon={Wrench} label="صيانة" value={s.repairs} />
               </div>
             </Card>
           );

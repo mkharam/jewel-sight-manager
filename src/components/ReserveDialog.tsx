@@ -1,3 +1,5 @@
+import { normalizeDecimalInput } from "@/lib/constants";
+import { usePersistentState } from "@/lib/resume";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -17,14 +19,16 @@ export default function ReserveDialog({
 }: { productId: string; productName: string; branchId: string | null; defaultPrice?: number | null }) {
   const { user } = useAuth();
   const qc = useQueryClient();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen, clearOpen] = usePersistentState(`reserve:${productId}:open`, false);
   const [saving, setSaving] = useState(false);
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [deposit, setDeposit] = useState("");
-  const [price, setPrice] = useState(defaultPrice ? String(defaultPrice) : "");
-  const [expires, setExpires] = useState(isoDatePlusDays(7));
-  const [notes, setNotes] = useState("");
+  const [name, setName, clearName] = usePersistentState(`reserve:${productId}:name`, "");
+  const [phone, setPhone, clearPhone] = usePersistentState(`reserve:${productId}:phone`, "");
+  const [deposit, setDeposit, clearDeposit] = usePersistentState(`reserve:${productId}:deposit`, "");
+  const [price, setPrice, clearPrice] = usePersistentState(`reserve:${productId}:price`, defaultPrice ? String(defaultPrice) : "");
+  const [expires, setExpires, clearExpires] = usePersistentState(`reserve:${productId}:expires`, isoDatePlusDays(7));
+  const [notes, setNotes, clearNotes] = usePersistentState(`reserve:${productId}:notes`, "");
+  // المسودّة تنجو من إغلاق الآيفون للتطبيق في الخلفية؛ تُمسح بعد الحفظ أو الإلغاء.
+  const clearDraft = () => { clearOpen(); clearName(); clearPhone(); clearDeposit(); clearPrice(); clearExpires(); clearNotes(); };
 
   // نفس منطق SellDialog: بحث بالهاتف عن عميل موجود وإلا إنشاء عميل جديد، حتى يظهر
   // الحجز في تاريخ العميل بصفحة العملاء لا كنص حر منفصل.
@@ -71,7 +75,7 @@ export default function ReserveDialog({
     setSaving(false);
     if (error) return toast.error(error.message);
     toast.success("تم حجز القطعة");
-    setOpen(false);
+    clearDraft();
     setName(""); setPhone(""); setDeposit(""); setNotes("");
     qc.invalidateQueries({ queryKey: ["product", productId] });
     qc.invalidateQueries({ queryKey: ["reservations", productId] });
@@ -80,7 +84,7 @@ export default function ReserveDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) clearDraft(); }}>
       <DialogTrigger asChild>
         <Button variant="outline" size="lg" className="w-full">
           <BookmarkPlus className="size-4 ml-1" /> حجز بعربون
@@ -94,9 +98,9 @@ export default function ReserveDialog({
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div><Label>اسم الزبون *</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
-            <div><Label>الهاتف</Label><Input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" /></div>
-            <div><Label>العربون (د.ل) *</Label><Input value={deposit} onChange={(e) => setDeposit(e.target.value)} inputMode="decimal" /></div>
-            <div><Label>السعر المتفق عليه</Label><Input value={price} onChange={(e) => setPrice(e.target.value)} inputMode="decimal" /></div>
+            <div><Label>الهاتف</Label><Input value={phone} onChange={(e) => setPhone(normalizeDecimalInput(e.target.value).replace(/\./g, ""))} inputMode="tel" dir="ltr" /></div>
+            <div><Label>العربون (د.ل) *</Label><Input value={deposit} onChange={(e) => setDeposit(normalizeDecimalInput(e.target.value))} inputMode="decimal" dir="ltr" /></div>
+            <div><Label>السعر المتفق عليه</Label><Input value={price} onChange={(e) => setPrice(normalizeDecimalInput(e.target.value))} inputMode="decimal" dir="ltr" /></div>
           </div>
           <div>
             <Label>ينتهي الحجز في</Label>

@@ -31,11 +31,16 @@ const Reorders = lazy(() => import("@/pages/Reorders"));
 const GoldPrice = lazy(() => import("@/pages/GoldPrice"));
 const StockTake = lazy(() => import("@/pages/StockTake"));
 const Sales = lazy(() => import("@/pages/Sales"));
+const Repairs = lazy(() => import("@/pages/Repairs"));
+const DailyClosing = lazy(() => import("@/pages/DailyClosing"));
+const Reservations = lazy(() => import("@/pages/Reservations"));
+const Buybacks = lazy(() => import("@/pages/Buybacks"));
 const Customers = lazy(() => import("@/pages/Customers"));
 const LiveAdd = lazy(() => import("@/pages/LiveAdd"));
 const AdminProducts = lazy(() => import("@/pages/AdminProducts"));
 const Notifications = lazy(() => import("@/pages/Notifications"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
+const SaleReceipt = lazy(() => import("@/pages/SaleReceipt"));
 
 function PageLoader() {
   return (
@@ -45,7 +50,19 @@ function PageLoader() {
   );
 }
 
-const queryClient = new QueryClient();
+// العودة للتطبيق (من الواتساب مثلاً) تُحدّث البيانات في الخلفية مع إبقاء المعروض كما هو —
+// لا شاشات تحميل ولا قفز. staleTime يمنع موجة طلبات عند كل خروج وعودة سريعين: ما جُلب
+// خلال آخر 30 ثانية لا يُعاد جلبه. الحالات/الأسعار/الإشعارات تتحدّث؛ ما يكتبه الموظف ونتائج
+// البحث بالصورة حالة محلية لا تمسّها هذه الإعدادات إطلاقاً.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+    },
+  },
+});
 
 const App = () => (
   <ErrorBoundary>
@@ -69,6 +86,8 @@ const App = () => (
             <Routes>
               <Route path="/auth" element={<Auth />} />
               <Route path="/index" element={<Navigate to="/" replace />} />
+              {/* الإيصال خارج AppLayout حتى يُطبع بلا شريط تنقّل. */}
+              <Route path="/sales/:id/receipt" element={<ProtectedRoute><SaleReceipt /></ProtectedRoute>} />
               <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
                 <Route path="/" element={<ProductSearch />} />
                 <Route path="/products" element={<ProductSearch />} />
@@ -92,6 +111,10 @@ const App = () => (
                 <Route path="/gold-price" element={<RequireRole allow={["admin", "manager"]}><GoldPrice /></RequireRole>} />
                 <Route path="/stock-take" element={<RequireRole allow={["admin"]}><StockTake /></RequireRole>} />
                 <Route path="/sales" element={<RequireRole allow={["admin"]}><Sales /></RequireRole>} />
+                <Route path="/reservations" element={<Reservations />} />
+                <Route path="/buybacks" element={<RequireRole allow={["admin", "manager"]}><Buybacks /></RequireRole>} />
+                <Route path="/closing" element={<RequireRole allow={["admin", "manager"]}><DailyClosing /></RequireRole>} />
+                <Route path="/admin/repairs" element={<RequireRole allow={["admin", "manager"]}><Repairs /></RequireRole>} />
                 <Route path="/customers" element={<Customers />} />
                 <Route path="/admin/products" element={<RequireRole allow={["admin"]}><AdminProducts /></RequireRole>} />
               </Route>

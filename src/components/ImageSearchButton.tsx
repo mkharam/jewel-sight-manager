@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Camera, Loader2, Sparkles, Upload, X } from "lucide-react";
@@ -6,6 +6,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { compressImage } from "@/lib/image-compress";
 import { cn } from "@/lib/utils";
+import { clearResume, readResume, saveResume } from "@/lib/resume";
+import type { PhotoMatchTier } from "@/components/ProductCard";
 
 interface Analysis {
   name_ar?: string;
@@ -26,25 +28,50 @@ export interface PhotoMatch {
   visual?: number | null;
   /** تشابه وصف الذكاء الاصطناعي — لون الحجر ونوع القطعة والشكل. */
   textual?: number | null;
-  /** تصنيف جاهز من الخادم: مطابق / شبيه / يشترك في الأوصاف. راجع image-search. */
-  kind?: "exact" | "similar" | "same_attributes";
+  /** مستوى جاهز من الخادم، نسبةً لبقية المخزون لا بعتبة ثابتة. راجع match_products_tiered. */
+  kind?: PhotoMatchTier;
+  /** أسباب قصيرة بالعربية ("نفس لون الذهب"، "نفس الأحجار: خضراء"). */
+  reasons?: string[];
 }
 
 interface Props {
   categories?: { id: string; name: string }[];
-  /** Called with matches (with similarity scores) ordered best first. */
-  onResults: (payload: { matches: PhotoMatch[]; analysis: Analysis }) => void;
+  /** Called with matches ordered best first, plus the customer's photo to pin above the results. */
+  onResults: (payload: { matches: PhotoMatch[]; analysis: Analysis; photo: string | null }) => void;
   /** "icon" = زر دائري صغير بأيقونة الكاميرا فقط (يُستخدم ملاصقاً لمربع البحث). */
   variant?: "button" | "icon";
   className?: string;
 }
 
+// الموظف يلتقط صورة من الواتساب ثم يعود ليبحث — وقد يخرج للواتساب مجدداً أثناء البحث (~15 ثانية).
+// نحفظ الصورة ونتيجتها ليجد النافذة كما تركها حتى لو قتل آيفون التطبيق، ونعيد المحاولة
+// بصمت إن انقطع الطلب بسبب الخروج بدل إظهار خطأ أحمر. راجع src/lib/resume.ts.
+const RESUME_KEY = "imageSearch";
+const TIER_SHORT: Record<PhotoMatchTier, string> = {
+  exact: "🎯 مطابقة",
+  very_close: "✨ قريبة جداً",
+  similar_look: "👀 شكل مشابه",
+  same_attributes: "🎨 نفس الأوصاف",
+  might_like: "💡 ممكن تعجبه",
+};
+type Saved = { base64: string; mimeType: string; analysis: Analysis | null; matches: PhotoMatch[] | null };
+
+// انقطاع الشبكة/تعليق التطبيق في الخلفية — لا خطأ حقيقي من الخادم. Safari: "Load failed".
+const isNetworkError = (e: unknown) => {
+  const err = e as { name?: string; message?: string } | null;
+  return /load failed|failed to fetch|network|FunctionsFetchError/i.test(`${err?.name ?? ""} ${err?.message ?? ""}`);
+};
+
 export default function ImageSearchButton({ categories, onResults, variant = "button", className }: Props) {
-  const [open, setOpen] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const saved = useRef(readResume<Saved>(RESUME_KEY)).current;
+  const [open, setOpen] = useState(!!saved);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(saved ? `data:${saved.mimeType};base64,${saved.base64}` : null);
   const [loading, setLoading] = useState(false);
-  const [analysis, setAnalysis] = useState<Analysis | null>(null);
-  const [matches, setMatches] = useState<PhotoMatch[] | null>(null);
+  const [analysis, setAnalysis] = useState<Analysis | null>(saved?.analysis ?? null);
+  const [matches, setMatches] = useState<PhotoMatch[] | null>(saved?.matches ?? null);
+  // آخر صورة أُرسلت — لإعادة المحاولة بعد انقطاع دون أن يختارها الموظف من جديد.
+  const current = useRef<{ base64: string; mimeType: string } | null>(saved ? { base64: saved.base64, mimeType: saved.mimeType } : null);
+  const [interrupted, setInterrupted] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
 
@@ -53,9 +80,64 @@ export default function ImageSearchButton({ categories, onResults, variant = "bu
     setAnalysis(null);
     setMatches(null);
     setLoading(false);
+    setInterrupted(false);
+    current.current = null;
+    clearResume(RESUME_KEY);
     if (uploadRef.current) uploadRef.current.value = "";
     if (cameraRef.current) cameraRef.current.value = "";
   };
+
+  const runSearch = async (base64: string, mimeType: string) => {
+    setLoading(true);
+    setInterrupted(false);
+    setAnalysis(null);
+    setMatches(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("image-search", {
+        body: { imageBase64: base64, mimeType, categories, matchCount: 140 },
+      });
+
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+
+      const a = (data as any).analysis ?? {};
+      const m = (data as any).matches ?? [];
+      // الصورة أُلغيت أو استُبدلت أثناء الانتظار — لا نكتب نتيجة قديمة فوق الجديدة.
+      if (current.current?.base64 !== base64) return;
+      setAnalysis(a);
+      setMatches(m);
+      saveResume<Saved>(RESUME_KEY, { base64, mimeType, analysis: a, matches: m });
+    } catch (e: any) {
+      if (current.current?.base64 !== base64) return;
+      if (isNetworkError(e)) {
+        // غالباً خرج الموظف من التطبيق فعلّقه النظام — نعيد المحاولة تلقائياً عند العودة.
+        setInterrupted(true);
+      } else {
+        toast({ title: "تعذّر التحليل", description: e.message ?? "حاول مجدداً", variant: "destructive" });
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // عودة للتطبيق بعد انقطاع البحث: نعيده تلقائياً.
+  useEffect(() => {
+    if (!interrupted) return;
+    const retry = () => {
+      if (document.visibilityState === "visible" && current.current) {
+        void runSearch(current.current.base64, current.current.mimeType);
+      }
+    };
+    document.addEventListener("visibilitychange", retry);
+    return () => document.removeEventListener("visibilitychange", retry);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [interrupted]);
+
+  // فُتح التطبيق من جديد (قُتل أثناء البحث) وفيه صورة بلا نتيجة — نكمل البحث.
+  useEffect(() => {
+    if (saved && !saved.matches) void runSearch(saved.base64, saved.mimeType);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleFile = async (original: File) => {
     if (!original.type.startsWith("image/")) {
@@ -68,59 +150,27 @@ export default function ImageSearchButton({ categories, onResults, variant = "bu
     }
     // ضغط قبل الإرسال — بحث أسرع بكثير على شبكة المحل
     const file = await compressImage(original, { maxDimension: 1280, quality: 0.8 });
-    setPreviewUrl(URL.createObjectURL(file));
-    setLoading(true);
-    setAnalysis(null);
-    setMatches(null);
-
-    try {
-      const base64: string = await new Promise((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => {
-          const s = r.result as string;
-          resolve(s.split(",")[1]);
-        };
-        r.onerror = reject;
-        r.readAsDataURL(file);
-      });
-
-      const { data, error } = await supabase.functions.invoke("image-search", {
-        body: { imageBase64: base64, mimeType: file.type, categories, matchCount: 12 },
-      });
-
-      if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
-
-      setAnalysis((data as any).analysis ?? {});
-      setMatches((data as any).matches ?? []);
-    } catch (e: any) {
-      toast({ title: "تعذّر التحليل", description: e.message ?? "حاول مجدداً", variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
+    const dataUrl: string = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result as string);
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    });
+    const base64 = dataUrl.split(",")[1];
+    const mimeType = file.type || "image/jpeg";
+    setPreviewUrl(dataUrl);
+    current.current = { base64, mimeType };
+    // نحفظ الصورة قبل الطلب: إن قُتل التطبيق أثناء البحث نكمله عند الفتح بلا اختيار الصورة مجدداً.
+    saveResume<Saved>(RESUME_KEY, { base64, mimeType, analysis: null, matches: null });
+    await runSearch(base64, mimeType);
   };
 
   const apply = () => {
     if (!matches || !analysis) return;
-    onResults({ matches, analysis });
+    onResults({ matches, analysis, photo: previewUrl });
     setOpen(false);
     reset();
-    // التصنيف يأتي جاهزاً من الخادم الآن (بصري + وصفي)، ونصف للموظف ما وجدناه فعلاً
-    // بالتفصيل بدل رقم واحد: مطابقة تامة، شبيهة شكلاً، أو تشترك في الأوصاف فقط.
-    const n = matches.length;
-    const exact = matches.filter((m) => (m.kind ?? (m.similarity >= 0.92 ? "exact" : "similar")) === "exact").length;
-    const similar = matches.filter((m) => m.kind === "similar").length;
-    const sameAttrs = matches.filter((m) => m.kind === "same_attributes").length;
-    const parts = [
-      similar ? `${similar} شبيهة` : "",
-      sameAttrs ? `${sameAttrs} بنفس الأوصاف` : "",
-    ].filter(Boolean);
-    toast({
-      title: exact > 0 ? `🎯 ${exact} قطعة مطابقة` : n > 0 ? `${n} قطعة مشابهة` : "لا توجد نتائج",
-      description: n > 0
-        ? (parts.length ? parts.join(" · ") : "أعلى القطع تشابهاً معروضة")
-        : "لم نجد قطعاً مشابهة بالصورة",
-    });
+    if (!matches.length) toast({ title: "لا توجد نتائج", description: "لم نجد قطعاً مشابهة بالصورة" });
   };
 
   return (
@@ -222,6 +272,19 @@ export default function ImageSearchButton({ categories, onResults, variant = "bu
               }}
             />
 
+            {interrupted && !loading && (
+              <div className="flex flex-col items-center gap-2 py-3 text-sm text-muted-foreground">
+                <p>انقطع البحث — سيُستأنف تلقائياً عند عودتك.</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => current.current && runSearch(current.current.base64, current.current.mimeType)}
+                >
+                  إعادة البحث الآن
+                </Button>
+              </div>
+            )}
+
             {loading && (
               <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground py-4">
                 <Loader2 className="size-4 animate-spin" />
@@ -260,13 +323,24 @@ export default function ImageSearchButton({ categories, onResults, variant = "bu
                     </span>
                   ))}
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  {matches.length > 0
-                    ? `عثرنا على ${matches.length} قطعة مشابهة`
-                    : "لا توجد قطع مشابهة في المخزون بعد. تأكد من تحليل الصور عند إضافة القطع."}
-                </p>
-                <Button onClick={apply} className="w-full bg-gold-gradient text-primary-foreground shadow-gold mt-2">
-                  عرض القطع المشابهة
+                {matches.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 text-[11px] font-semibold">
+                    {(["exact", "very_close", "similar_look", "same_attributes", "might_like"] as const).map((k) => {
+                      const n = matches.filter((m) => m.kind === k).length;
+                      return n ? (
+                        <span key={k} className="px-2 py-0.5 rounded-full bg-card border border-border">
+                          {TIER_SHORT[k]} {n}
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    لا توجد قطع مشابهة في المخزون بعد. تأكد من تحليل الصور عند إضافة القطع.
+                  </p>
+                )}
+                <Button onClick={apply} className="w-full h-12 text-base bg-gold-gradient text-primary-foreground shadow-gold mt-2">
+                  عرض {matches.length} قطعة
                 </Button>
               </div>
             )}

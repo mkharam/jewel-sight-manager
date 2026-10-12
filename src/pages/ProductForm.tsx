@@ -1,8 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { usePersistentState, hasResumeForm } from "@/lib/resume";
+import ResumedNotice from "@/components/ResumedNotice";
+import { saveDraftFiles, loadDraftFiles, clearDraftFiles } from "@/lib/fileDraft";
 import { useNavigate, useParams, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
+import { removeUnreferencedFiles, uploadProductImage } from "@/lib/productImages";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -41,6 +45,7 @@ const schema = z.object({
   item_type: z.string().max(50).nullable(),
   weight_grams: z.number().nonnegative().nullable(),
   ring_size: z.string().max(20).nullable(),
+  quantity: z.number().int().min(0),
   status: z.enum(["available","reserved","sold","in_transfer","damaged","lost","in_repair","stock_discrepancy","archived"]),
   cost_price: z.number().nonnegative().nullable(),
   sale_price: z.number().nonnegative().nullable(),
@@ -64,21 +69,42 @@ export default function ProductForm() {
   // القطعة). المشرف يقتصر على قطع فرعه — يُتحقّق من فرع القطعة الفعلي بعد تحميلها أدناه.
   const [loadedProductBranch, setLoadedProductBranch] = useState<string | null | "pending">("pending");
 
-  const [form, setForm] = useState({
+  // مسودّة النموذج تنجو من إغلاق الآيفون للتطبيق في الخلفية (واتساب، الكاميرا…).
+  const draftKey = `product:${editing ? id : "new"}`;
+  // هل وجدنا مسودّة عند الفتح؟ حينها لا نكتب فوقها بيانات القطعة من قاعدة البيانات.
+  const restoredDraft = useRef(hasResumeForm(draftKey)).current;
+  const [form, setForm, clearForm] = usePersistentState(draftKey, {
     name: "", sku: "", category_id: "", branch_id: "",
     // أغلب المخزون 18K — نفس منطق الرفع بالجملة (Upload.tsx/BulkCameraCapture): نبدأ
     // بالقيمة الغالبة كافتراض بدل حقل فارغ، والموظف يبدّلها يدوياً إن كانت القطعة 21K.
-    karat: "18K", gold_color: "", item_type: "", weight_grams: "", ring_size: "",
+    karat: "18K", gold_color: "", item_type: "", weight_grams: "", ring_size: "", quantity: "1",
     status: "available" as keyof typeof PRODUCT_STATUS,
     cost_price: "", sale_price: "", promo_price: "",
     description: "", internal_notes: "",
     serial_number: "", barcode_value: "", showcase_location: "",
   });
-  const [hasStones, setHasStones] = useState(false);
-  const [stoneType, setStoneType] = useState("");
-  const [stoneColor, setStoneColor] = useState("");
+  const [hasStones, setHasStones, clearHasStones] = usePersistentState(`${draftKey}:stones`, false);
+  const [stoneType, setStoneType, clearStoneType] = usePersistentState(`${draftKey}:stoneType`, "");
+  const [stoneColor, setStoneColor, clearStoneColor] = usePersistentState(`${draftKey}:stoneColor`, "");
   const [existingImages, setExistingImages] = useState<{ id: string; storage_path: string; thumb_path?: string | null; is_primary: boolean }[]>([]);
   const [newFiles, setNewFiles] = useState<File[]>([]);
+  // الصور الجديدة (قبل الحفظ) في IndexedDB — تُستعاد مع المسودّة.
+  const filesLoaded = useRef(false);
+  useEffect(() => {
+    if (!restoredDraft) { filesLoaded.current = true; return; }
+    void loadDraftFiles(draftKey).then((files) => {
+      if (files.length) setNewFiles(files);
+      filesLoaded.current = true;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (filesLoaded.current) void saveDraftFiles(draftKey, newFiles);
+  }, [draftKey, newFiles]);
+  const discardDraft = () => {
+    clearForm(); clearHasStones(); clearStoneType(); clearStoneColor();
+    void clearDraftFiles(draftKey);
+  };
   // روابط المعاينة تُنشأ مرة واحدة لكل ملف لا داخل الرسم: كان URL.createObjectURL يُستدعى
   // في JSX مباشرة، أي رابط blob جديد لكل صورة مع كل إعادة رسم (كل حرف يُكتب في النموذج)
   // وبلا تحرير أبداً — وصور الكاميرا عدة ميغابايت، فيتراكم الضغط على ذاكرة الهاتف.
@@ -103,26 +129,28 @@ export default function ProductForm() {
 
   useEffect(() => {
     if (!editing) {
-      if (profile?.branch_id) setForm((f) => ({ ...f, branch_id: profile.branch_id! }));
+      if (profile?.branch_id) setForm((f) => ({ ...f, branch_id: f.branch_id || profile.branch_id! }));
       return;
     }
     (async () => {
       const { data } = await supabase.from("products").select("*, images:product_images(id,storage_path,thumb_path,is_primary,sort_order)").eq("id", id!).maybeSingle();
       if (!data) return;
       setLoadedProductBranch(data.branch_id ?? null);
+      setExistingImages(data.images ?? []);
+      // مسودّة تعديل لم تُحفظ: نُبقي ما كتبه الموظف بدل بيانات القطعة المحفوظة.
+      if (restoredDraft) return;
       setForm({
         name: data.name ?? "", sku: data.sku ?? "",
         category_id: data.category_id ?? "", branch_id: data.branch_id ?? "",
         karat: data.karat ?? "", gold_color: data.gold_color ?? "", item_type: data.item_type ?? "",
         weight_grams: data.weight_grams?.toString() ?? "",
-        ring_size: data.ring_size ?? "", status: data.status,
+        ring_size: data.ring_size ?? "", quantity: String(data.quantity ?? 1), status: data.status,
         cost_price: data.cost_price?.toString() ?? "",
         sale_price: data.sale_price?.toString() ?? "",
         promo_price: data.promo_price?.toString() ?? "",
         description: data.description ?? "", internal_notes: data.internal_notes ?? "",
         serial_number: data.serial_number ?? "", barcode_value: data.barcode_value ?? "", showcase_location: data.showcase_location ?? "",
       });
-      setExistingImages(data.images ?? []);
 
       const { data: stones } = await supabase.from("product_stones").select("*").eq("product_id", id!).limit(1);
       const s = stones?.[0];
@@ -208,6 +236,7 @@ export default function ProductForm() {
       karat: form.karat || null, gold_color: form.gold_color || null, item_type: form.item_type || null,
       weight_grams: form.weight_grams ? parseFloat(form.weight_grams) : null,
       ring_size: form.ring_size || null, status: form.status,
+      quantity: form.quantity ? parseInt(form.quantity, 10) : 1,
       cost_price: form.cost_price ? parseFloat(form.cost_price) : null,
       sale_price: form.sale_price ? parseFloat(form.sale_price) : null,
       promo_price: form.promo_price ? parseFloat(form.promo_price) : null,
@@ -270,8 +299,7 @@ export default function ProductForm() {
         const file = newFiles[i];
         const ext = file.name.split(".").pop();
         const path = `${branchPrefix}/${productId}/${Date.now()}-${i}.${ext}`;
-        const { error: upErr } = await supabase.storage.from("product-images").upload(path, file);
-        if (upErr) throw upErr;
+        await uploadProductImage(path, file);
         const isPrimary = totalImages === newFiles.length && i === primaryIndex;
         const { data: imgRow, error: imgErr } = await supabase
           .from("product_images")
@@ -308,6 +336,7 @@ export default function ProductForm() {
         details: { name: parsed.data.name },
       });
 
+      discardDraft();
       toast.success(editing ? "تم التحديث" : "تمت الإضافة");
       navigate(`/products/${productId}`);
     } catch (err: any) {
@@ -317,7 +346,7 @@ export default function ProductForm() {
     }
   };
 
-  const removeExisting = async (imgId: string, path: string) => {
+  const removeExisting = async (imgId: string, path: string, thumbPath?: string | null) => {
     const ok = await confirm({ title: "حذف هذه الصورة؟", confirmLabel: "حذف", destructive: true });
     if (!ok) return;
 
@@ -329,8 +358,8 @@ export default function ProductForm() {
     if (error) return toast.error(error.message || "تعذّر حذف الصورة");
 
     // الملف نفسه: فشل حذفه لا يترك أثراً مرئياً (لا سطر يشير إليه) فلا نُفزع الموظف به.
-    const { error: storageErr } = await supabase.storage.from("product-images").remove([path]);
-    if (storageErr) console.warn("storage cleanup failed", storageErr);
+    // مع المصغّرة — كانت تبقى يتيمة في التخزين بعد حذف الصورة الكاملة.
+    await removeUnreferencedFiles([path, thumbPath]);
 
     setExistingImages((arr) => arr.filter((i) => i.id !== imgId));
     toast.success("تم حذف الصورة");
@@ -350,6 +379,8 @@ export default function ProductForm() {
       </Button>
 
       <h1 className="text-2xl font-bold">{editing ? "تعديل قطعة" : "إضافة قطعة جديدة"}</h1>
+
+      {restoredDraft && <ResumedNotice onDiscard={() => { discardDraft(); window.location.reload(); }} />}
 
       {(aiLoading || aiSuggestion) && (
         <div className="rounded-xl bg-gold-soft border border-primary/20 p-3 flex items-start gap-3">
@@ -421,6 +452,16 @@ export default function ProductForm() {
           <div className="grid grid-cols-2 gap-3">
             <Field label="المقاس">
               <Input value={form.ring_size} onChange={(e) => setForm({ ...form, ring_size: e.target.value })} maxLength={20} dir="ltr" />
+            </Field>
+            {/* قطع متطابقة (خواتم، أساور…) تُسجَّل مرة واحدة بعددها بدل تكرار القطعة. */}
+            <Field label="الكمية">
+              <Input
+                type="text"
+                inputMode="numeric"
+                value={form.quantity}
+                onChange={(e) => setForm({ ...form, quantity: normalizeDecimalInput(e.target.value).replace(/\./g, "") })}
+                dir="ltr"
+              />
             </Field>
           </div>
           <div className="rounded-xl border border-border p-3 space-y-3">
@@ -515,7 +556,7 @@ export default function ProductForm() {
                   {/* مصغّرة مضغوطة بدل الصورة الكاملة — تحميل أسرع بكثير في شبكة تعديل قطعة فيها صور كثيرة */}
                   <img src={getThumbUrl(img)!} className="w-full h-full object-contain" alt="" loading="lazy" decoding="async" />
                   {img.is_primary && <Star className="absolute top-1 right-1 size-4 fill-primary text-primary drop-shadow" />}
-                  <button type="button" onClick={() => removeExisting(img.id, img.storage_path)} className="absolute top-1 left-1 size-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center transition-transform hover:scale-110 active:scale-95">
+                  <button type="button" onClick={() => removeExisting(img.id, img.storage_path, img.thumb_path)} className="absolute top-1 left-1 size-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center transition-transform hover:scale-110 active:scale-95">
                     <X className="size-3" />
                   </button>
                 </div>
@@ -550,7 +591,7 @@ export default function ProductForm() {
           <Button type="submit" disabled={saving} className="flex-1 bg-gold-gradient text-primary-foreground shadow-gold" size="lg">
             {saving ? "جارٍ الحفظ..." : editing ? "تحديث" : "إضافة القطعة"}
           </Button>
-          <Button type="button" variant="outline" size="lg" onClick={() => navigate(-1)}>إلغاء</Button>
+          <Button type="button" variant="outline" size="lg" onClick={() => { discardDraft(); navigate(-1); }}>إلغاء</Button>
         </div>
       </form>
     </div>

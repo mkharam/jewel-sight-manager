@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { deleteProducts, uploadProductImage } from "@/lib/productImages";
 import { attachStaffNames } from "@/lib/staffNames";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -20,13 +21,15 @@ import QuickQuoteSheet from "@/components/QuickQuoteSheet";
 import SellDialog from "@/components/SellDialog";
 import ReserveDialog from "@/components/ReserveDialog";
 import ReorderRequestDialog from "@/components/ReorderRequestDialog";
+import QuantityControl from "@/components/QuantityControl";
 import ImageLightbox from "@/components/ImageLightbox";
 import EditOwnProductSheet from "@/components/EditOwnProductSheet";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
 import { invalidateInventoryAndSales } from "@/lib/queryInvalidation";
 import { useGoldPrices } from "@/hooks/useGoldPrices";
 import { priceForPiece, PRICE_GAP_LABEL } from "@/lib/pricing";
-import { usePricesVisible } from "@/hooks/useAppSettings";
+import { usePriceVisibleFor } from "@/hooks/useAppSettings";
+import { pieceShareText, sharePiece, useShareImageFile } from "@/lib/sharePiece";
 
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
@@ -41,7 +44,6 @@ export default function ProductDetail() {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const { data: goldPrices } = useGoldPrices();
-  const pricesVisible = usePricesVisible();
 
 
   const { data: product, isLoading } = useQuery({
@@ -116,6 +118,15 @@ export default function ProductDetail() {
     return () => { supabase.removeChannel(ch); };
   }, [id, qc]);
 
+  // يجب أن تُستدعى كل الخطاطيف قبل أي return مبكّر، وإلا اختلف عددها بين التحميل
+  // والعرض فانهارت الصفحة ("Rendered more hooks than during the previous render").
+  const pricesVisible = usePriceVisibleFor(
+    product ? (product.promo_price ?? product.sale_price ?? priceForPiece(product, goldPrices).price?.total ?? null) : null,
+  );
+  // صورة "إرسال للزبون" تُجهَّز مسبقاً (راجع useShareImageFile) — قبل أي return مبكّر.
+  const sharePhoto = product?.images?.find((i: { is_primary: boolean }) => i.is_primary) ?? product?.images?.[0];
+  const shareFile = useShareImageFile(getImageUrl(sharePhoto?.storage_path));
+
   if (isLoading) return <div className="p-8 text-center text-muted-foreground">جارٍ التحميل...</div>;
   if (!product) return <div className="p-8 text-center">القطعة غير موجودة</div>;
 
@@ -143,6 +154,21 @@ export default function ProductDetail() {
   // سعر القطعة اليوم = وزنها × سعر غرام عيارها + الأجرة. راجع src/lib/pricing.ts
   const computedPrice = priceForPiece(product, goldPrices);
   const todayPrice = pricesVisible ? computedPrice.price : null;
+  // "إرسال للزبون": السعر المُرسَل هو نفسه المعروض للموظف هنا (عرض ← بيع ← سعر اليوم)، ولا
+  // سعر إطلاقاً إن كانت الأسعار مخفية عنه.
+  const sharePrice = pricesVisible ? (product.promo_price ?? product.sale_price ?? todayPrice?.total ?? null) : null;
+  const onShare = async () => {
+    const text = pieceShareText({
+      name: product.name,
+      sku: product.sku,
+      karat: product.karat,
+      colorLabel: GOLD_COLORS.find((c) => c.value === product.gold_color)?.label ?? null,
+      weight_grams: product.weight_grams,
+      price: sharePrice,
+    });
+    const r = await sharePiece(text, shareFile);
+    if (r === "copied") toast.success("نُسخت تفاصيل القطعة — الصقها في الواتساب");
+  };
   const priceGap = pricesVisible ? computedPrice.gap : null;
   const canAddPhoto = isAdmin || (!!product.branch_id && product.branch_id === profile?.branch_id);
   const canDeleteOwnUpload = canManageBranchProduct;
@@ -156,8 +182,11 @@ export default function ProductDetail() {
       destructive: true,
     });
     if (!ok) return;
-    const { error } = await supabase.from("products").delete().eq("id", id!);
-    if (error) return toast.error(error.message);
+    try {
+      await deleteProducts([id!]);
+    } catch (e) {
+      return toast.error(e instanceof Error ? e.message : "تعذّر الحذف");
+    }
     await supabase.from("activity_log").insert({
       actor_id: user?.id, action: "delete", entity_type: "product", entity_id: id,
       details: { name: product.name },
@@ -185,8 +214,7 @@ export default function ProductDetail() {
       const branchPrefix = product.branch_id ? `branch-${product.branch_id}` : "unassigned";
       const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
       const path = `${branchPrefix}/${id}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
-      const { error: upErr } = await supabase.storage.from("product-images").upload(path, file);
-      if (upErr) throw upErr;
+      await uploadProductImage(path, file);
       const { error: insErr } = await supabase.from("product_images").insert({
         product_id: id!,
         storage_path: path,
@@ -210,6 +238,9 @@ export default function ProductDetail() {
           <ArrowRight className="size-4 ml-1" /> رجوع
         </Button>
         <div className="flex gap-2">
+          <Button size="sm" onClick={onShare} className="bg-gold-gradient text-primary-foreground shadow-gold">
+            <Share2 className="size-4 ml-1" /> إرسال للزبون
+          </Button>
           {canEditProduct && (
             <Link to={`/products/${id}/edit`}>
               <Button variant="outline" size="sm"><Edit className="size-4 ml-1" /> تعديل</Button>
@@ -349,6 +380,7 @@ export default function ProductDetail() {
                 }
               />
               <Spec label="الوزن" value={formatWeight(product.weight_grams)} />
+              <QuantityControl productId={product.id} quantity={product.quantity ?? 1} status={product.status} canEdit={canEditProduct} />
               {product.ring_size && <Spec label="المقاس" value={product.ring_size} />}
               {product.item_type && <Spec label="النوع" value={product.item_type} />}
               <Spec label="الفرع" value={product.branch?.name} icon={<MapPin className="size-3.5" />} />
@@ -362,7 +394,7 @@ export default function ProductDetail() {
             </div>
 
             <div className="pt-3 border-t border-border">
-              {product.promo_price ? (
+              {!pricesVisible ? null : product.promo_price ? (
                 <div>
                   <p className="text-sm text-muted-foreground line-through">{formatCurrency(product.sale_price)}</p>
                   <p className="text-3xl font-extrabold text-primary">{formatCurrency(product.promo_price)}</p>
@@ -406,7 +438,6 @@ export default function ProductDetail() {
                   </div>
                   <p className="text-[11px] text-muted-foreground text-left leading-relaxed">
                     {formatWeight(todayPrice.weight)} × {formatCurrency(todayPrice.pricePerGram)}
-                    {todayPrice.makingCharge > 0 && <> + أجرة {formatCurrency(todayPrice.makingCharge)}/غ</>}
                   </p>
                 </div>
                 <p className="text-[10px] text-muted-foreground mt-1.5">
@@ -437,8 +468,8 @@ export default function ProductDetail() {
               <SellDialog product={{
                 id: product.id, name: product.name, sku: product.sku, karat: product.karat,
                 weight_grams: product.weight_grams, branch_id: product.branch_id,
-                sale_price: product.sale_price, promo_price: product.promo_price,
-              }} />
+                sale_price: product.sale_price, promo_price: product.promo_price, quantity: product.quantity,
+              }} suggestedPrice={todayPrice?.total ?? null} />
               <ReserveDialog productId={product.id} productName={product.name} branchId={product.branch_id} defaultPrice={product.promo_price ?? product.sale_price} />
             </div>
           )}
@@ -446,8 +477,8 @@ export default function ProductDetail() {
             <SellDialog product={{
               id: product.id, name: product.name, sku: product.sku, karat: product.karat,
               weight_grams: product.weight_grams, branch_id: product.branch_id,
-              sale_price: product.sale_price, promo_price: product.promo_price,
-            }} />
+              sale_price: product.sale_price, promo_price: product.promo_price, quantity: product.quantity,
+            }} suggestedPrice={todayPrice?.total ?? null} />
           )}
 
           <Button variant="outline" size="lg" className="w-full" onClick={verifyProduct}>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { usePersistentState } from "@/lib/resume";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -8,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tag, AlertTriangle, Clock } from "lucide-react";
-import { formatCurrency, formatDate } from "@/lib/constants";
+import { formatCurrency, formatDate, normalizeDecimalInput } from "@/lib/constants";
 import { toast } from "sonner";
 
 interface Props {
@@ -39,11 +40,13 @@ function pushRecentCustomer(c: RecentCustomer) {
 export default function QuickQuoteSheet({ productId, productName, branchId, trigger, fullWidthButton, suggestedPrice }: Props) {
   const { user, profile } = useAuth();
   const qc = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const [price, setPrice] = useState("");
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [notes, setNotes] = useState("");
+  const [open, setOpen, clearOpen] = usePersistentState(`quote:${productId}:open`, false);
+  const [price, setPrice, clearPrice] = usePersistentState(`quote:${productId}:price`, "");
+  const [name, setName, clearName] = usePersistentState(`quote:${productId}:name`, "");
+  const [phone, setPhone, clearPhone] = usePersistentState(`quote:${productId}:phone`, "");
+  const [notes, setNotes, clearNotes] = usePersistentState(`quote:${productId}:notes`, "");
+  // المسودّة تنجو من إغلاق الآيفون للتطبيق في الخلفية؛ تُمسح بعد الحفظ أو الإلغاء.
+  const clearDraft = () => { clearOpen(); clearPrice(); clearName(); clearPhone(); clearNotes(); };
   const [saving, setSaving] = useState(false);
   const recentCustomers = useMemo(() => (open ? loadRecentCustomers() : []), [open]);
 
@@ -103,13 +106,13 @@ export default function QuickQuoteSheet({ productId, productName, branchId, trig
     pushRecentCustomer({ name: name.trim(), phone: phone.trim() });
     toast.success("تم تسجيل السعر");
     setPrice(""); setName(""); setPhone(""); setNotes("");
-    setOpen(false);
+    clearDraft();
     qc.invalidateQueries({ queryKey: ["quotes", productId] });
     qc.invalidateQueries({ queryKey: ["recent-quotes", productId] });
   };
 
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
+    <Sheet open={open} onOpenChange={(o) => { setOpen(o); if (!o) clearDraft(); }}>
       <SheetTrigger asChild>
         {trigger ?? (
           <Button
@@ -149,11 +152,11 @@ export default function QuickQuoteSheet({ productId, productName, branchId, trig
           <div>
             <Label>السعر المعروض *</Label>
             <Input
-              type="number"
+              type="text"
               step="0.01"
               inputMode="decimal"
               value={price}
-              onChange={(e) => setPrice(e.target.value)}
+              onChange={(e) => setPrice(normalizeDecimalInput(e.target.value))}
               required
               autoFocus
               className="text-lg h-12 font-bold"

@@ -11,13 +11,19 @@ import { cn } from "@/lib/utils";
 import { enablePush, disablePush, currentPushStatus, type PushStatus } from "@/lib/push";
 import { toast } from "sonner";
 
-const LS_KEY = "lamaa.notifs.lastSeen";
+import { NOTIFS_SEEN_KEY as LS_KEY, SEEN_EVENT, markSeen, readSeen } from "@/lib/appBadge";
 
 export default function NotificationsBell() {
   const { user, roles } = useAuth();
   const { data: entries = [] } = useActivityFeed(30);
   const [open, setOpen] = useState(false);
-  const [lastSeen, setLastSeen] = useState<string>(() => localStorage.getItem(LS_KEY) ?? "1970-01-01");
+  const [lastSeen, setLastSeen] = useState<string>(() => readSeen(LS_KEY));
+  // صفحة الإشعارات تعلّمها مقروءة أيضاً — نتابعها حتى يختفي الرقم هنا معها.
+  useEffect(() => {
+    const refresh = () => setLastSeen(readSeen(LS_KEY));
+    window.addEventListener(SEEN_EVENT, refresh);
+    return () => window.removeEventListener(SEEN_EVENT, refresh);
+  }, []);
   const [pushStatus, setPushStatus] = useState<PushStatus>("unsubscribed");
   const [pushBusy, setPushBusy] = useState(false);
 
@@ -54,7 +60,7 @@ export default function NotificationsBell() {
     setOpen(o);
     if (o && entries.length) {
       const newest = entries[0].item.created_at;
-      localStorage.setItem(LS_KEY, newest);
+      markSeen(LS_KEY, newest);
       setLastSeen(newest);
     }
   };

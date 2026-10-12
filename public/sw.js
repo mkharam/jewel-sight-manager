@@ -1,6 +1,6 @@
 // Service worker خفيف: يجعل التطبيق يعمل كتطبيق مثبَّت على الآيفون
 // ويسرّع فتح الشاشة الأولى. لا نخزّن أي طلبات API/قاعدة بيانات.
-const CACHE = "mkharrm-shell-v4";
+const CACHE = "mkharrm-shell-v5";
 // نطاق تسجيل هذا الـ SW هو الأساس الصحيح للمسارات — يعمل سواء كان التطبيق على
 // الجذر (Lovable/نطاق مخصّص) أو تحت مسار فرعي (GitHub Pages: /jewel-sight-manager/).
 const SCOPE = self.registration.scope;
@@ -20,9 +20,41 @@ self.addEventListener("install", (e) => {
 
 self.addEventListener("activate", (e) => {
   e.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== BADGE_CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
+});
+
+// رقم التنبيهات على أيقونة التطبيق. التطبيق يرسل الرقم الدقيق حين يُفتح (src/lib/appBadge.ts)
+// فنحفظه هنا، وكل إشعار يصل والتطبيق مغلق يزيده واحداً — فيرى الموظف على الأيقونة أن هناك جديداً.
+const BADGE_CACHE = "mkharrm-badge";
+const BADGE_KEY = new URL("__badge", SCOPE).toString();
+
+async function readBadge() {
+  try {
+    const hit = await (await caches.open(BADGE_CACHE)).match(BADGE_KEY);
+    return hit ? Number(await hit.text()) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function writeBadge(count) {
+  try {
+    await (await caches.open(BADGE_CACHE)).put(BADGE_KEY, new Response(String(count)));
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (count > 0) await self.navigator.setAppBadge?.(count);
+    else await self.navigator.clearAppBadge?.();
+  } catch {
+    /* غير مدعوم */
+  }
+}
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "badge") event.waitUntil(writeBadge(Math.max(0, Number(event.data.count) || 0)));
 });
 
 // إشعار Web Push — يظهر على شاشة القفل حتى والتطبيق مغلق تماماً.
@@ -38,7 +70,8 @@ self.addEventListener("push", (event) => {
   // https://mkharam.github.io/chat بدل .../jewel-sight-manager/chat — أي صفحة 404 خارج
   // التطبيق عند كل ضغطة على إشعار. نزيل الشرطة الأولى ليُحسب المسار نسبةً لنطاق الـSW.
   const targetUrl = new URL(String(data.url || ".").replace(/^\/+/, ""), SCOPE).toString();
-  event.waitUntil(
+  event.waitUntil(Promise.all([
+    readBadge().then((n) => writeBadge(n + 1)),
     self.registration.showNotification(data.title, {
       body: data.body,
       icon: new URL("app-icon-192.png", SCOPE).toString(),
@@ -47,7 +80,7 @@ self.addEventListener("push", (event) => {
       dir: "rtl",
       lang: "ar",
     }),
-  );
+  ]));
 });
 
 // الضغط على الإشعار: يفتح التطبيق على الرابط المرتبط، أو يُركّز نافذة مفتوحة بالفعل.

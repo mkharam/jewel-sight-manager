@@ -10,12 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { ImageDown, Loader2, StopCircle } from "lucide-react";
 import { getImageUrl } from "@/lib/constants";
+import { uploadProductImage } from "@/lib/productImages";
 import { makeThumbnail } from "@/lib/image-compress";
 import { toast } from "sonner";
 
 const BATCH = 6;
-// عدد ثوانٍ كنص — هذا ما يتوقّعه supabase-js. راجع التعليق المطوّل في uploadRunner.ts.
-const IMMUTABLE_CACHE = "31536000";
 
 export default function GenerateThumbsCard() {
   const [running, setRunning] = useState(false);
@@ -69,10 +68,7 @@ export default function GenerateThumbsCard() {
             if (!thumb) throw new Error("تعذّر توليد المصغّرة");
 
             const thumbPath = `${row.storage_path.replace(/\.[^.]+$/, "")}-thumb.jpg`;
-            const { error: upErr } = await supabase.storage
-              .from("product-images")
-              .upload(thumbPath, thumb, { cacheControl: IMMUTABLE_CACHE, upsert: true });
-            if (upErr) throw upErr;
+            await uploadProductImage(thumbPath, thumb, { upsert: true });
 
             const { error: dbErr } = await supabase
               .from("product_images")

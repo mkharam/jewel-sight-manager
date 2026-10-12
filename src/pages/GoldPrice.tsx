@@ -10,8 +10,10 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Coins, Save, AlertTriangle, Eye, EyeOff } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
-import { useShowPricesSetting } from "@/hooks/useAppSettings";
-import { KARAT_OPTIONS, formatCurrency, formatDate } from "@/lib/constants";
+import { useShowPricesSetting, usePriceRangeSetting } from "@/hooks/useAppSettings";
+import { KARAT_OPTIONS, formatCurrency, formatDate, normalizeDecimalInput } from "@/lib/constants";
+import { businessToday } from "@/lib/dates";
+import GoldSpotSuggestion from "@/components/GoldSpotSuggestion";
 import { suggestedPrice } from "@/lib/luxury";
 import { toast } from "sonner";
 
@@ -55,7 +57,7 @@ export default function GoldPrice() {
   const save = async (karat: string) => {
     const row = form[karat];
     if (!row?.price) return toast.error("اكتب سعر الجرام");
-    const today = new Date().toISOString().slice(0, 10);
+    const today = businessToday();
     const { error } = await supabase.from("gold_prices").insert({
       karat,
       price_per_gram: Number(row.price),
@@ -67,6 +69,25 @@ export default function GoldPrice() {
     toast.success(`تم تحديث سعر ${karat}`);
     setForm((f) => ({ ...f, [karat]: { price: "", making: "" } }));
     qc.invalidateQueries({ queryKey: ["gold-prices"] });
+    qc.invalidateQueries({ queryKey: ["gold-prices-current"] });
+  };
+
+  // السعر لم يتغيّر اليوم؟ يُؤكَّد بضغطة بدل إعادة كتابته — فيبقى السجلّ صادقاً بأن أحداً
+  // راجعه اليوم، ويختفي تنبيه «لم يُحدَّث».
+  const confirmUnchanged = async (karat: string) => {
+    const cur = latest.get(karat);
+    if (!cur) return;
+    const { error } = await supabase.from("gold_prices").insert({
+      karat,
+      price_per_gram: Number(cur.price_per_gram),
+      making_charge: Number(cur.making_charge ?? 0),
+      effective_date: businessToday(),
+      updated_by: user?.id ?? null,
+    });
+    if (error) return toast.error(error.message);
+    toast.success(`تم تأكيد سعر ${karat} لليوم`);
+    qc.invalidateQueries({ queryKey: ["gold-prices"] });
+    qc.invalidateQueries({ queryKey: ["gold-prices-current"] });
   };
 
   if (rolesLoading) return null;
@@ -94,7 +115,28 @@ export default function GoldPrice() {
 
   const { enabled: pricesShown, setEnabled: setPricesShown, saving: savingSetting } = useShowPricesSetting();
 
-  const suggestion = suggestedPrice(Number(weight) || null, calcRow?.price_per_gram ?? null, calcRow?.making_charge ?? null);
+  const { range, setRange, saving: savingRange } = usePriceRangeSetting();
+  const [rangeOn, setRangeOn] = useState(false);
+  const [rangeMin, setRangeMin] = useState("");
+  const [rangeMax, setRangeMax] = useState("");
+  useEffect(() => {
+    setRangeOn(range.enabled);
+    setRangeMin(range.min == null ? "" : String(range.min));
+    setRangeMax(range.max == null ? "" : String(range.max));
+  }, [range.enabled, range.min, range.max]);
+  const saveRange = (enabled: boolean) => {
+    const min = rangeMin.trim() === "" ? null : Number(rangeMin);
+    const max = rangeMax.trim() === "" ? null : Number(rangeMax);
+    if ((min != null && isNaN(min)) || (max != null && isNaN(max)) || (min != null && max != null && min > max)) {
+      toast.error("نطاق غير صحيح — تأكد أن الحد الأدنى أقل من الأعلى");
+      return;
+    }
+    void setRange({ enabled, min, max })
+      .then(() => toast.success(enabled ? "تم حفظ نطاق الأسعار" : "أُلغي تحديد النطاق"))
+      .catch((e: any) => toast.error(e.message ?? "تعذّر حفظ الإعداد"));
+  };
+
+  const suggestion = suggestedPrice(Number(weight) || null, calcRow?.price_per_gram ?? null);
 
   return (
     <div className="space-y-4 max-w-4xl mx-auto">
@@ -135,6 +177,41 @@ export default function GoldPrice() {
         />
       </Card>
 
+      <Card className="p-3 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">عرض أسعار نطاق معيّن فقط</p>
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+              {rangeOn
+                ? "الموظف يرى سعر القطعة فقط إن وقع ضمن النطاق أدناه، وغيرها تظهر بلا سعر. أنت ترى كل الأسعار دائماً."
+                : "مطفأ — تُعرض الأسعار بلا تحديد نطاق (حسب مفتاح التسعيرة أعلاه)."}
+            </p>
+          </div>
+          <Switch
+            checked={rangeOn}
+            disabled={savingRange}
+            onCheckedChange={(v) => {
+              setRangeOn(v);
+              saveRange(v);
+            }}
+            aria-label="عرض أسعار نطاق معيّن فقط"
+          />
+        </div>
+        {rangeOn && (
+          <div className="flex items-end gap-2 flex-wrap">
+            <div>
+              <Label className="text-xs">من</Label>
+              <Input type="text" inputMode="numeric" dir="ltr" className="w-32" value={rangeMin} onChange={(e) => setRangeMin(normalizeDecimalInput(e.target.value))} placeholder="بلا حد أدنى" />
+            </div>
+            <div>
+              <Label className="text-xs">إلى</Label>
+              <Input type="text" inputMode="numeric" dir="ltr" className="w-32" value={rangeMax} onChange={(e) => setRangeMax(normalizeDecimalInput(e.target.value))} placeholder="بلا حد أعلى" />
+            </div>
+            <Button size="sm" disabled={savingRange} onClick={() => saveRange(true)}>حفظ النطاق</Button>
+          </div>
+        )}
+      </Card>
+
       {/* عيار عليه بضاعة ولا سعر غرام له = قطع لا يمكن تسعيرها إطلاقاً، ولا شيء كان
           يُنبّه إلى ذلك: سُجّل سعر ٢٢K بينما بضاعة المتجر ١٨K و٢١K. */}
       {unpricedKarats.length > 0 && (
@@ -149,6 +226,10 @@ export default function GoldPrice() {
           </p>
         </Card>
       )}
+
+      <GoldSpotSuggestion
+        onUse={(karat, price) => setForm((f) => ({ ...f, [karat]: { price: String(price), making: f[karat]?.making ?? "" } }))}
+      />
 
       <div className="grid sm:grid-cols-2 gap-3">
         {KARATS.map((k) => {
@@ -168,17 +249,22 @@ export default function GoldPrice() {
                   <div>
                     <Label className="text-xs">سعر الجرام</Label>
                     <Input inputMode="decimal" value={form[k]?.price ?? ""}
-                      onChange={(e) => setForm((f) => ({ ...f, [k]: { price: e.target.value, making: f[k]?.making ?? "" } }))} />
+                      onChange={(e) => setForm((f) => ({ ...f, [k]: { price: normalizeDecimalInput(e.target.value), making: f[k]?.making ?? "" } }))} />
                   </div>
                   <div>
                     <Label className="text-xs">المصنعية / غ</Label>
                     <Input inputMode="decimal" value={form[k]?.making ?? ""}
-                      onChange={(e) => setForm((f) => ({ ...f, [k]: { price: f[k]?.price ?? "", making: e.target.value } }))} />
+                      onChange={(e) => setForm((f) => ({ ...f, [k]: { price: f[k]?.price ?? "", making: normalizeDecimalInput(e.target.value) } }))} />
                   </div>
                 </div>
                 <Button size="sm" className="w-full" onClick={() => save(k)}>
                   <Save className="size-4 ml-1" /> حفظ سعر اليوم
                 </Button>
+                {cur && cur.effective_date !== businessToday() && (
+                  <Button size="sm" variant="outline" className="w-full" onClick={() => confirmUnchanged(k)}>
+                    السعر لم يتغيّر — أكّد سعر اليوم ({formatCurrency(cur.price_per_gram)})
+                  </Button>
+                )}
               </CardContent>
             </Card>
           );
@@ -191,7 +277,7 @@ export default function GoldPrice() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs">الوزن (غ)</Label>
-              <Input inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value)} />
+              <Input inputMode="decimal" dir="ltr" value={weight} onChange={(e) => setWeight(normalizeDecimalInput(e.target.value))} />
             </div>
             <div>
               <Label className="text-xs">العيار</Label>
