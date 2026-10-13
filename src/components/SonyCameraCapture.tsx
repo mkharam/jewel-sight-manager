@@ -11,6 +11,7 @@ import { Check, Trash2, RotateCcw, Scale, ImagePlus, Loader2, AlertCircle, Video
 import { normalizeDecimalInput } from "@/lib/constants";
 import { saveCapturedPiece, updateCapturedPiece, deleteCapturedPiece, analyzeCapturedPiece } from "@/lib/uploadRunner";
 import { toast } from "sonner";
+import { isBuiltInCamera } from "@/lib/cameras";
 
 const DEVICE_KEY = "sony.deviceId";
 // أسماء شائعة لكاميرات Sony وكروت التقاط HDMI — للتفضيل التلقائي فقط.
@@ -58,7 +59,7 @@ export default function SonyCameraCapture({ open, onClose, userId, branchId, onF
   const refreshDevices = async () => {
     try {
       const all = await navigator.mediaDevices.enumerateDevices();
-      const cams = all.filter((d) => d.kind === "videoinput");
+      const cams = all.filter((d) => d.kind === "videoinput" && !isBuiltInCamera(d.label));
       setDevices(cams);
       return cams;
     } catch {
@@ -112,7 +113,7 @@ export default function SonyCameraCapture({ open, onClose, userId, branchId, onF
       const cams = await refreshDevices();
       if (cancelled) return;
       const saved = readSaved();
-      const pick = cams.find((d) => d.deviceId === saved)?.deviceId || cams.find((d) => isCaptureLike(d.label))?.deviceId || "";
+      const pick = cams.find((d) => d.deviceId === saved)?.deviceId || cams.find((d) => isCaptureLike(d.label))?.deviceId || cams[0]?.deviceId || "";
       if (pick) await start(pick);
     })();
     navigator.mediaDevices?.addEventListener?.("devicechange", refreshDevices);
@@ -255,7 +256,7 @@ export default function SonyCameraCapture({ open, onClose, userId, branchId, onF
           aria-label="الكاميرا"
           className="flex-1 h-10 rounded-lg bg-white/10 border border-white/25 text-white text-sm px-2 [&>option]:text-black"
         >
-          <option value="" disabled>اختر الكاميرا…</option>
+          <option value="" disabled>{devices.length ? "اختر الكاميرا…" : "لا توجد كاميرا موصولة بـType-C"}</option>
           {devices.map((d, i) => (
             <option key={d.deviceId || i} value={d.deviceId}>{(d.label || `Camera ${i + 1}`) + (isCaptureLike(d.label) ? "  ★" : "")}</option>
           ))}

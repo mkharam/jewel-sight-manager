@@ -42,6 +42,7 @@ import { normalizeDecimalInput } from "@/lib/constants";
 import { saveCapturedPiece, updateCapturedPiece, deleteCapturedPiece, analyzeCapturedPiece } from "@/lib/uploadRunner";
 import { suspendWakeLock } from "@/lib/keepAwake";
 import { toast } from "sonner";
+import { isBuiltInCamera } from "@/lib/cameras";
 
 const CAMERA_DEVICE_KEY = "bulkCamera.deviceId";
 const SONY_LABEL = /sony|zv-|ilce|alpha|imaging edge/i;
@@ -216,7 +217,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
   useEffect(() => {
     if (!open || !ready || isMobile) return;
     const refresh = async () => {
-      const list = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput" && d.deviceId);
+      const list = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput" && d.deviceId && !isBuiltInCamera(d.label));
       setCameras(list);
       const saved = deviceIdRef.current;
       if (saved && list.some((d) => d.deviceId === saved)) {
@@ -224,7 +225,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
         if (current !== saved) void selectDevice(saved);
         return;
       }
-      const sony = list.find((d) => SONY_LABEL.test(d.label));
+      const sony = list.find((d) => SONY_LABEL.test(d.label)) ?? list[0];
       if (sony) void selectDevice(sony.deviceId);
     };
     void refresh();
@@ -512,7 +513,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
               <button onClick={retryCamera} className="p-1" aria-label="إعادة تشغيل الكاميرا" title="إعادة تشغيل الكاميرا">
                 <RotateCcw className="size-5" />
               </button>
-              {!isMobile && cameras.length > 1 && (
+              {!isMobile && cameras.length > 0 && (
                 <select
                   value={deviceId ?? ""}
                   onChange={(e) => void selectDevice(e.target.value)}
