@@ -7,7 +7,7 @@
 // وتُرفع بحجمها الأصلي بترتيب أسماء الملفات. كل صورة قطعة، ثم يكتب الموظف وزنها تحتها.
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Check, Trash2, RotateCcw, Scale, ImagePlus, Loader2, AlertCircle, Video } from "lucide-react";
+import { Check, Trash2, RotateCcw, Scale, ImagePlus, Loader2, AlertCircle, Video, FolderSync } from "lucide-react";
 import { normalizeDecimalInput } from "@/lib/constants";
 import { saveCapturedPiece, updateCapturedPiece, deleteCapturedPiece, analyzeCapturedPiece } from "@/lib/uploadRunner";
 import { toast } from "sonner";
@@ -37,6 +37,12 @@ export default function SonyCameraCapture({ open, onClose, userId, branchId, onF
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
+  // آخر صورة تصل يُنقل المؤشر لخانة وزنها مباشرة — يصوّر الموظف ثم يكتب الوزن بلا نقر.
+  const weightInputs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [focusId, setFocusId] = useState<string | null>(null);
+  // مراقبة مجلد على الماك يحفظ فيه برنامج Imaging Edge صور زر التصوير في الكاميرا نفسها.
+  const [watching, setWatching] = useState<string | null>(null);
+  const watchTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState("");
   const [ready, setReady] = useState(false);
@@ -155,6 +161,7 @@ export default function SonyCameraCapture({ open, onClose, userId, branchId, onF
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     weights.current[id] = "";
     setShots((prev) => [...prev, { id, url: URL.createObjectURL(blob), weight: "", saveState: "saving" }]);
+    setFocusId(id);
     const file = new File([blob], `capture-${id}.jpg`, { type: blob.type || "image/jpeg" });
     saveCapturedPiece(file, { userId, branchId, trayMode: false }, null, null, karat)
       .then(({ productId, imageId }) => {
@@ -196,6 +203,59 @@ export default function SonyCameraCapture({ open, onClose, userId, branchId, onF
       await new Promise((r) => setTimeout(r, 250));
     }
   };
+
+  useEffect(() => {
+    if (!focusId) return;
+    const el = weightInputs.current[focusId];
+    if (el) { el.focus(); el.scrollIntoView({ inline: "nearest", block: "nearest" }); setFocusId(null); }
+  }, [focusId, shots]);
+
+  const stopWatching = () => {
+    if (watchTimer.current) clearInterval(watchTimer.current);
+    watchTimer.current = null;
+    setWatching(null);
+  };
+
+  // كل ضغطة على زر الكاميرا يحفظها Imaging Edge Desktop (Remote) كملف JPEG في مجلد على الماك؛
+  // نفحص المجلد كل ثانية ونضيف الجديد فقط (الصور الموجودة قبل البدء تُتجاهل). نشترط ثبات
+  // حجم الملف بين فحصين حتى لا نقرأ صورة لم تكتمل كتابتها.
+  const watchFolder = async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const picker = (window as any).showDirectoryPicker as undefined | ((o?: object) => Promise<FileSystemDirectoryHandle>);
+    if (!picker) return toast.error("مراقبة المجلد تعمل في Google Chrome أو Edge على الماك");
+    let dir: FileSystemDirectoryHandle;
+    try { dir = await picker({ mode: "read" }); } catch { return; }
+    stopWatching();
+    const seen = new Set<string>();
+    const sizes: Record<string, number> = {};
+    const list = async () => {
+      const out: File[] = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for await (const h of (dir as any).values()) {
+        if (h.kind === "file" && /\.(jpe?g)$/i.test(h.name)) out.push(await h.getFile());
+      }
+      return out;
+    };
+    (await list()).forEach((f) => seen.add(f.name));
+    setWatching(dir.name);
+    toast.success(`يراقب المجلد «${dir.name}» — صوّر بزر الكاميرا`);
+    let busy = false;
+    watchTimer.current = setInterval(async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        const files = (await list())
+          .filter((f) => !seen.has(f.name))
+          .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+        for (const f of files) {
+          if (f.size > 0 && sizes[f.name] === f.size) { seen.add(f.name); saveShot(f); }
+          else sizes[f.name] = f.size;
+        }
+      } catch { /* المجلد أُزيل أو سُحب الإذن */ } finally { busy = false; }
+    }, 1000);
+  };
+
+  useEffect(() => { if (!open) stopWatching(); }, [open]);
 
   const setWeight = (id: string, weight: string) => {
     weights.current[id] = weight;
@@ -244,6 +304,11 @@ export default function SonyCameraCapture({ open, onClose, userId, branchId, onF
         <p className="text-sm font-semibold flex items-center gap-1.5">
           <Video className="size-4" /> {shots.length > 0 ? `${shots.length} صورة` : "كاميرا Sony / HDMI"}
         </p>
+        <button onClick={() => (watching ? stopWatching() : void watchFolder())}
+          className={`p-1 ${watching ? "text-primary animate-pulse" : ""}`}
+          aria-label="مراقبة مجلد صور الكاميرا" title={watching ? `يراقب «${watching}» — اضغط للإيقاف` : "صوّر بزر الكاميرا: مراقبة مجلد الصور"}>
+          <FolderSync className="size-5" />
+        </button>
         <button onClick={() => importRef.current?.click()} className="p-1" aria-label="استيراد صور من الكاميرا" title="استيراد صور من الكاميرا">
           <ImagePlus className="size-5" />
         </button>
@@ -300,6 +365,7 @@ export default function SonyCameraCapture({ open, onClose, userId, branchId, onF
                 </span>
               </div>
               <input
+                ref={(el) => { weightInputs.current[s.id] = el; }}
                 type="text"
                 inputMode="decimal"
                 placeholder="وزن (جم)"
