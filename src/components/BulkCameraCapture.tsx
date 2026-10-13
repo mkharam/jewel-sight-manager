@@ -43,6 +43,11 @@ import { saveCapturedPiece, updateCapturedPiece, deleteCapturedPiece, analyzeCap
 import { suspendWakeLock } from "@/lib/keepAwake";
 import { toast } from "sonner";
 
+const CAMERA_DEVICE_KEY = "bulkCamera.deviceId";
+const SONY_LABEL = /sony|zv-|ilce|alpha|imaging edge/i;
+const isMobile = typeof navigator !== "undefined" && (/iphone|ipad|ipod|android/i.test(navigator.userAgent)
+    || (navigator.userAgent.includes("Macintosh") && navigator.maxTouchPoints > 1));
+
 const BARCODE_SCAN_ENABLED = false;
 
 type SaveState = "saving" | "saved" | "error";
@@ -90,6 +95,19 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
   const nativeCameraRef = useRef<HTMLInputElement>(null);
   const [flash, setFlash] = useState(false);
   const [facing, setFacing] = useState<"environment" | "user">("environment");
+  // كاميرا خارجية (سوني موصولة بـType-C على الماك) — تُحفظ في المتصفح وتُختار تلقائياً.
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  const [deviceId, setDeviceId] = useState<string | null>(() => {
+    try { return localStorage.getItem(CAMERA_DEVICE_KEY); } catch { return null; }
+  });
+  const deviceIdRef = useRef(deviceId);
+  deviceIdRef.current = deviceId;
+  const videoConstraints = (f: "environment" | "user"): MediaTrackConstraints => {
+    const id = isMobile ? null : deviceIdRef.current;
+    return id
+      ? { deviceId: { exact: id }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+      : { facingMode: f, width: { ideal: 1920 }, height: { ideal: 1920 } };
+  };
   const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
   // العيار يُختار قبل التصوير بدل ترك الذكاء الاصطناعي يخمّنه من الصورة لاحقاً — أغلب
   // المخزون 18K فهو الافتراضي، ويبقى ظاهراً وقابلاً للتبديل طوال الجلسة (القطع عادة
@@ -157,10 +175,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
         const reusable = initialStream && initialStream.getVideoTracks().some((t) => t.readyState === "live");
         const stream = reusable
           ? initialStream!
-          : await navigator.mediaDevices.getUserMedia({
-              video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1920 } },
-              audio: false,
-            });
+          : await navigator.mediaDevices.getUserMedia({ video: videoConstraints(facing), audio: false });
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
         await attachStream(stream);
       } catch (e: any) {
@@ -184,12 +199,43 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
   // إعادة محاولة مباشرة من نقرة الزر — بلا أي تأخير أو useEffect وسيط، حتى تبقى داخل
   // نافذة "تفعيل المستخدم" التي يشترطها التطبيق المثبَّت على iOS. راجع تعليق
   // initialStream في تعريف الـProps أعلى الملف لتفاصيل الدليل.
+  const selectDevice = async (id: string) => {
+    setDeviceId(id);
+    deviceIdRef.current = id;
+    try { localStorage.setItem(CAMERA_DEVICE_KEY, id); } catch { /* تجاهل */ }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints(facing), audio: false });
+      await attachStream(stream);
+    } catch (e) {
+      setError((e as Error)?.name === "NotAllowedError" ? "تم رفض إذن الكاميرا — فعّله من إعدادات المتصفح" : "تعذّر فتح الكاميرا المختارة — تأكد من توصيل الكاميرا ووضع USB Streaming");
+    }
+  };
+
+  // بعد منح الإذن تظهر أسماء الكاميرات — نختار سوني تلقائياً إن وُصلت ولم يُحفظ اختيار.
+  // نُحدّث القائمة أيضاً عند توصيل/فصل الكابل.
+  useEffect(() => {
+    if (!open || !ready || isMobile) return;
+    const refresh = async () => {
+      const list = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput" && d.deviceId);
+      setCameras(list);
+      const saved = deviceIdRef.current;
+      if (saved && list.some((d) => d.deviceId === saved)) {
+        const current = streamRef.current?.getVideoTracks()[0]?.getSettings().deviceId;
+        if (current !== saved) void selectDevice(saved);
+        return;
+      }
+      const sony = list.find((d) => SONY_LABEL.test(d.label));
+      if (sony) void selectDevice(sony.deviceId);
+    };
+    void refresh();
+    navigator.mediaDevices.addEventListener("devicechange", refresh);
+    return () => navigator.mediaDevices.removeEventListener("devicechange", refresh);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, ready]);
+
   const retryCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1920 } },
-        audio: false,
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints(facing), audio: false });
       await attachStream(stream);
     } catch (e: any) {
       setError(e?.name === "NotAllowedError" ? "تم رفض إذن الكاميرا — فعّله من إعدادات المتصفح" : "تعذّر فتح الكاميرا");
@@ -219,6 +265,12 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
   // تبديل أمامية/خلفية — طلب مباشر من نقرة الزر لنفس سبب retryCamera، بدل الاعتماد على
   // useEffect يتفاعل مع تغيّر facing (كان هذا هو المسار غير المدعوم على iOS المثبَّت).
   const switchCamera = async () => {
+    // على الماك/الكمبيوتر لا معنى لأمامية/خلفية — نتنقّل بين الكاميرات المتصلة
+    // (المدمجة، سوني عبر Type-C…) ونحفظ الاختيار.
+    if (!isMobile && cameras.length > 1) {
+      const i = cameras.findIndex((c) => c.deviceId === deviceId);
+      return selectDevice(cameras[(i + 1) % cameras.length].deviceId);
+    }
     const next = facing === "environment" ? "user" : "environment";
     setFacing(next);
     try {
@@ -460,6 +512,19 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
               <button onClick={retryCamera} className="p-1" aria-label="إعادة تشغيل الكاميرا" title="إعادة تشغيل الكاميرا">
                 <RotateCcw className="size-5" />
               </button>
+              {!isMobile && cameras.length > 1 && (
+                <select
+                  value={deviceId ?? ""}
+                  onChange={(e) => void selectDevice(e.target.value)}
+                  className="max-w-32 truncate rounded bg-white/10 border border-white/25 px-1.5 py-1 text-xs text-white"
+                  aria-label="اختيار الكاميرا"
+                >
+                  {!deviceId && <option value="">الكاميرا الافتراضية</option>}
+                  {cameras.map((c, i) => (
+                    <option key={c.deviceId} value={c.deviceId} className="text-black">{c.label || `كاميرا ${i + 1}`}</option>
+                  ))}
+                </select>
+              )}
               <button onClick={switchCamera} className="p-1" aria-label="تبديل الكاميرا" title="تبديل الكاميرا">
                 <SwitchCamera className="size-5" />
               </button>
