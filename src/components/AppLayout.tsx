@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, type LucideIcon } from "lucide-react";
+import { Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -45,6 +45,7 @@ function buildNav(isAdmin: boolean, isManager: boolean): NavSection[] {
         { to: "/reservations", label: "الحجوزات", icon: BookmarkCheck },
         { to: "/customers", label: "العملاء", icon: Users },
         { to: "/weights", label: "قطع بلا وزن", icon: Scale, badgeKey: "weights" },
+        { to: "/leaderboard", label: "لوحة المتصدرين", icon: Trophy },
       ],
     },
   ];
@@ -68,6 +69,7 @@ function buildNav(isAdmin: boolean, isManager: boolean): NavSection[] {
         { to: "/daily-summary", label: "الملخّص اليومي", icon: CalendarDays },
         { to: "/reports", label: "التقارير", icon: BarChart3 },
         { to: "/sales", label: "المبيعات", icon: Receipt },
+        { to: "/pos-sales", label: "مبيعات أمارسوفت", icon: Receipt },
         { to: "/stock-take", label: "الجرد", icon: ClipboardCheck },
         { to: "/admin/products", label: "إدارة القطع", icon: ListChecks },
         { to: "/staff", label: "الموظفون", icon: Users },
