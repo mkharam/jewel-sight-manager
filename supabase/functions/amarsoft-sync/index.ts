@@ -30,9 +30,13 @@ Deno.serve(async (req) => {
   } catch {
     return json(400, { error: "invalid json" });
   }
-  if (!Array.isArray(payload.invoices)) return json(400, { error: "invoices must be an array" });
+  // kind "master" = one branch's stock + customers; anything else = a sales batch.
+  const master = payload.kind === "master";
+  if (master ? !Array.isArray(payload.stock) : !Array.isArray(payload.invoices)) {
+    return json(400, { error: master ? "stock must be an array" : "invoices must be an array" });
+  }
 
-  const { data, error } = await supabase.rpc("amarsoft_ingest", { p: payload });
+  const { data, error } = await supabase.rpc(master ? "amarsoft_ingest_master" : "amarsoft_ingest", { p: payload });
   if (error) return json(500, { error: error.message });
 
   await supabase.from("amarsoft_sync_keys").update({ last_used_at: new Date().toISOString() }).eq("key_hash", hash);

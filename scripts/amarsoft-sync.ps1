@@ -184,6 +184,95 @@ function Read-Branch($branch, [string]$fromKey) {
     @{ salesmen = @($salesmen.Values); invoices = $invoices.ToArray() }
 }
 
+function To-Date([string]$yyyymmdd) {
+    if ($yyyymmdd -match '^\d{8}$') { $yyyymmdd.Insert(6, '-').Insert(4, '-') } else { $null }
+}
+
+# Tagged-piece stock (stk4wd) and the customer list (guest) from the branch's current year folder.
+# $sinceKey limits stock to pieces received or sold since then; '' sends every piece.
+function Read-Master($branch, [string]$sinceKey) {
+    $year = Get-ChildItem $branch.FullName -Directory | Where-Object Name -match '^\d{4}$' | Sort-Object Name | Select-Object -Last 1
+    $types = @{}; $suppliers = @{}
+    $typeFile = Join-Path $year.FullName 'mst_type.dbf'
+    if (Test-Path $typeFile) { foreach ($t in Read-Dbf $typeFile @('TYPE', 'DESC')) { $types[$t.TYPE] = ($t.DESC -replace '\s+', ' ').Trim() } }
+    $accFile = Join-Path $year.FullName 'act4w.DBF'
+    if (Test-Path $accFile) { foreach ($a in Read-Dbf $accFile @('ACCODE', 'ACCDESC')) { $suppliers[$a.ACCODE] = $a.ACCDESC } }
+
+    $stock = New-Object System.Collections.Generic.List[object]
+    $stkFile = Join-Path $year.FullName 'stk4wd.dbf'
+    if (Test-Path $stkFile) {
+        foreach ($s in Read-Dbf $stkFile @('ITEMCODE', 'ITEMSUB', 'CARAT', 'TYPE', 'SUPPCODE', 'M_LAST', 'SALPR1', 'LASTPDATE',
+                                           'LASTSDATE', 'GRTINQTY', 'PUTINQTY', 'GRCLSQTY', 'PUCLSQTY', 'M_TINVAL', 'SPURITY')) {
+            if ($s.ITEMSUB -notmatch '^\d{6,}$') { continue }   # only labelled pieces, not bulk gold
+            if ($sinceKey -and $s.LASTPDATE -lt $sinceKey -and $s.LASTSDATE -lt $sinceKey) { continue }
+            $grams = if ($s.GRCLSQTY) { [decimal]$s.GRCLSQTY } else { 0 }
+            $stock.Add(@{
+                tag              = $s.ITEMSUB
+                item_code        = $s.ITEMCODE
+                type_code        = $s.TYPE
+                type_name        = $types[$s.TYPE]
+                karat            = $s.CARAT
+                purity           = To-Num $s.SPURITY
+                grams_in         = To-Num $s.GRTINQTY
+                pure_grams_in    = To-Num $s.PUTINQTY
+                grams            = [math]::Max([decimal]0, $grams)
+                pure_grams       = if ($grams -gt 0) { To-Num $s.PUCLSQTY } else { 0 }
+                in_stock         = ($grams -gt 0)
+                making_cost_rate = To-Num $s.M_LAST
+                making_sale_rate = To-Num $s.SALPR1
+                cost_dirhams     = To-Dirhams $s.M_TINVAL
+                supplier_code    = $s.SUPPCODE
+                supplier_name    = $suppliers[$s.SUPPCODE]
+                received_on      = To-Date $s.LASTPDATE
+                sold_on          = To-Date $s.LASTSDATE
+            })
+        }
+    }
+
+    $customers = New-Object System.Collections.Generic.List[object]
+    $guestFile = Join-Path $year.FullName 'guest.DBF'
+    if (Test-Path $guestFile) {
+        foreach ($g in Read-Dbf $guestFile @('GUSCODE', 'GUSDESCP', 'PHONENO', 'TEL1', 'TEL2', 'CITY', 'AREA', 'ADDR1', 'DOB',
+                                             'GENDER', 'OPENDATE', 'L_SALNO', 'L_SALDATE', 'L_SALVAL', 'T_SALVAL', 'EIDNO', 'NATION')) {
+            if (-not $g.GUSCODE) { continue }
+            $phone = @($g.PHONENO, $g.TEL1, $g.TEL2) | Where-Object { $_ } | Select-Object -First 1
+            $customers.Add(@{
+                code  = $g.GUSCODE
+                name  = ($g.GUSDESCP -replace '\s+', ' ')
+                phone = $phone
+                data  = @{
+                    phones          = @(@($g.PHONENO, $g.TEL1, $g.TEL2) | Where-Object { $_ } | Select-Object -Unique)
+                    city            = $g.CITY
+                    area            = $g.AREA
+                    address         = $g.ADDR1
+                    dob             = To-Date $g.DOB
+                    gender          = $g.GENDER
+                    id_no           = $g.EIDNO
+                    nation          = $g.NATION
+                    opened          = To-Date $g.OPENDATE
+                    last_sale_no    = $g.L_SALNO
+                    last_sale_on    = To-Date $g.L_SALDATE
+                    last_sale_dirhams  = To-Dirhams $g.L_SALVAL
+                    total_sales_dirhams = To-Dirhams $g.T_SALVAL
+                }
+            })
+        }
+    }
+    @{ stock = $stock.ToArray(); customers = $customers.ToArray() }
+}
+
+function Send([hashtable]$payload, [string]$name) {
+    $json = ConvertTo-Json -InputObject $payload -Depth 6 -Compress
+    if ($DryRun) {
+        $out = Join-Path $Home_ "payload-$name.json"
+        [IO.File]::WriteAllText($out, $json, [Text.Encoding]::UTF8)
+        return @{ dry_run = $out }
+    }
+    Invoke-RestMethod -Uri $Endpoint -Method Post -TimeoutSec 120 `
+        -Headers @{ 'x-sync-key' = $key } -ContentType 'application/json; charset=utf-8' `
+        -Body ([Text.Encoding]::UTF8.GetBytes($json))
+}
+
 # Only one run at a time (a slow full backfill must not overlap the 5-minute task).
 $mutex = New-Object Threading.Mutex($false, 'Global\AmarsoftSalesSync')
 if (-not $mutex.WaitOne(0)) { Log 'Previous run still going; skipping.'; return }
@@ -194,30 +283,47 @@ try {
     $from = if ($Full) { [datetime]'2000-01-01' } else { (Get-Date).Date.AddDays(-$Days) }
     $fromKey = $from.ToString('yyyyMMdd')
 
+    # Full stock list once an hour (catches weight edits and removed tags); otherwise only pieces
+    # received or sold in the last 3 days.
+    $stateFile = Join-Path $Home_ 'last-full-stock.txt'
+    $lastFull = if (Test-Path $stateFile) { [datetime](Get-Content $stateFile -Raw).Trim() } else { [datetime]::MinValue }
+    $fullStock = $Full -or ((Get-Date) - $lastFull).TotalMinutes -ge 60
+    $sinceKey = if ($fullStock) { '' } else { (Get-Date).Date.AddDays(-3).ToString('yyyyMMdd') }
+    $stockOk = $true
+
     foreach ($branch in Get-ChildItem $Root -Directory | Where-Object Name -match '^\d{2}$' | Sort-Object Name) {
         try {
             $t = [Diagnostics.Stopwatch]::StartNew()
             $data = Read-Branch $branch $fromKey
-            $payload = @{
+            $res = Send @{
                 window_from      = $from.ToString('yyyy-MM-dd')
                 branches_scanned = @($branch.Name)
                 salesmen         = $data.salesmen
                 invoices         = $data.invoices
+            } $branch.Name
+            if ($DryRun) { Log "Branch $($branch.Name): $($data.invoices.Count) invoices, $($data.salesmen.Count) salesmen (dry run -> $($res.dry_run))" }
+            else {
+                Log ("Branch {0}: sent {1}, changed {2}, marked deleted {3}, salesmen changed {4} ({5:n1}s)" -f `
+                    $branch.Name, $res.invoices, $res.upserted, $res.marked_deleted, $res.salesmen, $t.Elapsed.TotalSeconds)
             }
-            $json = ConvertTo-Json -InputObject $payload -Depth 6 -Compress
-            if ($DryRun) {
-                $out = Join-Path $Home_ "payload-$($branch.Name).json"
-                [IO.File]::WriteAllText($out, $json, [Text.Encoding]::UTF8)
-                Log "Branch $($branch.Name): $($data.invoices.Count) invoices, $($data.salesmen.Count) salesmen (dry run -> $out)"
-                continue
-            }
-            $res = Invoke-RestMethod -Uri $Endpoint -Method Post -TimeoutSec 120 `
-                -Headers @{ 'x-sync-key' = $key } -ContentType 'application/json; charset=utf-8' `
-                -Body ([Text.Encoding]::UTF8.GetBytes($json))
-            Log ("Branch {0}: sent {1}, changed {2}, marked deleted {3}, salesmen changed {4} ({5:n1}s)" -f `
-                $branch.Name, $res.invoices, $res.upserted, $res.marked_deleted, $res.salesmen, $t.Elapsed.TotalSeconds)
         } catch {
             Log "Branch $($branch.Name): FAILED - $($_.Exception.Message)"
         }
+
+        try {
+            $t = [Diagnostics.Stopwatch]::StartNew()
+            $master = Read-Master $branch $sinceKey
+            $res = Send @{ kind = 'master'; branch = $branch.Name; full = $fullStock; stock = $master.stock; customers = $master.customers } "$($branch.Name)-master"
+            if ($DryRun) { Log "Branch $($branch.Name): $($master.stock.Count) pieces, $($master.customers.Count) customers (dry run -> $($res.dry_run))" }
+            else {
+                Log ("Branch {0}: stock sent {1} ({2}), changed {3}; customers {4}, changed {5}, new {6}, matched {7} ({8:n1}s)" -f `
+                    $branch.Name, $master.stock.Count, $(if ($fullStock) { 'full' } else { 'recent' }), $res.stock_changed,
+                    $master.customers.Count, $res.customers_changed, $res.customers_created, $res.customers_matched, $t.Elapsed.TotalSeconds)
+            }
+        } catch {
+            $stockOk = $false
+            Log "Branch $($branch.Name) stock/customers: FAILED - $($_.Exception.Message)"
+        }
     }
+    if ($fullStock -and $stockOk -and -not $DryRun) { Set-Content -Path $stateFile -Value (Get-Date).ToString('o') }
 } finally { $mutex.ReleaseMutex() }
