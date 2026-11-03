@@ -208,7 +208,9 @@ function PieceDetails({ p, branchName, isAdmin }: { p: Piece; branchName: string
     enabled: !p.in_stock && isAdmin,
     queryFn: async () => {
       const { data, error } = await sb.from("amarsoft_invoices").select("invoice_no, invoice_date, net_dirhams, details")
-        .eq("branch_code", p.branch_code).eq("is_deleted", false).contains("items", [{ tag: p.tag }])
+        .eq("branch_code", p.branch_code).eq("is_deleted", false)
+        // contains() sends arrays as a Postgres array literal; items is jsonb, so send JSON.
+        .filter("items", "cs", JSON.stringify([{ tag: p.tag }]))
         .order("sold_at", { ascending: false }).limit(1).maybeSingle();
       if (error) throw error;
       return data as { invoice_no: string; invoice_date: string; net_dirhams: number; details: { customer?: string } | null } | null;
