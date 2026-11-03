@@ -11,16 +11,43 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { sb, periodDays, daysToRange, formatLD, formatTripoli, tripoliToday, type Period } from "@/lib/amarsoft";
 
-type Item = { code?: string; desc?: string; pcs?: number; grams?: number; amount_dirhams?: number };
+type Item = {
+  code?: string; tag?: string; desc?: string; pcs?: number; grams?: number; pure_grams?: number; purity?: number;
+  gold_rate?: number; making_rate?: number; rate_per_gram?: number; metal_dirhams?: number; making_dirhams?: number;
+  discount_dirhams?: number; vat_percent?: number; vat_dirhams?: number; sman?: string; amount_dirhams?: number;
+};
+type Details = {
+  customer?: string | null; phone?: string | null; guest_code?: string | null; id_no?: string | null; ref_no?: string | null;
+  gold_rate?: number; silver_rate?: number; grams?: number; pure_grams?: number; metal_dirhams?: number;
+  making_dirhams?: number; gross_dirhams?: number; discount_dirhams?: number; vat_dirhams?: number;
+  payments?: { account: string; amount_dirhams: number }[]; printed?: boolean; entered?: string | null;
+};
 type Invoice = {
   id: number; branch_code: string; kind: string; invoice_no: string; invoice_date: string;
   invoice_time: string | null; sold_at: string | null; sman: string | null; net_dirhams: number; items: Item[] | null;
+  details: Details | null;
 };
 type Salesman = { branch_code: string; sman: string; name: string | null; is_active: boolean; profile_id: string | null };
 
 const PAGE = 50;
 const NONE = "__none__";
 const ALL = "all";
+// رموز حسابات الدفع في أمارسوفت؛ أي رمز غير معروف يظهر كما هو.
+const PAY_LABELS: Record<string, string> = { CASH: "نقداً", BANK: "مصرف", CARD: "بطاقة", CRE: "آجل" };
+const KARATS: Record<string, string> = { "0.999": "24", "0.875": "21", "0.75": "18", "0.585": "14" };
+
+function karat(purity?: number) {
+  if (!purity) return null;
+  return KARATS[String(Number(purity))] ?? `${Math.round(purity * 1000)}`;
+}
+
+function grams(v?: number) {
+  return `${Number(v ?? 0).toLocaleString("en-US", { maximumFractionDigits: 2 })} جم`;
+}
+
+function rate(v?: number) {
+  return Number(v ?? 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
 const CHIPS: { key: Period; label: string }[] = [
   { key: "today", label: "اليوم" }, { key: "yesterday", label: "أمس" },
   { key: "week", label: "هذا الأسبوع" }, { key: "month", label: "هذا الشهر" },
@@ -57,8 +84,21 @@ export default function PosSales() {
       return (data ?? []) as Salesman[];
     },
   });
-  const smanName = (bc: string, s: string | null) =>
-    s ? salesmen.data?.find((x) => x.branch_code === bc && x.sman === s)?.name ?? s : "—";
+  const profiles = useQuery({
+    queryKey: ["profiles-min"],
+    queryFn: async () => {
+      const { data, error } = await sb.from("profiles").select("id, full_name").order("full_name");
+      if (error) throw error;
+      return (data ?? []) as { id: string; full_name: string }[];
+    },
+  });
+  // البائع المربوط بموظف في التطبيق يظهر باسمه في التطبيق، وإلا باسمه في أمارسوفت.
+  const smanName = (bc: string, s: string | null) => {
+    if (!s) return "—";
+    const m = salesmen.data?.find((x) => x.branch_code === bc && x.sman === s);
+    const linked = m?.profile_id ? profiles.data?.find((p) => p.id === m.profile_id)?.full_name : null;
+    return linked || m?.name || s;
+  };
 
   const lastSync = useQuery({
     queryKey: ["amarsoft-last-sync"],
@@ -77,7 +117,13 @@ export default function PosSales() {
     if (branch !== ALL) q = q.eq("branch_code", branch);
     if (sman === NONE) q = q.is("sman", null);
     else if (sman !== ALL) { const [bc, s] = sman.split("|"); q = q.eq("branch_code", bc).eq("sman", s); }
-    if (search.trim()) q = q.ilike("invoice_no", `%${search.trim()}%`);
+    // بحث برقم الفاتورة أو اسم الزبون أو هاتفه، أو برقم القطعة (التاغ) مطابقاً تماماً.
+    const term = search.trim().replace(/[,()"]/g, " ").trim();
+    if (term) {
+      const or = [`invoice_no.ilike.%${term}%`, `details->>customer.ilike.%${term}%`, `details->>phone.ilike.%${term}%`];
+      if (/^\d{6,}$/.test(term)) or.push(`items.cs.[{"tag":"${term}"}]`);
+      q = q.or(or.join(","));
+    }
     return q;
   };
   const filterKey = [from, to, branch, sman, search.trim()];
@@ -86,7 +132,7 @@ export default function PosSales() {
     queryKey: ["amarsoft-invoices", ...filterKey],
     initialPageParam: 0,
     queryFn: async ({ pageParam }) => {
-      const { data, error } = await applyFilters(sb.from("amarsoft_invoices").select("id, branch_code, kind, invoice_no, invoice_date, invoice_time, sold_at, sman, net_dirhams, items"))
+      const { data, error } = await applyFilters(sb.from("amarsoft_invoices").select("id, branch_code, kind, invoice_no, invoice_date, invoice_time, sold_at, sman, net_dirhams, items, details"))
         .order("sold_at", { ascending: false }).range(pageParam, pageParam + PAGE - 1);
       if (error) throw error;
       return (data ?? []) as Invoice[];
@@ -157,7 +203,7 @@ export default function PosSales() {
             ))}
           </SelectContent>
         </Select>
-        <Input className="col-span-2" placeholder="بحث برقم الفاتورة" value={search} onChange={(e) => setSearch(e.target.value)} inputMode="numeric" />
+        <Input className="col-span-2" placeholder="بحث: رقم الفاتورة، رقم القطعة، اسم الزبون أو هاتفه" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -186,6 +232,10 @@ export default function PosSales() {
                   <div className="text-xs text-muted-foreground truncate">
                     {branchName(r.branch_code)} · {r.invoice_date} {r.invoice_time ?? ""} · {smanName(r.branch_code, r.sman)}
                   </div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {[r.details?.customer, grams(r.details?.grams ?? r.items?.reduce((s, it) => s + Number(it.grams ?? 0), 0)),
+                      r.items?.map((it) => it.tag).filter(Boolean).join("، ")].filter(Boolean).join(" · ")}
+                  </div>
                 </div>
                 <div className={`font-bold whitespace-nowrap ${r.net_dirhams < 0 ? "text-destructive" : "text-primary"}`}>{formatLD(r.net_dirhams)}</div>
               </Card>
@@ -202,31 +252,109 @@ export default function PosSales() {
       <Sheet open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
         <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto" dir="rtl">
           {open && (
-            <>
-              <SheetHeader><SheetTitle>فاتورة #{open.invoice_no} — {branchName(open.branch_code)}</SheetTitle></SheetHeader>
-              <p className="text-xs text-muted-foreground mt-1">{open.invoice_date} {open.invoice_time ?? ""} · البائع: {smanName(open.branch_code, open.sman)}</p>
-              <div className="mt-3 space-y-2">
-                {(open.items ?? []).map((it, i) => (
-                  <div key={i} className="rounded-lg border p-2 text-sm flex justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="font-medium truncate">{it.desc || "—"}</div>
-                      <div className="text-xs text-muted-foreground">كود {it.code ?? "—"} · {it.pcs ?? 0} قطعة · {it.grams ?? 0} جم</div>
-                    </div>
-                    <div className={`font-bold whitespace-nowrap ${Number(it.amount_dirhams) < 0 ? "text-destructive" : ""}`}>{formatLD(it.amount_dirhams)}</div>
-                  </div>
-                ))}
-                <div className="flex justify-between font-bold border-t pt-2">
-                  <span>الصافي</span>
-                  <span className={open.net_dirhams < 0 ? "text-destructive" : "text-primary"}>{formatLD(open.net_dirhams)}</span>
-                </div>
-              </div>
-            </>
+            <InvoiceDetails
+              inv={open}
+              branchName={branchName(open.branch_code)}
+              salesman={smanName(open.branch_code, open.sman)}
+              onSalesman={open.sman ? () => { setBranch(ALL); setSman(`${open.branch_code}|${open.sman}`); setOpen(null); } : undefined}
+            />
           )}
         </SheetContent>
       </Sheet>
 
       <SalesmenDialog open={smenOpen} onOpenChange={setSmenOpen} salesmen={salesmen.data ?? []} branchName={branchName} />
     </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  if (value === null || value === undefined || value === "") return null;
+  return (
+    <div className="flex justify-between gap-3 py-1 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium text-left">{value}</span>
+    </div>
+  );
+}
+
+function InvoiceDetails({ inv, branchName, salesman, onSalesman }: {
+  inv: Invoice; branchName: string; salesman: string; onSalesman?: () => void;
+}) {
+  const d = inv.details ?? {};
+  const items = inv.items ?? [];
+  return (
+    <>
+      <SheetHeader>
+        <SheetTitle className="flex items-center gap-2">
+          فاتورة #{inv.invoice_no} — {branchName}
+          {inv.kind === "return" && <Badge variant="destructive">مرتجع</Badge>}
+        </SheetTitle>
+      </SheetHeader>
+
+      <div className="mt-3 rounded-lg border p-3 divide-y">
+        <Row label="التاريخ والوقت" value={`${inv.invoice_date} ${inv.invoice_time ?? ""}`} />
+        <Row label="البائع" value={onSalesman
+          ? <button className="text-primary underline underline-offset-2" onClick={onSalesman}>{salesman} (كل فواتيره)</button>
+          : salesman} />
+        <Row label="الزبون" value={d.customer} />
+        <Row label="الهاتف" value={d.phone ? <a className="text-primary" href={`tel:${d.phone}`} dir="ltr">{d.phone}</a> : null} />
+        <Row label="رقم الهوية" value={d.id_no} />
+        <Row label="الرقم المرجعي" value={d.ref_no} />
+        <Row label="سعر الذهب" value={d.gold_rate ? `${rate(d.gold_rate)} د.ل/جم` : null} />
+      </div>
+
+      <h3 className="mt-4 mb-2 text-sm font-bold">القطع ({items.length})</h3>
+      <div className="space-y-2">
+        {items.map((it, i) => (
+          <div key={i} className="rounded-lg border p-3 text-sm">
+            <div className="flex justify-between gap-2">
+              <div className="min-w-0">
+                <div className="font-bold">{it.desc || "—"}</div>
+                <div className="text-xs text-muted-foreground" dir="ltr" style={{ textAlign: "right" }}>
+                  {it.code}{it.tag ? ` · ${it.tag}` : ""}
+                </div>
+              </div>
+              <div className={`font-bold whitespace-nowrap ${Number(it.amount_dirhams) < 0 ? "text-destructive" : "text-primary"}`}>
+                {formatLD(it.amount_dirhams)}
+              </div>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-x-4 text-xs">
+              <Row label="العيار" value={karat(it.purity)} />
+              <Row label="العدد" value={it.pcs} />
+              <Row label="الوزن القائم" value={grams(it.grams)} />
+              <Row label="الوزن الصافي" value={it.pure_grams ? grams(it.pure_grams) : null} />
+              <Row label="سعر الغرام" value={it.rate_per_gram ? rate(it.rate_per_gram) : null} />
+              <Row label="سعر الذهب" value={it.gold_rate ? rate(it.gold_rate) : null} />
+              <Row label="المصنعية/جم" value={it.making_rate ? rate(it.making_rate) : null} />
+              <Row label="قيمة المصنعية" value={it.making_dirhams ? formatLD(it.making_dirhams) : null} />
+              <Row label="قيمة الذهب" value={it.metal_dirhams ? formatLD(it.metal_dirhams) : null} />
+              <Row label="الخصم" value={it.discount_dirhams ? formatLD(it.discount_dirhams) : null} />
+              <Row label="الضريبة" value={it.vat_dirhams ? `${formatLD(it.vat_dirhams)} (${it.vat_percent}%)` : null} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 rounded-lg border p-3 divide-y">
+        <Row label="الوزن القائم الإجمالي" value={d.grams ? grams(d.grams) : null} />
+        <Row label="الوزن الصافي الإجمالي" value={d.pure_grams ? grams(d.pure_grams) : null} />
+        <Row label="قيمة الذهب" value={d.metal_dirhams ? formatLD(d.metal_dirhams) : null} />
+        <Row label="المصنعية" value={d.making_dirhams ? formatLD(d.making_dirhams) : null} />
+        <Row label="الإجمالي" value={d.gross_dirhams ? formatLD(d.gross_dirhams) : null} />
+        <Row label="الخصم" value={d.discount_dirhams ? formatLD(d.discount_dirhams) : null} />
+        <Row label="الضريبة" value={d.vat_dirhams ? formatLD(d.vat_dirhams) : null} />
+        {(d.payments ?? []).map((p, i) => (
+          <Row key={i} label={`الدفع: ${PAY_LABELS[p.account] ?? p.account}`} value={formatLD(p.amount_dirhams)} />
+        ))}
+        <div className="flex justify-between font-bold pt-2 text-base">
+          <span>الصافي</span>
+          <span className={inv.net_dirhams < 0 ? "text-destructive" : "text-primary"}>{formatLD(inv.net_dirhams)}</span>
+        </div>
+      </div>
+      <p className="mt-2 text-[11px] text-muted-foreground">
+        أُدخلت في أمارسوفت: {d.entered ?? "—"}{d.printed ? " · طُبعت" : ""}
+      </p>
+    </>
   );
 }
 

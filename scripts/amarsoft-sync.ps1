@@ -68,6 +68,19 @@ function To-Dirhams([string]$amount) {
     [long][math]::Round([math]::Abs([decimal]$amount) * 1000)
 }
 
+function To-Num([string]$value) {
+    if (-not $value) { return 0 }
+    [math]::Abs([decimal]$value)
+}
+
+# Customer names live in the guest list (ملف الضيوف); invoices only carry GUSCODE.
+function Read-Guests([string]$yearPath) {
+    $guests = @{}
+    $path = Join-Path $yearPath 'guest.DBF'
+    if (Test-Path $path) { foreach ($g in Read-Dbf $path @('GUSCODE', 'GUSDESCP', 'TEL1')) { $guests[$g.GUSCODE] = $g } }
+    $guests
+}
+
 function Read-Branch($branch, [string]$fromKey) {
     $salesmen = @{}
     $invoices = New-Object System.Collections.Generic.List[object]
@@ -84,30 +97,74 @@ function Read-Branch($branch, [string]$fromKey) {
             $headPath = Join-Path $year.FullName $src.Head
             if (-not (Test-Path $headPath)) { continue }
 
+            $guests = Read-Guests $year.FullName
             $lines = @{}
             $detPath = Join-Path $year.FullName $src.Det
             if (Test-Path $detPath) {
-                foreach ($d in Read-Dbf $detPath @('TRNNO', 'TRNDATE', 'ITEMCODE', 'ITEMDESC', 'PCS', 'GROSSQTY', 'AMOUNT', 'SMAN')) {
+                foreach ($d in Read-Dbf $detPath @('TRNNO', 'TRNDATE', 'ITEMCODE', 'ITEMSUB', 'ITEMDESC', 'PCS', 'GROSSQTY', 'PUREQTY',
+                                                   'PURITY', 'MD_RATEFC', 'MD_AMT', 'MTL_RATEFC', 'MTL_AMT', 'RATEFC', 'AMOUNT',
+                                                   'DISCAMT', 'VATPER', 'VATAMT', 'SMAN')) {
                     if ($d.TRNDATE -lt $fromKey) { continue }
                     if (-not $lines.ContainsKey($d.TRNNO)) { $lines[$d.TRNNO] = New-Object System.Collections.Generic.List[object] }
                     $lines[$d.TRNNO].Add($d)
                 }
             }
 
-            foreach ($r in Read-Dbf $headPath @('TRNNO', 'TRNDATE', 'SYS_TIME', 'SMAN', 'NETAMT', 'CURR')) {
+            $headCols = 'TRNNO', 'TRNDATE', 'SYS_DATE', 'SYS_TIME', 'SMAN', 'NETAMT', 'CURR', 'CUSTOMER', 'PHONENO', 'TEL1',
+                        'GUSCODE', 'EIDNO', 'REFNO', 'REF', 'RATE', 'SRATE', 'GROSSQTY', 'PUREQTY', 'MD_AMT', 'MTL_AMT',
+                        'GROSSAMT', 'DISC', 'VATAMT', 'LPRINTED',
+                        'PARTYACC', 'PAIDAMT', 'PARTYACC2', 'PAIDAMT2', 'PARTYCODE3', 'PAIDAMT3',
+                        'PARTYCODE4', 'PAIDAMT4', 'PARTYCODE5', 'PAIDAMT5'
+            foreach ($r in Read-Dbf $headPath $headCols) {
                 if (-not $r.TRNDATE -or $r.TRNDATE -lt $fromKey) { continue }
                 $det = if ($lines.ContainsKey($r.TRNNO)) { $lines[$r.TRNNO] } else { @() }
                 $sman = $r.SMAN
                 if (-not $sman) { $sman = ($det | Where-Object { $_.SMAN } | Select-Object -First 1).SMAN }
                 $items = @($det | ForEach-Object {
                     @{
-                        code           = $_.ITEMCODE
-                        desc           = $_.ITEMDESC -replace '\s+', ' '
-                        pcs            = if ($_.PCS) { [math]::Abs([decimal]$_.PCS) } else { 0 }
-                        grams          = if ($_.GROSSQTY) { [math]::Abs([decimal]$_.GROSSQTY) } else { 0 }
-                        amount_dirhams = $src.Sign * (To-Dirhams $_.AMOUNT)
+                        code            = $_.ITEMCODE
+                        tag             = $_.ITEMSUB
+                        desc            = $_.ITEMDESC -replace '\s+', ' '
+                        pcs             = To-Num $_.PCS
+                        grams           = To-Num $_.GROSSQTY
+                        pure_grams      = To-Num $_.PUREQTY
+                        purity          = To-Num $_.PURITY
+                        gold_rate       = To-Num $_.MTL_RATEFC
+                        making_rate     = To-Num $_.MD_RATEFC
+                        rate_per_gram   = To-Num $_.RATEFC
+                        metal_dirhams   = To-Dirhams $_.MTL_AMT
+                        making_dirhams  = To-Dirhams $_.MD_AMT
+                        discount_dirhams = To-Dirhams $_.DISCAMT
+                        vat_percent     = To-Num $_.VATPER
+                        vat_dirhams     = To-Dirhams $_.VATAMT
+                        sman            = $_.SMAN
+                        amount_dirhams  = $src.Sign * (To-Dirhams $_.AMOUNT)
                     }
                 })
+                $guest = if ($r.GUSCODE -and $guests.ContainsKey($r.GUSCODE)) { $guests[$r.GUSCODE] } else { $null }
+                $payments = @(@(@($r.PARTYACC, $r.PAIDAMT), @($r.PARTYACC2, $r.PAIDAMT2), @($r.PARTYCODE3, $r.PAIDAMT3),
+                                @($r.PARTYCODE4, $r.PAIDAMT4), @($r.PARTYCODE5, $r.PAIDAMT5)) |
+                    Where-Object { $_[0] -and (To-Dirhams $_[1]) -gt 0 } |
+                    ForEach-Object { @{ account = $_[0]; amount_dirhams = To-Dirhams $_[1] } })
+                $details = @{
+                    customer         = if ($r.CUSTOMER) { $r.CUSTOMER } elseif ($guest) { $guest.GUSDESCP } else { $null }
+                    phone            = if ($r.PHONENO) { $r.PHONENO } elseif ($r.TEL1) { $r.TEL1 } elseif ($guest) { $guest.TEL1 } else { $null }
+                    guest_code       = $r.GUSCODE
+                    id_no            = $r.EIDNO
+                    ref_no           = if ($r.REFNO) { $r.REFNO } else { $r.REF }
+                    gold_rate        = To-Num $r.RATE
+                    silver_rate      = To-Num $r.SRATE
+                    grams            = To-Num $r.GROSSQTY
+                    pure_grams       = To-Num $r.PUREQTY
+                    metal_dirhams    = To-Dirhams $r.MTL_AMT
+                    making_dirhams   = To-Dirhams $r.MD_AMT
+                    gross_dirhams    = To-Dirhams $r.GROSSAMT
+                    discount_dirhams = To-Dirhams $r.DISC
+                    vat_dirhams      = To-Dirhams $r.VATAMT
+                    payments         = $payments
+                    printed          = ($r.LPRINTED -eq 'T')
+                    entered          = if ($r.SYS_DATE) { $r.SYS_DATE.Insert(6, '-').Insert(4, '-') + ' ' + $r.SYS_TIME } else { $null }
+                }
                 $invoices.Add(@{
                     branch      = $branch.Name
                     year        = $year.Name
@@ -119,6 +176,7 @@ function Read-Branch($branch, [string]$fromKey) {
                     currency    = $r.CURR
                     net_dirhams = $src.Sign * (To-Dirhams $r.NETAMT)
                     items       = $items
+                    details     = $details
                 })
             }
         }
