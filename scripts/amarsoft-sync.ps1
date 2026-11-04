@@ -48,7 +48,7 @@ function Read-Dbf([string]$Path, [string[]]$Want) {
             $d = $br.ReadBytes(32)
             if ($d.Length -lt 32 -or $d[0] -eq 0x0D) { break }
             $name = [Text.Encoding]::ASCII.GetString($d, 0, 11).Trim([char]0)
-            if ($Want -contains $name) { $fields += [pscustomobject]@{ Name = $name; Offset = $offset; Len = $d[16] } }
+            if ($Want -contains $name) { $fields += [pscustomobject]@{ Name = $name; Offset = $offset; Len = $d[16]; Type = [char]$d[11] } }
             $offset += $d[16]
         }
         $fs.Position = $headLen
@@ -57,7 +57,16 @@ function Read-Dbf([string]$Path, [string[]]$Want) {
             if ($rec.Length -lt $recLen) { break }   # file grew/shrank while reading
             if ($rec[0] -eq 0x2A) { continue }       # deleted in Amarsoft
             $row = @{}
-            foreach ($f in $fields) { $row[$f.Name] = $arabic.GetString($rec, $f.Offset, $f.Len).Trim() }
+            foreach ($f in $fields) {
+                if ($f.Type -eq 'T') {
+                    # FoxPro datetime: Julian day number + milliseconds since midnight, 4 bytes each.
+                    $jd = [BitConverter]::ToInt32($rec, $f.Offset)
+                    $ms = [BitConverter]::ToInt32($rec, $f.Offset + 4)
+                    $row[$f.Name] = if ($jd -gt 0) { ([datetime]'1970-01-01').AddDays($jd - 2440588).AddMilliseconds($ms).ToString('yyyy-MM-ddTHH:mm:ss') } else { '' }
+                } else {
+                    $row[$f.Name] = $arabic.GetString($rec, $f.Offset, $f.Len).Trim()
+                }
+            }
             $row
         }
     } finally { $fs.Close() }
@@ -258,7 +267,27 @@ function Read-Master($branch, [string]$sinceKey) {
             })
         }
     }
-    @{ stock = $stock.ToArray(); customers = $customers.ToArray() }
+    # Invoice/document log: added, edited, printed, deleted, with time, user and computer (last 3 days).
+    $events = New-Object System.Collections.Generic.List[object]
+    $logFile = Join-Path $year.FullName 'mst_doclog.DBF'
+    $logSince = if ($Full) { '2000-01-01T00:00:00' } else { (Get-Date).AddDays(-3).ToString('yyyy-MM-ddTHH:mm:ss') }
+    if (Test-Path $logFile) {
+        foreach ($e in Read-Dbf $logFile @('TRNTYPE', 'TRNNO', 'TRNDATE', 'SYS_DATE', 'DOCSTATUS', 'FULLNAME', 'NETMACID', 'LOCALIP')) {
+            if (-not $e.SYS_DATE -or $e.SYS_DATE -lt $logSince -or -not $e.TRNNO) { continue }
+            $events.Add(@{
+                branch  = $branch.Name
+                type    = $e.TRNTYPE
+                no      = $e.TRNNO
+                date    = To-Date $e.TRNDATE
+                status  = $e.DOCSTATUS
+                at      = $e.SYS_DATE
+                user    = $e.FULLNAME
+                machine = $e.NETMACID
+                ip      = $e.LOCALIP
+            })
+        }
+    }
+    @{ stock = $stock.ToArray(); customers = $customers.ToArray(); doc_events = $events.ToArray() }
 }
 
 function Send([hashtable]$payload, [string]$name) {
@@ -313,12 +342,13 @@ try {
         try {
             $t = [Diagnostics.Stopwatch]::StartNew()
             $master = Read-Master $branch $sinceKey
-            $res = Send @{ kind = 'master'; branch = $branch.Name; full = $fullStock; stock = $master.stock; customers = $master.customers } "$($branch.Name)-master"
-            if ($DryRun) { Log "Branch $($branch.Name): $($master.stock.Count) pieces, $($master.customers.Count) customers (dry run -> $($res.dry_run))" }
+            $res = Send @{ kind = 'master'; branch = $branch.Name; full = $fullStock; stock = $master.stock; customers = $master.customers; doc_events = $master.doc_events } "$($branch.Name)-master"
+            if ($DryRun) { Log "Branch $($branch.Name): $($master.stock.Count) pieces, $($master.customers.Count) customers, $($master.doc_events.Count) log events (dry run -> $($res.dry_run))" }
             else {
-                Log ("Branch {0}: stock sent {1} ({2}), changed {3}; customers {4}, changed {5}, new {6}, matched {7} ({8:n1}s)" -f `
+                Log ("Branch {0}: stock sent {1} ({2}), changed {3}; customers {4}, changed {5}, new {6}, matched {7}; log new {8}, alerts {9}; app pieces updated {10} ({11:n1}s)" -f `
                     $branch.Name, $master.stock.Count, $(if ($fullStock) { 'full' } else { 'recent' }), $res.stock_changed,
-                    $master.customers.Count, $res.customers_changed, $res.customers_created, $res.customers_matched, $t.Elapsed.TotalSeconds)
+                    $master.customers.Count, $res.customers_changed, $res.customers_created, $res.customers_matched,
+                    $res.doc_events_new, $res.alerts, $res.products_matched, $t.Elapsed.TotalSeconds)
             }
         } catch {
             $stockOk = $false

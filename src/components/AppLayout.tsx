@@ -58,7 +58,8 @@ function buildNav(isAdmin: boolean, isManager: boolean): NavSection[] {
         { to: "/closing", label: "إقفال اليوم", icon: Landmark },
         { to: "/admin/repairs", label: "الصيانة", icon: Wrench },
         { to: "/buybacks", label: "شراء الكسر", icon: Recycle },
-        { to: "/pos-stock", label: "مخزون أمارسوفت", icon: Boxes },
+        // كل صفحات أمارسوفت (مبيعات، أرباح، سجل، مخزون، جرد) خلف زر واحد بدل خمسة.
+        { to: "/amarsoft", label: "أمارسوفت", icon: Boxes },
       ],
     });
   }
@@ -70,7 +71,6 @@ function buildNav(isAdmin: boolean, isManager: boolean): NavSection[] {
         { to: "/daily-summary", label: "الملخّص اليومي", icon: CalendarDays },
         { to: "/reports", label: "التقارير", icon: BarChart3 },
         { to: "/sales", label: "المبيعات", icon: Receipt },
-        { to: "/pos-sales", label: "مبيعات أمارسوفت", icon: Receipt },
         { to: "/stock-take", label: "الجرد", icon: ClipboardCheck },
         { to: "/admin/products", label: "إدارة القطع", icon: ListChecks },
         { to: "/staff", label: "الموظفون", icon: Users },
@@ -378,7 +378,7 @@ export default function AppLayout() {
             <NavLink key={item.to} to={item.to} end={item.end}
               className={({ isActive }) => cn(
                 "min-h-[64px] py-2 flex flex-col items-center justify-center gap-1 font-semibold transition-colors relative select-none",
-                mobileBar.length >= 5 ? "text-[10px]" : "text-[11px]",
+                mobileBar.length >= 5 ? "text-[11px]" : "text-xs",
                 isActive ? "text-primary" : "text-muted-foreground active:bg-muted/40"
               )}>
               {({ isActive }) => (
@@ -398,7 +398,7 @@ export default function AppLayout() {
               <button
                 type="button"
                 aria-label="المزيد"
-                className="min-h-[64px] py-2 flex flex-col items-center justify-center gap-1 text-[11px] font-semibold text-muted-foreground active:bg-muted/40 select-none"
+                className="min-h-[64px] py-2 flex flex-col items-center justify-center gap-1 text-xs font-semibold text-muted-foreground active:bg-muted/40 select-none"
               >
                 <div className="relative flex items-center justify-center rounded-xl h-8 w-12">
                   <MoreHorizontal className="size-[22px]" />
@@ -414,19 +414,20 @@ export default function AppLayout() {
               <div className="mt-3 space-y-4">
                 {moreSections.map((sec) => (
                   <div key={sec.title}>
-                    <p className="mb-2 text-xs font-bold text-muted-foreground">{sec.title}</p>
-                    <div className="grid grid-cols-3 gap-2.5">
+                    <p className="mb-2 text-sm font-bold text-muted-foreground">{sec.title}</p>
+                    {/* عمودان بأزرار كبيرة ونص واضح — أسهل للمس والقراءة من ثلاثة أعمدة صغيرة. */}
+                    <div className="grid grid-cols-2 gap-3">
                       {sec.items.map((item) => (
                         <NavLink
                           key={item.to}
                           to={item.to}
                           onClick={() => setMoreOpen(false)}
                           className={({ isActive }) => cn(
-                            "relative flex flex-col items-center justify-center gap-2 rounded-xl border border-border p-3 min-h-[80px] text-xs font-semibold",
+                            "relative flex flex-col items-center justify-center gap-2 rounded-2xl border border-border p-3 min-h-[96px] text-base font-bold",
                             isActive ? "bg-secondary text-primary" : "text-foreground active:bg-muted/50"
                           )}
                         >
-                          <item.icon className="size-6" />
+                          <item.icon className="size-8 text-primary" />
                           <span className="text-center leading-tight">{item.label}</span>
                           <CountBadge count={countOf(item)} className="absolute top-1.5 left-1.5" />
                         </NavLink>

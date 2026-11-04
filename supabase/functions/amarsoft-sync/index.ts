@@ -39,10 +39,17 @@ Deno.serve(async (req) => {
   const { data, error } = await supabase.rpc(master ? "amarsoft_ingest_master" : "amarsoft_ingest", { p: payload });
   if (error) return json(500, { error: error.message });
 
-  // Pieces added in the app before Amarsoft had their tag: re-check now that stock changed.
+  // App pieces follow Amarsoft now that stock changed: pending matched, sold marked, weights filled.
   if (master) {
+    const out = data as Record<string, unknown>;
     const { data: rechecked, error: recheckErr } = await supabase.rpc("amarsoft_recheck_pending");
-    if (!recheckErr) (data as Record<string, unknown>).products_matched = rechecked;
+    if (!recheckErr) out.products_matched = rechecked;
+    // Invoice edit/delete log; alerts admins on deleted sales and sales edited after printing.
+    if (Array.isArray(payload.doc_events) && payload.doc_events.length) {
+      const { data: log, error: logErr } = await supabase.rpc("amarsoft_ingest_doc_events", { p: payload });
+      if (logErr) out.doc_events_error = logErr.message;
+      else Object.assign(out, log);
+    }
   }
 
   await supabase.from("amarsoft_sync_keys").update({ last_used_at: new Date().toISOString() }).eq("key_hash", hash);

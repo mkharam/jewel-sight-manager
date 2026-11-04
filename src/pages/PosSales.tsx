@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import SalesAnalytics from "@/components/amarsoft/SalesAnalytics";
+import DocLog from "@/components/amarsoft/DocLog";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Loader2, Receipt, Users } from "lucide-react";
 import { toast } from "sonner";
@@ -30,6 +32,11 @@ type Invoice = {
 };
 type Salesman = { branch_code: string; sman: string; name: string | null; is_active: boolean; profile_id: string | null };
 
+const TABS = [
+  { key: "invoices", label: "الفواتير" },
+  { key: "profit", label: "الأرباح" },
+  { key: "log", label: "السجل" },
+] as const;
 const PAGE = 50;
 const NONE = "__none__";
 const ALL = "all";
@@ -66,6 +73,9 @@ export default function PosSales() {
   const [branch, setBranch] = useState(ALL);
   const [sman, setSman] = useState(initialSman);
   const [search, setSearch] = useState(initialQ);
+  const [tab, setTab] = useState<"invoices" | "profit" | "log">(
+    params.get("tab") === "log" ? "log" : params.get("tab") === "profit" ? "profit" : "invoices",
+  );
   const [open, setOpen] = useState<Invoice | null>(null);
   const [smenOpen, setSmenOpen] = useState(false);
 
@@ -182,6 +192,13 @@ export default function PosSales() {
         <Button variant="outline" size="sm" onClick={() => setSmenOpen(true)}><Users className="size-4 ml-1" />البائعون</Button>
       </div>
 
+      <div className="grid grid-cols-3 gap-1.5">
+        {TABS.map((t) => (
+          <Button key={t.key} size="lg" variant={tab === t.key ? "default" : "outline"} onClick={() => setTab(t.key)} className="text-base">{t.label}</Button>
+        ))}
+      </div>
+
+      {tab === "profit" ? <SalesAnalytics /> : tab === "log" ? <DocLog branchName={branchName} /> : (<>
       <div className="flex gap-2 flex-wrap">
         {CHIPS.map((c) => (
           <Button key={c.key} size="sm" variant={activeChip === c.key ? "default" : "outline"} onClick={() => pick(c.key)}>{c.label}</Button>
@@ -254,6 +271,7 @@ export default function PosSales() {
           )}
         </div>
       )}
+      </>)}
 
       <Sheet open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
         <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto" dir="rtl">

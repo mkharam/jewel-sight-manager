@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Landmark, CheckCircle2, AlertTriangle, Trash2, Plus } from "lucide-react";
 import { toast } from "sonner";
+import AmarsoftDayPayments from "@/components/amarsoft/AmarsoftDayPayments";
 
 const db = supabase as any;
 
@@ -225,6 +226,9 @@ export default function DailyClosing() {
           <Input type="date" dir="ltr" value={date} max={businessToday()} onChange={(e) => e.target.value && setDate(e.target.value)} />
         </div>
       </Card>
+
+      {/* العدّ أعمى: مبالغ أمارسوفت تظهر للمشرف بعد الإقفال فقط، وللمدير العام دائماً. */}
+      {effectiveBranch && (closing || isAdmin) && <AmarsoftDayPayments branchId={effectiveBranch} date={date} />}
 
       {!canClose ? (
         <Card className="p-6 text-center text-sm text-muted-foreground">
