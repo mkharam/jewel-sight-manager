@@ -81,7 +81,7 @@ export default function Leaderboard() {
       </Tabs>
 
       {/* لوحة لكل فرع + لوحة لكل الفروع */}
-      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <Button size="sm" variant={branch === ALL ? "default" : "outline"} onClick={() => setBranch(ALL)} className="shrink-0">كل الفروع</Button>
         {(tagging.data ?? []).map((t) => (
           <Button key={t.branch_code} size="sm" variant={branch === t.branch_code ? "default" : "outline"} onClick={() => setBranch(t.branch_code)} className="shrink-0">
