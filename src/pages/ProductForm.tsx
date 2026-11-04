@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePersistentState, hasResumeForm } from "@/lib/resume";
 import ResumedNotice from "@/components/ResumedNotice";
 import { saveDraftFiles, loadDraftFiles, clearDraftFiles } from "@/lib/fileDraft";
-import { useNavigate, useParams, Navigate } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
@@ -62,6 +62,7 @@ export default function ProductForm() {
   const { id } = useParams<{ id: string }>();
   const editing = id && id !== "new";
   const navigate = useNavigate();
+  const presetCategory = useSearchParams()[0].get("category");
   const confirm = useConfirm();
   const { user, profile, roles } = useAuth();
   const isAdmin = roles.includes("admin");
@@ -131,6 +132,8 @@ export default function ProductForm() {
   useEffect(() => {
     if (!editing) {
       if (profile?.branch_id) setForm((f) => ({ ...f, branch_id: f.branch_id || profile.branch_id! }));
+      // جاي من صفحة الساعات (?category=…): التصنيف جاهز، والساعة ما عندهاش عيار افتراضي.
+      if (presetCategory) setForm((f) => (f.category_id ? f : { ...f, category_id: presetCategory, karat: "" }));
       return;
     }
     (async () => {
@@ -161,7 +164,7 @@ export default function ProductForm() {
         setStoneColor(s.color ?? "");
       }
     })();
-  }, [editing, id, profile?.branch_id]);
+  }, [editing, id, profile?.branch_id, presetCategory]);
 
   const onFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);

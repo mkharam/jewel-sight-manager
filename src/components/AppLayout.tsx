@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Building2, Truck, UserCog, type LucideIcon } from "lucide-react";
+import { ArrowRight, Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Building2, Truck, UserCog, Watch, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -60,6 +60,7 @@ function buildAdminNav(): NavSection[] {
       title: "أخرى",
       compact: true,
       items: [
+        { to: "/watches", label: "الساعات", icon: Watch },
         { to: "/upload", label: "رفع قطع", icon: Upload, badgeKey: "uploads" },
         { to: "/weights", label: "قطع بلا وزن", icon: Scale, badgeKey: "weights" },
         { to: "/reservations", label: "الحجوزات", icon: BookmarkCheck },
@@ -97,6 +98,7 @@ function buildNav(isAdmin: boolean, isManager: boolean): NavSection[] {
       items: [
         { to: "/transfers", label: "التحويلات", icon: ArrowLeftRight, badgeKey: "transfers" },
         { to: "/reorders", label: "إعادة الطلب", icon: PackagePlus, badgeKey: "reorders" },
+        { to: "/watches", label: "الساعات", icon: Watch },
         { to: "/reservations", label: "الحجوزات", icon: BookmarkCheck },
         { to: "/customers", label: "العملاء", icon: Users },
         { to: "/weights", label: "قطع بلا وزن", icon: Scale, badgeKey: "weights" },
