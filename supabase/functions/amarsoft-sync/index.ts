@@ -39,6 +39,12 @@ Deno.serve(async (req) => {
   const { data, error } = await supabase.rpc(master ? "amarsoft_ingest_master" : "amarsoft_ingest", { p: payload });
   if (error) return json(500, { error: error.message });
 
+  // Pieces added in the app before Amarsoft had their tag: re-check now that stock changed.
+  if (master) {
+    const { data: rechecked, error: recheckErr } = await supabase.rpc("amarsoft_recheck_pending");
+    if (!recheckErr) (data as Record<string, unknown>).products_matched = rechecked;
+  }
+
   await supabase.from("amarsoft_sync_keys").update({ last_used_at: new Date().toISOString() }).eq("key_hash", hash);
   return json(200, data);
 });

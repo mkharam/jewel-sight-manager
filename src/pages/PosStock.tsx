@@ -99,6 +99,8 @@ export default function PosStock() {
         <p className="text-xs text-muted-foreground mt-1">القطع المكوّدة كما في أمارسوفت، تتحدّث كل 5 دقائق.</p>
       </div>
 
+      <AppVsAmarsoft />
+
       <div className="grid grid-cols-2 gap-2">
         <Card className="p-3 col-span-2 bg-gold-soft border-primary/20">
           <div className="text-xs text-muted-foreground">كل الفروع</div>
@@ -188,6 +190,62 @@ export default function PosStock() {
         </SheetContent>
       </Sheet>
     </div>
+  );
+}
+
+type AppPiece = { id: string; name: string; sku: string | null; barcode_value: string | null; amarsoft_status: string; created_at: string };
+
+// قطع أُضيفت في التطبيق بباركود لا يطابق مخزون أمارسوفت: «بانتظار أمارسوفت» (لم تُسجّل هناك
+// بعد — تُطابَق تلقائياً عند تسجيلها) و«مباعة في أمارسوفت» وهي ما زالت معروضة في التطبيق.
+function AppVsAmarsoft() {
+  const [open, setOpen] = useState<"pending" | "sold" | null>(null);
+  const { data } = useQuery({
+    queryKey: ["app-vs-amarsoft"],
+    refetchInterval: 5 * 60_000,
+    queryFn: async () => {
+      const [pending, sold] = await Promise.all([
+        sb.from("products").select("id, name, sku, barcode_value, amarsoft_status, created_at").eq("amarsoft_status", "pending")
+          .neq("status", "archived").order("created_at", { ascending: false }).limit(200),
+        sb.from("products").select("id, name, sku, barcode_value, amarsoft_status, created_at").eq("amarsoft_status", "sold")
+          .eq("status", "available").order("created_at", { ascending: false }).limit(200),
+      ]);
+      return { pending: (pending.data ?? []) as AppPiece[], sold: (sold.data ?? []) as AppPiece[] };
+    },
+  });
+  if (!data || (!data.pending.length && !data.sold.length)) return null;
+  const list = open === "pending" ? data.pending : open === "sold" ? data.sold : [];
+  return (
+    <Card className="p-3 space-y-2">
+      <div className="flex gap-2 flex-wrap">
+        {data.pending.length > 0 && (
+          <Button size="sm" variant={open === "pending" ? "default" : "outline"} onClick={() => setOpen(open === "pending" ? null : "pending")}>
+            بانتظار أمارسوفت ({data.pending.length})
+          </Button>
+        )}
+        {data.sold.length > 0 && (
+          <Button size="sm" variant={open === "sold" ? "destructive" : "outline"} onClick={() => setOpen(open === "sold" ? null : "sold")}>
+            مباعة في أمارسوفت ومعروضة في التطبيق ({data.sold.length})
+          </Button>
+        )}
+      </div>
+      {open && (
+        <>
+          <p className="text-xs text-muted-foreground">
+            {open === "pending"
+              ? "سجّل هذه القطع في أمارسوفت بنفس رقم الوسم — تتحوّل إلى «مطابقة» تلقائياً خلال ساعة."
+              : "أمارسوفت يقول إن هذه القطع بيعت، لكنها ما زالت «متاحة» في التطبيق — راجعها."}
+          </p>
+          <div className="divide-y">
+            {list.map((p) => (
+              <Link key={p.id} to={`/products/${p.id}`} className="flex justify-between gap-2 py-2 text-sm hover:bg-muted/30 rounded px-1">
+                <span className="truncate">{p.name}</span>
+                <span className="text-xs text-muted-foreground shrink-0" dir="ltr">{p.barcode_value} · {p.sku}</span>
+              </Link>
+            ))}
+          </div>
+        </>
+      )}
+    </Card>
   );
 }
 

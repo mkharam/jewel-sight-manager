@@ -20,6 +20,7 @@ import { GOLD_COLORS, STONE_TYPES, STONE_COLORS } from "@/lib/luxury";
 import { prepareForAIBase64 } from "@/lib/image-compress";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
+import AmarsoftTagCheck from "@/components/AmarsoftTagCheck";
 
 type AiSuggestion = {
   name_ar?: string;
@@ -528,6 +529,7 @@ export default function ProductForm() {
             <Field label="باركود/QR"><Input value={form.barcode_value} onChange={(e) => setForm({ ...form, barcode_value: e.target.value })} maxLength={80} dir="ltr" /></Field>
             <Field label="موقع العرض"><Input value={form.showcase_location} onChange={(e) => setForm({ ...form, showcase_location: e.target.value })} maxLength={80} placeholder="مثال: دولاب 3 - رف B" /></Field>
           </div>
+          <AmarsoftTagCheck barcode={form.barcode_value} productId={id} />
         </Card>
 
         <Card className="p-5 space-y-4">

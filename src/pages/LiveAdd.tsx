@@ -21,9 +21,16 @@ import ScanBoxOverlay from "@/components/ScanBoxOverlay";
 import { normalizeDecimalInput } from "@/lib/constants";
 import { usePersistentState, hasResumeForm } from "@/lib/resume";
 import { saveDraftFiles, loadDraftFiles } from "@/lib/fileDraft";
+import { sb } from "@/lib/amarsoft";
 import type { CapturedFile } from "@/components/BulkCameraCapture";
 
 const NO_BRANCH = "__none__";
+type AmarsoftLookup = {
+  found: boolean; in_stock: boolean; branch_code: string | null; branch_id: string | null; branch_name: string | null;
+  tag: string | null; item_code: string | null; type_name: string | null; karat: string | null; grams: number | null;
+  pure_grams: number | null; received_on: string | null; sold_on: string | null;
+  existing_product_id: string | null; existing_product_name: string | null;
+};
 type SavedItem = { id: string; url: string; weight: string; barcode: string | null };
 
 /** صورة مصغّرة صغيرة (data URL) لشريط القطع المُضافة — تُحفظ مع المسودّة وتبقى بعد إغلاق التطبيق. */
@@ -223,6 +230,41 @@ export default function LiveAdd() {
     const match = (branches ?? []).find((b: any) => b.code === code);
     if (match) setBranchId(match.id);
   };
+
+  // كل باركود يُقرأ يُطابَق فوراً مع مخزون أمارسوفت (رقم الوسم = ITEMSUB). القطعة الموجودة
+  // تملأ الوزن والعيار والفرع إن كانت فارغة؛ غير الموجودة تُحفظ عادي وتبقى «بانتظار
+  // أمارسوفت» وتُطابَق تلقائياً عند أول مزامنة تظهر فيها.
+  const { data: amar, isFetching: amarLoading } = useQuery({
+    queryKey: ["amarsoft-lookup", barcode],
+    enabled: !!barcode,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await sb.rpc("amarsoft_lookup_tag", { p_code: barcode });
+      if (error) throw error;
+      return ((data ?? [])[0] ?? null) as AmarsoftLookup | null;
+    },
+  });
+  const amarApplied = useRef<string | null>(null);
+  useEffect(() => {
+    if (!amar || !barcode || amarApplied.current === barcode) return;
+    amarApplied.current = barcode;
+    if (amar.existing_product_id) {
+      toast.warning(`هذه القطعة مضافة مسبقاً في التطبيق: ${amar.existing_product_name ?? ""}`, { duration: 5000 });
+    }
+    if (!amar.found) {
+      toast("غير موجودة في مخزون أمارسوفت — ستُحفظ وتُطابَق تلقائياً عند تسجيلها هناك", { duration: 4000 });
+      return;
+    }
+    if (!amar.in_stock) {
+      toast.error(`هذه القطعة مباعة في أمارسوفت${amar.sold_on ? ` بتاريخ ${amar.sold_on}` : ""}`, { duration: 5000 });
+      return;
+    }
+    if (!weight.trim() && amar.grams) setWeight(String(Number(amar.grams)));
+    if (!karat && amar.karat) setKarat(normalizeKarat(amar.karat));
+    if (branchId === NO_BRANCH && amar.branch_id && (branches ?? []).some((b: any) => b.id === amar.branch_id)) setBranchId(amar.branch_id);
+    toast.success(`✓ موجودة في أمارسوفت: ${amar.type_name ?? ""} ${amar.karat ?? ""}K · ${Number(amar.grams ?? 0)} جم`, { duration: 3000 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [amar, barcode]);
 
   const fileToDataUrl = (file: File) =>
     new Promise<string>((resolve, reject) => {
@@ -580,6 +622,32 @@ export default function LiveAdd() {
             </>
           )}
         </div>
+
+        {/* نتيجة المطابقة مع مخزون أمارسوفت */}
+        {barcode && (
+          <div className="px-4 pt-1.5">
+            {amarLoading && !amar ? (
+              <div className="flex items-center gap-2 text-[11px] text-white/60"><Loader2 className="size-3 animate-spin" /> جارٍ التحقق من أمارسوفت…</div>
+            ) : amar && !amar.found ? (
+              <div className="rounded-lg bg-amber-500/20 border border-amber-500/50 text-amber-200 text-[11px] px-3 py-1.5">
+                غير موجودة في مخزون أمارسوفت — ستُحفظ «بانتظار أمارسوفت» وتُطابَق تلقائياً عند تسجيلها هناك.
+              </div>
+            ) : amar && !amar.in_stock ? (
+              <div className="rounded-lg bg-destructive/25 border border-destructive/60 text-red-200 text-[11px] px-3 py-1.5">
+                مباعة في أمارسوفت{amar.sold_on ? ` بتاريخ ${amar.sold_on}` : ""} · {amar.branch_name} — تأكّد قبل الحفظ.
+              </div>
+            ) : amar ? (
+              <div className="rounded-lg bg-status-available/20 border border-status-available/50 text-status-available text-[11px] px-3 py-1.5">
+                ✓ في مخزون أمارسوفت: {amar.type_name} · {amar.karat}K · {Number(amar.grams ?? 0)} جم · {amar.branch_name}
+              </div>
+            ) : null}
+            {amar?.existing_product_id && (
+              <div className="mt-1 rounded-lg bg-destructive/25 border border-destructive/60 text-red-200 text-[11px] px-3 py-1.5">
+                مضافة مسبقاً في التطبيق: {amar.existing_product_name}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* رفع عدة صور دفعة واحدة (باركود/وسم/صورة القطعة بأي عدد وترتيب) — يتعرّف
             النظام تلقائياً على كل صورة بلا حاجة لتحديد أيّها */}
