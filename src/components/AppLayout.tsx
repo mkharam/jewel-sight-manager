@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Building2, type LucideIcon } from "lucide-react";
+import { ArrowRight, Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Building2, Truck, UserCog, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -20,13 +20,67 @@ import { CHAT_SEEN_KEY, NOTIFS_SEEN_KEY, SEEN_EVENT, readSeen, setIconBadge } fr
 
 type BadgeKey = "transfers" | "uploads" | "reorders" | "weights" | "chat";
 type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean; badgeKey?: BadgeKey };
-type NavSection = { title: string; items: NavItem[] };
+// compact: صفحات قليلة الاستعمال — تظهر في «المزيد» كأزرار صغيرة بدل مربعات كبيرة.
+type NavSection = { title: string; items: NavItem[]; compact?: boolean };
+
+// المدير العام: «المزيد» مركّز على الإدارة — الفروع والمبيعات والموردين والعملاء والموظفين أولاً،
+// ثم شغل اليوم، وكل الباقي صغير تحت «أخرى». كان فيه 18 مربع بنفس الحجم ومبيعات مكررة.
+function buildAdminNav(): NavSection[] {
+  return [
+    {
+      title: "الرئيسية",
+      items: [
+        { to: "/", label: "البحث", icon: Search, end: true },
+        { to: "/chat", label: "المحادثة", icon: MessagesSquare, badgeKey: "chat" },
+        { to: "/inquiries", label: "الاستفسارات", icon: MessageCircle },
+        { to: "/amarsoft", label: "أمارسوفت", icon: Boxes },
+      ],
+    },
+    {
+      title: "الإدارة",
+      items: [
+        { to: "/branches", label: "الفروع", icon: Building2 },
+        { to: "/pos-sales", label: "المبيعات", icon: Receipt },
+        { to: "/suppliers", label: "الموردون", icon: Truck },
+        { to: "/customers", label: "العملاء", icon: Users },
+        { to: "/staff", label: "الموظفون", icon: UserCog },
+        { to: "/reports", label: "التقارير", icon: BarChart3 },
+      ],
+    },
+    {
+      title: "اليوم",
+      items: [
+        { to: "/closing", label: "إقفال اليوم", icon: Landmark },
+        { to: "/gold-price", label: "سعر الذهب", icon: Coins },
+        { to: "/transfers", label: "التحويلات", icon: ArrowLeftRight, badgeKey: "transfers" },
+        { to: "/reorders", label: "إعادة الطلب", icon: PackagePlus, badgeKey: "reorders" },
+      ],
+    },
+    {
+      title: "أخرى",
+      compact: true,
+      items: [
+        { to: "/upload", label: "رفع قطع", icon: Upload, badgeKey: "uploads" },
+        { to: "/weights", label: "قطع بلا وزن", icon: Scale, badgeKey: "weights" },
+        { to: "/reservations", label: "الحجوزات", icon: BookmarkCheck },
+        { to: "/admin/repairs", label: "الصيانة", icon: Wrench },
+        { to: "/buybacks", label: "شراء الكسر", icon: Recycle },
+        { to: "/leaderboard", label: "المتصدرون", icon: Trophy },
+        { to: "/daily-summary", label: "الملخّص اليومي", icon: CalendarDays },
+        { to: "/admin/products", label: "إدارة القطع", icon: ListChecks },
+        { to: "/stock-take", label: "جرد التطبيق", icon: ClipboardCheck },
+        { to: "/sales", label: "مبيعات التطبيق", icon: Receipt },
+      ],
+    },
+  ];
+}
 
 // مصدر واحد لكل التنقّل، مقسّم بأقسام واضحة — كان هناك ست قوائم متداخلة (أساسية، إضافات
 // سطح المكتب، مشتركة، مشرف، مدير، موظف) فتتكرّر العناصر وتظهر للمدير 20 رابطاً في صف واحد
 // أعلى الشاشة على الآيباد والكمبيوتر. الآن: شريط جانبي بأقسام على الشاشات الكبيرة، ونفس
 // الأقسام داخل «المزيد» على الهاتف.
 function buildNav(isAdmin: boolean, isManager: boolean): NavSection[] {
+  if (isAdmin) return buildAdminNav();
   const sections: NavSection[] = [
     {
       title: "الرئيسية",
@@ -50,8 +104,8 @@ function buildNav(isAdmin: boolean, isManager: boolean): NavSection[] {
       ],
     },
   ];
-  // سعر الذهب والإقفال والصيانة وشراء الكسر: المدير العام والمشرف فقط.
-  if (isAdmin || isManager) {
+  // سعر الذهب والإقفال والصيانة وشراء الكسر: المشرف (المدير العام له قائمته فوق).
+  if (isManager) {
     sections.push({
       title: "الفرع",
       items: [
@@ -61,21 +115,6 @@ function buildNav(isAdmin: boolean, isManager: boolean): NavSection[] {
         { to: "/buybacks", label: "شراء الكسر", icon: Recycle },
         // كل صفحات أمارسوفت (مبيعات، أرباح، سجل، مخزون، جرد) خلف زر واحد بدل خمسة.
         { to: "/amarsoft", label: "أمارسوفت", icon: Boxes },
-      ],
-    });
-  }
-  // الأرباح والمبيعات والجرد وإدارة الموظفين: المدير العام فقط.
-  if (isAdmin) {
-    sections.push({
-      title: "الإدارة",
-      items: [
-        { to: "/branches", label: "الفروع", icon: Building2 },
-        { to: "/daily-summary", label: "الملخّص اليومي", icon: CalendarDays },
-        { to: "/reports", label: "التقارير", icon: BarChart3 },
-        { to: "/sales", label: "المبيعات", icon: Receipt },
-        { to: "/stock-take", label: "الجرد", icon: ClipboardCheck },
-        { to: "/admin/products", label: "إدارة القطع", icon: ListChecks },
-        { to: "/staff", label: "الموظفون", icon: Users },
       ],
     });
   }
@@ -435,7 +474,27 @@ export default function AppLayout() {
                 {moreSections.map((sec) => (
                   <div key={sec.title}>
                     <p className="mb-2 text-sm font-bold text-muted-foreground">{sec.title}</p>
-                    {/* عمودان بأزرار كبيرة ونص واضح — أسهل للمس والقراءة من ثلاثة أعمدة صغيرة. */}
+                    {/* عمودان بأزرار كبيرة ونص واضح — أسهل للمس والقراءة من ثلاثة أعمدة صغيرة.
+                        «أخرى» (قليلة الاستعمال) أزرار صغيرة بسطر واحد حتى ما تزحمش الشاشة. */}
+                    {sec.compact ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        {sec.items.map((item) => (
+                          <NavLink
+                            key={item.to}
+                            to={item.to}
+                            onClick={() => setMoreOpen(false)}
+                            className={({ isActive }) => cn(
+                              "relative flex items-center gap-2 rounded-xl border border-border px-3 h-12 text-sm font-semibold",
+                              isActive ? "bg-secondary text-primary" : "text-foreground active:bg-muted/50"
+                            )}
+                          >
+                            <item.icon className="size-5 shrink-0 text-muted-foreground" />
+                            <span className="truncate flex-1">{item.label}</span>
+                            <CountBadge count={countOf(item)} />
+                          </NavLink>
+                        ))}
+                      </div>
+                    ) : (
                     <div className="grid grid-cols-2 gap-3">
                       {sec.items.map((item) => (
                         <NavLink
@@ -453,6 +512,7 @@ export default function AppLayout() {
                         </NavLink>
                       ))}
                     </div>
+                    )}
                   </div>
                 ))}
               </div>
