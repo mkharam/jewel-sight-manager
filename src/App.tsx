@@ -48,6 +48,7 @@ const Notifications = lazy(() => import("@/pages/Notifications"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 const SaleReceipt = lazy(() => import("@/pages/SaleReceipt"));
 const AmarsoftSuppliers = lazy(() => import("@/pages/AmarsoftSuppliers"));
+const AmarsoftReports = lazy(() => import("@/pages/AmarsoftReports"));
 
 function PageLoader() {
   return (
@@ -111,7 +112,8 @@ const App = () => (
                 <Route path="/import" element={<Navigate to="/upload" replace />} />
                 <Route path="/tray" element={<Navigate to="/upload" replace />} />
                 <Route path="/staff" element={<RequireRole allow={["admin"]}><Staff /></RequireRole>} />
-                <Route path="/reports" element={<RequireRole allow={["admin"]}><Reports /></RequireRole>} />
+                <Route path="/reports" element={<RequireRole allow={["admin"]}><AmarsoftReports /></RequireRole>} />
+                <Route path="/reports/app" element={<RequireRole allow={["admin"]}><Reports /></RequireRole>} />
                 <Route path="/daily-summary" element={<RequireRole allow={["admin"]}><DailySummary /></RequireRole>} />
                 <Route path="/transfers" element={<Transfers />} />
                 <Route path="/reorders" element={<Reorders />} />
