@@ -72,6 +72,7 @@ export default function CustomerDashboard({ onOpen }: { onOpen: (customerId: str
       byGrams: top(active, (r) => Number(r.grams)),
       lost: top(all.filter((r) => daysSince(r.last_at) > 90 && Number(r.life_visits) >= 2), (r) => Number(r.life_sales_dirhams)),
       birthdays: all.filter((r) => r.dob && r.dob.slice(5, 7) === month),
+      multiBranch: top(all.filter((r) => (r.branches ?? "").includes("،")), (r) => Number(r.life_sales_dirhams)),
     };
   }, [data, days]);
 
@@ -97,6 +98,8 @@ export default function CustomerDashboard({ onOpen }: { onOpen: (customerId: str
       {List({ title: "أكثر وزن", rows: v.byGrams, metric: (r) => formatGrams(r.grams), sub: (r) => formatLD(r.sales_dirhams) })}
       {List({ title: "زبائن مهمين غابوا", rows: v.lost, metric: (r) => ago(r.last_at), sub: (r) => `شرى ${formatLD(r.life_sales_dirhams)}`,
         hint: "شروا مرتين أو أكثر وما رجعوش من 3 أشهر — اتصل بيهم" })}
+      {!!v.multiBranch.length && List({ title: "زاروا أكثر من فرع", rows: v.multiBranch, metric: (r) => formatLD(r.life_sales_dirhams), sub: (r) => `${r.life_invoices} فاتورة`,
+        hint: "الفروع مكتوبة تحت الاسم" })}
       {!!v.birthdays.length && List({ title: "أعياد ميلاد هذا الشهر 🎂", rows: v.birthdays, metric: (r) => r.dob!.slice(5) })}
       <p className="text-xs text-muted-foreground text-center">
         من فواتير أمارسوفت اللي فيها اسم ورقم الزبون. الأسماء الداخلية (ذهب مسبوك، بضاعة...) مستبعدة.

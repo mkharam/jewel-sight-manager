@@ -285,28 +285,44 @@ type AmarsoftLink = {
     last_sale_no?: string; last_sale_on?: string | null; total_sales_dirhams?: number;
   };
 };
-type AmarsoftInvoice = { id: number; branch_code: string; invoice_no: string; invoice_date: string; kind: string; net_dirhams: number };
+type AmarsoftInvoice = {
+  id: number; branch_code: string; invoice_no: string; invoice_date: string; kind: string; net_dirhams: number;
+  items: { desc?: string; grams?: number; code?: string }[] | null;
+};
 
 // الزبون كما هو مسجّل في أمارسوفت (ملف الضيوف) وفواتيره هناك. الفواتير تظهر للمدير العام فقط.
+// رمز الزبون في أمارسوفت خاص بكل فرع، فالزبون اللي زار أكثر من فرع عنده رمز في كل واحد —
+// نجمعهم هنا ونبين كم شرى من كل فرع.
 function AmarsoftSection({ customerId }: { customerId: string }) {
   const { data } = useQuery({
     queryKey: ["customer-amarsoft", customerId],
     queryFn: async () => {
-      const { data: links } = await sb.from("amarsoft_customer_links").select("branch_code, guest_code, data").eq("customer_id", customerId);
+      const [{ data: links }, { data: map }] = await Promise.all([
+        sb.from("amarsoft_customer_links").select("branch_code, guest_code, data").eq("customer_id", customerId),
+        sb.from("amarsoft_branch_map").select("code, branches(name)"),
+      ]);
       const list = (links ?? []) as AmarsoftLink[];
-      if (!list.length) return { links: list, invoices: [] as AmarsoftInvoice[] };
+      const names = new Map<string, string>(((map ?? []) as { code: string; branches: { name: string } | null }[]).map((m) => [m.code, m.branches?.name ?? m.code]));
+      if (!list.length) return { links: list, invoices: [] as AmarsoftInvoice[], names };
       const or = list.map((l) => `and(branch_code.eq.${l.branch_code},details->>guest_code.eq.${l.guest_code})`).join(",");
-      const { data: invoices } = await sb.from("amarsoft_invoices").select("id, branch_code, invoice_no, invoice_date, kind, net_dirhams")
+      const { data: invoices } = await sb.from("amarsoft_invoices").select("id, branch_code, invoice_no, invoice_date, kind, net_dirhams, items")
         .eq("is_deleted", false).or(or).order("sold_at", { ascending: false }).limit(50);
-      return { links: list, invoices: (invoices ?? []) as AmarsoftInvoice[] };
+      return { links: list, invoices: (invoices ?? []) as AmarsoftInvoice[], names };
     },
   });
   if (!data?.links.length) return null;
 
+  const branchName = (c: string) => data.names.get(c) ?? `فرع ${c}`;
   const total = data.links.reduce((s, l) => s + Number(l.data.total_sales_dirhams ?? 0), 0);
   const last = data.links.map((l) => l.data.last_sale_on).filter(Boolean).sort().pop();
   const phones = [...new Set(data.links.flatMap((l) => l.data.phones ?? []))];
   const info = data.links[0].data;
+  const byBranch = [...data.invoices.reduce((m, inv) => {
+    const b = m.get(inv.branch_code) ?? { code: inv.branch_code, invoices: 0, sales: 0, last: inv.invoice_date };
+    b.invoices += 1; b.sales += Number(inv.net_dirhams);
+    if (inv.invoice_date > b.last) b.last = inv.invoice_date;
+    return m.set(inv.branch_code, b);
+  }, new Map<string, { code: string; invoices: number; sales: number; last: string }>()).values()].sort((a, b) => b.sales - a.sales);
   return (
     <Section title="في أمارسوفت" icon={Package} empty="">
       <div className="space-y-1 text-sm py-1">
@@ -317,14 +333,30 @@ function AmarsoftSection({ customerId }: { customerId: string }) {
           <div className="flex justify-between"><span className="text-muted-foreground">العنوان</span><span>{[info.city, info.area, info.address].filter(Boolean).join("، ")}</span></div>
         )}
         {info.dob && <div className="flex justify-between"><span className="text-muted-foreground">تاريخ الميلاد</span><span>{info.dob}</span></div>}
-        <div className="text-[11px] text-muted-foreground">رمز الزبون: {data.links.map((l) => `${l.guest_code} (فرع ${l.branch_code})`).join("، ")}</div>
+        <div className="text-[11px] text-muted-foreground">رمز الزبون: {data.links.map((l) => `${l.guest_code} (${branchName(l.branch_code)})`).join("، ")}</div>
       </div>
+      {byBranch.length > 0 && (
+        <div className="rounded-lg bg-muted/40 p-2 my-1">
+          <p className="text-xs font-bold mb-1">{byBranch.length > 1 ? `زار ${byBranch.length} فروع` : "يشري من فرع واحد"}</p>
+          {byBranch.map((b) => (
+            <Link key={b.code} to={`/branches/${b.code}`} className="flex justify-between text-sm py-0.5">
+              <span>{branchName(b.code)}</span>
+              <span className="text-muted-foreground">{b.invoices} فاتورة · <b className="text-foreground">{formatLD(b.sales)}</b> · آخرها {b.last}</span>
+            </Link>
+          ))}
+        </div>
+      )}
       {data.invoices.map((inv) => (
-        <Link key={inv.id} to={`/pos-sales?q=${encodeURIComponent(inv.invoice_no)}`}
-          className="flex items-center justify-between py-2 border-b border-border last:border-0 hover:bg-muted/30 rounded px-1">
+        <Link key={inv.id} to={`/pos-sales?q=${encodeURIComponent(inv.invoice_no)}&branch=${inv.branch_code}`}
+          className="flex items-center justify-between gap-2 py-2 border-b border-border last:border-0 hover:bg-muted/30 rounded px-1">
           <div className="min-w-0">
             <p className="text-sm font-medium">فاتورة #{inv.invoice_no}{inv.kind === "return" ? " · مرتجع" : ""}</p>
-            <p className="text-[11px] text-muted-foreground">{inv.invoice_date} · فرع {inv.branch_code}</p>
+            <p className="text-[11px] text-muted-foreground">{inv.invoice_date} · {branchName(inv.branch_code)}</p>
+            {!!inv.items?.length && (
+              <p className="text-[11px] text-muted-foreground truncate">
+                {inv.items.map((i) => `${i.desc || i.code || "قطعة"}${i.grams ? ` ${Number(i.grams)}جم` : ""}`).join(" · ")}
+              </p>
+            )}
           </div>
           <span className={`text-sm font-bold shrink-0 ${inv.net_dirhams < 0 ? "text-destructive" : "text-primary"}`}>{formatLD(inv.net_dirhams)}</span>
         </Link>
