@@ -22,7 +22,9 @@ type Supplier = {
 };
 type Detail = {
   months: { month: string; pcs: number; grams: number; pure: number; making_cost_dirhams: number; sold_pcs: number }[];
-  types: { type: string; karat: string | null; pcs: number; grams: number; sold_pcs: number; stock_pcs: number; days: number | null }[];
+  types: { type: string; karat: string | null; pcs: number; grams: number; sold_pcs: number; stock_pcs: number; stock_grams: number | null; days: number | null }[];
+  aging: { bucket: 1 | 2 | 3 | 4; pcs: number; grams: number; making_cost_dirhams: number }[];
+  stale: { tag: string; branch_code: string; branch_name: string | null; type: string; karat: string | null; grams: number; received_on: string; days: number; cost_dirhams: number }[];
   entries: { id: number; entry_date: string; kind: "opening" | "payment"; gold_pure_grams: number; money_dirhams: number; note: string | null; by_name: string | null }[];
 };
 
@@ -179,6 +181,8 @@ function SupplierDetail({ s }: { s: Supplier }) {
         <Card className="p-2.5"><div className="text-xs text-muted-foreground">يتباع الغرام بـ (الفترة)</div><div className="font-bold">{salePerGram ? `${n0(salePerGram)} د.ل` : "—"}</div></Card>
       </div>
 
+      {data && <StaleGoods aging={data.aging ?? []} stale={data.stale ?? []} types={data.types} />}
+
       <Account s={s} entries={data?.entries ?? []} onSaved={() => {
         qc.invalidateQueries({ queryKey: ["amarsoft-supplier-detail", s.supplier_code] });
         qc.invalidateQueries({ queryKey: ["amarsoft-suppliers"] });
@@ -213,6 +217,89 @@ function SupplierDetail({ s }: { s: Supplier }) {
         </div>
       )}
     </div>
+  );
+}
+
+const AGE_LABELS = { 1: "أقل من 3 أشهر", 2: "3–6 أشهر", 3: "6–12 شهر", 4: "أكثر من سنة" } as const;
+const ageText = (d: number) => (d >= 365 ? `${(d / 365).toFixed(1)} سنة` : d >= 60 ? `${Math.round(d / 30)} أشهر` : `${d} يوم`);
+
+// البضاعة اللي عطلت: كم قاعد من بضاعة المورد وقداش له، أي أنواع متكدسة، والقطع نفسها من الأقدم.
+function StaleGoods({ aging, stale, types }: { aging: Detail["aging"]; stale: Detail["stale"]; types: Detail["types"] }) {
+  const [minDays, setMinDays] = useState(180);
+  const [shown, setShown] = useState(20);
+  const stockPcs = aging.reduce((t, a) => t + Number(a.pcs), 0);
+  if (!stockPcs) return null;
+  const pieces = stale.filter((p) => p.days >= minDays);
+  // الأنواع المتكدسة: الأكثر قطعاً قاعدة، مع نسبة بيعها.
+  const stuck = types
+    .filter((t) => Number(t.stock_pcs) > 0)
+    .sort((a, b) => Number(b.stock_pcs) - Number(a.stock_pcs))
+    .slice(0, 6);
+
+  return (
+    <Card className="p-3 space-y-3">
+      <h3 className="font-bold text-lg">البضاعة اللي عطلت</h3>
+      <div className="grid grid-cols-2 gap-2">
+        {([1, 2, 3, 4] as const).map((b) => {
+          const a = aging.find((x) => Number(x.bucket) === b);
+          return (
+            <div key={b} className={`rounded-lg p-2.5 ${b >= 3 && a ? "bg-destructive/10" : "bg-muted/50"}`}>
+              <div className="text-xs text-muted-foreground">{AGE_LABELS[b]}</div>
+              <div className={`font-bold ${b >= 3 && a ? "text-destructive" : ""}`}>{n0(a?.pcs)} قطعة · {formatGrams(a?.grams ?? 0)}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {!!stuck.length && (
+        <div>
+          <p className="font-semibold text-sm mb-1">وين متكدس (حسب النوع)</p>
+          {stuck.map((t) => {
+            const sell = pct(Number(t.sold_pcs), Number(t.pcs));
+            return (
+              <div key={`${t.type}-${t.karat}`} className="flex justify-between py-1.5 border-b last:border-0 text-sm">
+                <span>{t.type}{t.karat ? ` · ${t.karat}` : ""}</span>
+                <span>
+                  {n0(t.stock_pcs)} قاعدة{t.stock_grams != null ? ` · ${formatGrams(t.stock_grams)}` : ""}
+                  <span className={sell < 30 ? " text-destructive font-bold" : " text-muted-foreground"}> · تباع {sell}%</span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div>
+        <div className="grid grid-cols-3 gap-1.5 mb-2">
+          {[{ d: 90, l: "+3 أشهر" }, { d: 180, l: "+6 أشهر" }, { d: 365, l: "+سنة" }].map((o) => (
+            <Button key={o.d} variant={minDays === o.d ? "default" : "outline"} onClick={() => { setMinDays(o.d); setShown(20); }}>{o.l}</Button>
+          ))}
+        </div>
+        {!pieces.length ? (
+          <p className="text-sm text-muted-foreground text-center py-2">ما فيش قطع قاعدة بهذا القدر 👍</p>
+        ) : (
+          <>
+            <p className="text-xs text-muted-foreground mb-1">
+              {n0(pieces.length)}{stale.length >= 500 ? "+" : ""} قطعة، الأقدم أولاً
+            </p>
+            {pieces.slice(0, shown).map((p) => (
+              <div key={`${p.branch_code}-${p.tag}`} className="flex justify-between items-center gap-2 py-2 border-b last:border-0">
+                <div className="min-w-0">
+                  <div className="font-bold text-sm truncate">{p.type}{p.karat ? ` · ${p.karat}` : ""} · {formatGrams(p.grams)}</div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    <span dir="ltr">{p.tag}</span> · {p.branch_name ?? p.branch_code} · دخلت {p.received_on}
+                  </div>
+                </div>
+                <span className={`shrink-0 text-sm font-bold ${p.days >= 365 ? "text-destructive" : ""}`}>{ageText(p.days)}</span>
+              </div>
+            ))}
+            {shown < pieces.length && (
+              <Button variant="ghost" className="w-full" onClick={() => setShown(shown + 30)}>عرض المزيد</Button>
+            )}
+          </>
+        )}
+      </div>
+    </Card>
   );
 }
 
