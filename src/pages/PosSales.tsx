@@ -59,10 +59,12 @@ export default function PosSales() {
   // ?q= من صفحات أخرى (المخزون، العملاء): ابحث في كل التاريخ بدل اليوم فقط.
   const [params] = useSearchParams();
   const initialQ = params.get("q") ?? "";
-  const [from, setFrom] = useState(initialQ ? "2024-01-01" : today);
+  // ?sman=<branch>|<code> من لوحة المتصدرين: فواتير بائع واحد لهذا الشهر.
+  const initialSman = params.get("sman") ?? ALL;
+  const [from, setFrom] = useState(initialQ ? "2024-01-01" : initialSman !== ALL ? periodDays("month").from : today);
   const [to, setTo] = useState(today);
   const [branch, setBranch] = useState(ALL);
-  const [sman, setSman] = useState(ALL);
+  const [sman, setSman] = useState(initialSman);
   const [search, setSearch] = useState(initialQ);
   const [open, setOpen] = useState<Invoice | null>(null);
   const [smenOpen, setSmenOpen] = useState(false);

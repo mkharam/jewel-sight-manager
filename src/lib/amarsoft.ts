@@ -24,7 +24,7 @@ function addDays(ymd: string, n: number) {
   return d.toISOString().slice(0, 10);
 }
 
-export type Period = "today" | "yesterday" | "week" | "month";
+export type Period = "today" | "yesterday" | "week" | "month" | "year";
 
 /** نطاق تاريخي [from, to] بالأيام (شامل) — الأسبوع يبدأ السبت */
 export function periodDays(p: Period, now = new Date()): { from: string; to: string } {
@@ -36,7 +36,12 @@ export function periodDays(p: Period, now = new Date()): { from: string; to: str
     const back = (dow + 1) % 7;
     return { from: addDays(today, -back), to: today };
   }
+  if (p === "year") return { from: today.slice(0, 5) + "01-01", to: today };
   return { from: today.slice(0, 8) + "01", to: today };
+}
+
+export function formatGrams(v: number | null | undefined) {
+  return `${Number(v ?? 0).toLocaleString("en-US", { maximumFractionDigits: 2 })} جم`;
 }
 
 /** تحويل نطاق أيام إلى حدود timestamptz: [start, end) */
