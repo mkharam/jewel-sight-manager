@@ -1,9 +1,8 @@
 // لوحة العملاء: أكثر زبون تردد، أكثر زبون شرى، أكثر وزن، زبائن جدد ورجعوا، زبائن مهمين غابوا،
 // وأعياد الميلاد — من مبيعات أمارسوفت. الأسماء الداخلية (ذهب مسبوك، بضاعة...) مستبعدة.
-import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Loader2, Phone } from "lucide-react";
-import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { sb, formatLD, formatGrams, tripoliToday } from "@/lib/amarsoft";
@@ -27,10 +26,25 @@ function startOf(days: number) {
   return d.toISOString();
 }
 const daysSince = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
-const dmy = (iso: string) => iso.slice(0, 10);
+function ago(iso: string) {
+  const d = daysSince(iso);
+  return d <= 0 ? "اليوم" : d === 1 ? "أمس" : d < 30 ? `من ${d} يوم` : d < 365 ? `من ${Math.round(d / 30)} شهر` : `من ${Math.round(d / 365)} سنة`;
+}
+
+// أول 5 فقط، وزر «عرض المزيد» يفتح للعشرة — حتى ما تطولش الصفحة على الهاتف.
+function ShowMore({ rows, render }: { rows: Row[]; render: (r: Row, i: number) => ReactNode }) {
+  const [all, setAll] = useState(false);
+  return (
+    <>
+      {(all ? rows : rows.slice(0, 5)).map(render)}
+      {rows.length > 5 && (
+        <Button variant="ghost" className="w-full mt-1 text-primary" onClick={() => setAll(!all)}>{all ? "أقل" : `عرض المزيد (${rows.length})`}</Button>
+      )}
+    </>
+  );
+}
 
 export default function CustomerDashboard({ onOpen }: { onOpen: (customerId: string) => void }) {
-  const qc = useQueryClient();
   const [days, setDays] = useState<number>(365);
   const { data, isLoading } = useQuery({
     queryKey: ["amarsoft-customer-insights", days],
@@ -40,15 +54,6 @@ export default function CustomerDashboard({ onOpen }: { onOpen: (customerId: str
       return (data ?? []) as Row[];
     },
   });
-  const exclude = useMutation({
-    mutationFn: async (r: Row) => {
-      const { error } = await sb.from("amarsoft_customer_exclusions").insert({ customer_key: r.customer_key, label: r.name });
-      if (error) throw error;
-    },
-    onSuccess: () => { toast.success("أُخفي من اللوحة"); qc.invalidateQueries({ queryKey: ["amarsoft-customer-insights"] }); },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
   const v = useMemo(() => {
     const all = (data ?? []).filter((r) => !r.excluded && r.identified);
     const active = all.filter((r) => Number(r.invoices) > 0);
@@ -72,26 +77,7 @@ export default function CustomerDashboard({ onOpen }: { onOpen: (customerId: str
 
   if (isLoading) return <div className="flex justify-center py-16"><Loader2 className="size-6 animate-spin text-primary" /></div>;
 
-  const List = ({ title, rows, metric, hint }: { title: string; rows: Row[]; metric: (r: Row) => string; hint?: string }) => (
-    <Card className="p-3">
-      <h3 className="font-bold text-base">{title}</h3>
-      {hint && <p className="text-xs text-muted-foreground mb-1">{hint}</p>}
-      {!rows.length ? <p className="text-sm text-muted-foreground py-2">لا أحد.</p> : rows.map((r, i) => (
-        <div key={r.customer_key} className="flex items-center gap-2 py-2 border-b last:border-0">
-          <span className="w-6 text-center font-bold text-muted-foreground">{i + 1}</span>
-          <button className="flex-1 min-w-0 text-right" onClick={() => r.customer_id && onOpen(r.customer_id)}>
-            <div className="font-bold truncate">{r.name}</div>
-            <div className="text-xs text-muted-foreground truncate">
-              {r.fav_type ? `يحب: ${r.fav_type}${r.fav_karat ? ` ${r.fav_karat}K` : ""} · ` : ""}آخر زيارة {dmy(r.last_at)} · {r.branches}
-            </div>
-          </button>
-          <span className="text-sm font-bold text-primary shrink-0 text-left">{metric(r)}</span>
-          {r.phone && <a href={`tel:${r.phone}`} className="p-2 text-primary" aria-label="اتصال"><Phone className="size-5" /></a>}
-          <button className="text-[10px] text-muted-foreground underline shrink-0" onClick={() => exclude.mutate(r)}>مش زبون</button>
-        </div>
-      ))}
-    </Card>
-  );
+  const List = (p: Omit<ListProps, "onOpen">) => <CustomerList {...p} onOpen={onOpen} />;
 
   return (
     <div className="space-y-3">
@@ -106,15 +92,53 @@ export default function CustomerDashboard({ onOpen }: { onOpen: (customerId: str
         <Card className="p-3"><div className="text-xs text-muted-foreground">رجعوا أكثر من مرة</div><div className="text-2xl font-bold">{v.returning}</div></Card>
         <Card className="p-3"><div className="text-xs text-muted-foreground">متوسط الفاتورة</div><div className="text-xl font-bold">{formatLD(v.avgTicket)}</div></Card>
       </div>
-      <List title="أكثر زبون تردد علينا" rows={v.byVisits} metric={(r) => `${r.visits} زيارة`} hint="عدد الأيام اللي شرى فيها" />
-      <List title="أكثر زبون شرى" rows={v.bySpend} metric={(r) => formatLD(r.sales_dirhams)} />
-      <List title="أكثر وزن" rows={v.byGrams} metric={(r) => formatGrams(r.grams)} />
-      <List title="زبائن مهمين غابوا" rows={v.lost} metric={(r) => `${daysSince(r.last_at)} يوم`}
-        hint="شروا مرتين أو أكثر وما رجعوش من 3 أشهر — اتصل بيهم" />
-      {!!v.birthdays.length && <List title="أعياد ميلاد هذا الشهر 🎂" rows={v.birthdays} metric={(r) => r.dob!.slice(5)} />}
+      {List({ title: "أكثر زبون تردد علينا", rows: v.byVisits, metric: (r) => `${r.visits} زيارة`, sub: (r) => formatLD(r.sales_dirhams), hint: "عدد الأيام اللي شرى فيها" })}
+      {List({ title: "أكثر زبون شرى", rows: v.bySpend, metric: (r) => formatLD(r.sales_dirhams), sub: (r) => `${r.invoices} فاتورة` })}
+      {List({ title: "أكثر وزن", rows: v.byGrams, metric: (r) => formatGrams(r.grams), sub: (r) => formatLD(r.sales_dirhams) })}
+      {List({ title: "زبائن مهمين غابوا", rows: v.lost, metric: (r) => ago(r.last_at), sub: (r) => `شرى ${formatLD(r.life_sales_dirhams)}`,
+        hint: "شروا مرتين أو أكثر وما رجعوش من 3 أشهر — اتصل بيهم" })}
+      {!!v.birthdays.length && List({ title: "أعياد ميلاد هذا الشهر 🎂", rows: v.birthdays, metric: (r) => r.dob!.slice(5) })}
       <p className="text-xs text-muted-foreground text-center">
-        من فواتير أمارسوفت اللي فيها اسم ورقم الزبون. «مش زبون» يخفي الأسماء الداخلية والعائلة من اللوحة.
+        من فواتير أمارسوفت اللي فيها اسم ورقم الزبون. الأسماء الداخلية (ذهب مسبوك، بضاعة...) مستبعدة.
       </p>
     </div>
+  );
+}
+
+type ListProps = { title: string; rows: Row[]; metric: (r: Row) => string; sub?: (r: Row) => string; hint?: string; onOpen: (customerId: string) => void };
+
+function CustomerList({ title, rows, metric, sub, hint, onOpen }: ListProps) {
+  return (
+    <Card className="p-3">
+      <h3 className="font-bold text-lg">{title}</h3>
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {!rows.length ? <p className="text-sm text-muted-foreground py-2">لا أحد.</p> : (
+        <ShowMore rows={rows} render={(r, i) => {
+          const body = (
+            <>
+              <span className={`size-8 shrink-0 rounded-full flex items-center justify-center font-bold ${i < 3 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>{i + 1}</span>
+              <div className="flex-1 min-w-0 text-right">
+                <div className="font-bold text-base truncate">{r.name}</div>
+                <div className="text-xs text-muted-foreground truncate">
+                  {r.branches} · {ago(r.last_at)}{r.fav_type ? ` · يحب ${r.fav_type}${r.fav_karat ? ` ${r.fav_karat}` : ""}` : ""}
+                </div>
+              </div>
+              <div className="shrink-0 text-left">
+                <div className="font-bold text-primary">{metric(r)}</div>
+                {sub && <div className="text-[11px] text-muted-foreground">{sub(r)}</div>}
+              </div>
+            </>
+          );
+          return (
+            <div key={r.customer_key} className="flex items-center gap-2 py-2.5 border-b last:border-0">
+              {r.customer_id
+                ? <button className="flex flex-1 min-w-0 items-center gap-2" onClick={() => onOpen(r.customer_id!)}>{body}</button>
+                : <div className="flex flex-1 min-w-0 items-center gap-2">{body}</div>}
+              {r.phone && <a href={`tel:${r.phone}`} className="size-10 shrink-0 rounded-full bg-primary/10 text-primary flex items-center justify-center" aria-label={`اتصال ${r.phone}`}><Phone className="size-5" /></a>}
+            </div>
+          );
+        }} />
+      )}
+    </Card>
   );
 }

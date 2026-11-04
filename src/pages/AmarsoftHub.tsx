@@ -3,12 +3,12 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Boxes, Building2, ClipboardCheck, History, Receipt, TrendingUp, Trophy, type LucideIcon } from "lucide-react";
 import { useAuth, hasRole } from "@/hooks/useAuth";
-import { sb, formatTripoli, daysToRange, tripoliToday } from "@/lib/amarsoft";
+import { sb, formatTripoli, formatLD, formatGrams, daysToRange, tripoliToday } from "@/lib/amarsoft";
 
 type Tile = { to: string; label: string; hint: string; icon: LucideIcon; admin?: boolean };
+type BranchToday = { branch_code: string; branch_name: string; invoices: number; grams: number; sales_dirhams: number };
 
 const TILES: Tile[] = [
-  { to: "/branches", label: "الفروع", hint: "شن دار كل فرع", icon: Building2, admin: true },
   { to: "/pos-sales", label: "المبيعات", hint: "كل الفواتير والبائعين", icon: Receipt, admin: true },
   { to: "/pos-sales?tab=profit", label: "الأرباح", hint: "سعر الغرام والمصنعية والربح", icon: TrendingUp, admin: true },
   { to: "/pos-sales?tab=log", label: "الممسوح والمعدّل", hint: "شن كان في الفاتورة قبل", icon: History, admin: true },
@@ -22,17 +22,22 @@ export default function AmarsoftHub() {
   const isAdmin = hasRole(roles, "admin");
 
   const { data } = useQuery({
-    queryKey: ["amarsoft-hub"],
+    queryKey: ["amarsoft-hub", isAdmin],
     refetchInterval: 60_000,
     queryFn: async () => {
       const { start, end } = daysToRange(tripoliToday(), tripoliToday());
-      const [sync, deleted] = await Promise.all([
+      const [sync, deleted, branches] = await Promise.all([
         sb.from("amarsoft_sync_log").select("received_at").order("received_at", { ascending: false }).limit(1).maybeSingle(),
         isAdmin
           ? sb.from("amarsoft_doc_events").select("trn_no", { count: "exact", head: true }).eq("trn_type", "RSL").eq("status", "D").gte("at", start).lt("at", end)
           : Promise.resolve({ count: 0 }),
+        isAdmin ? sb.rpc("amarsoft_branch_overview", { p_start: start, p_end: end }) : Promise.resolve({ data: [] }),
       ]);
-      return { lastSync: (sync.data?.received_at as string | undefined) ?? null, deletedToday: deleted.count ?? 0 };
+      return {
+        lastSync: (sync.data?.received_at as string | undefined) ?? null,
+        deletedToday: deleted.count ?? 0,
+        branches: (branches.data ?? []) as BranchToday[],
+      };
     },
   });
 
@@ -46,6 +51,23 @@ export default function AmarsoftHub() {
         <Link to="/pos-sales?tab=log" className="block rounded-2xl border-2 border-destructive bg-destructive/10 p-4 text-lg font-bold text-destructive">
           ⚠️ حُذفت {data.deletedToday} فاتورة اليوم — اضغط للتفاصيل
         </Link>
+      )}
+      {isAdmin && (
+        <div className="rounded-2xl border border-border bg-card shadow-card p-3">
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-lg font-bold flex items-center gap-2"><Building2 className="size-5 text-primary" />الفروع اليوم</h2>
+            <Link to="/branches" className="text-sm font-semibold text-primary">كل الفروع ←</Link>
+          </div>
+          {(data?.branches ?? []).map((b) => (
+            <Link key={b.branch_code} to={`/branches/${b.branch_code}`} className="flex items-center justify-between py-2.5 border-b last:border-0 active:bg-muted/50">
+              <span className="text-base font-bold">{b.branch_name}</span>
+              <span className="text-left">
+                <span className="block font-bold text-primary">{formatLD(b.sales_dirhams)}</span>
+                <span className="block text-xs text-muted-foreground">{b.invoices} فاتورة · {formatGrams(b.grams)}</span>
+              </span>
+            </Link>
+          ))}
+        </div>
       )}
       <div className="grid grid-cols-2 gap-3">
         {TILES.filter((t) => !t.admin || isAdmin).map((t) => (

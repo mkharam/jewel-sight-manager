@@ -1,5 +1,5 @@
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Building2, type LucideIcon } from "lucide-react";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { ArrowRight, Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Building2, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -84,6 +84,8 @@ function buildNav(isAdmin: boolean, isManager: boolean): NavSection[] {
 // الشريط السفلي على الهاتف: أربع/خمس صفحات يومية + «المزيد». الموظف عمله اليومي تسجيل
 // استفسار وطلب إعادة قطعة، فيحصل «إعادة الطلب» على مكان في الشريط بدل دفنه في «المزيد».
 const MOBILE_BAR = ["/", "/chat", "/inquiries", "/upload"];
+// المدير العام ما يرفعش قطع كل يوم؛ أمارسوفت (مبيعات، فروع، مخزون) أهم له، و«رفع قطع» في «المزيد».
+const MOBILE_BAR_ADMIN = ["/", "/chat", "/inquiries", "/amarsoft"];
 const MOBILE_BAR_STAFF = ["/", "/chat", "/inquiries", "/reorders", "/upload"];
 
 function CountBadge({ count, className }: { count: number; className?: string }) {
@@ -101,6 +103,7 @@ function CountBadge({ count, className }: { count: number; className?: string })
 export default function AppLayout() {
   const { profile, roles, user } = useAuth();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const isAdmin = roles.includes("admin");
   const isManager = roles.includes("manager");
   const qc = useQueryClient();
@@ -276,7 +279,7 @@ export default function AppLayout() {
   const isStaff = !isAdmin && !isManager;
   const sections = buildNav(isAdmin, isManager);
   const allItems = sections.flatMap((sec) => sec.items);
-  const barPaths = isStaff ? MOBILE_BAR_STAFF : MOBILE_BAR;
+  const barPaths = isAdmin ? MOBILE_BAR_ADMIN : isStaff ? MOBILE_BAR_STAFF : MOBILE_BAR;
   const mobileBar = barPaths.map((to) => allItems.find((i) => i.to === to)!).filter(Boolean);
   // «المزيد» = كل ما ليس في الشريط السفلي، بنفس الأقسام.
   const moreSections = sections
@@ -302,6 +305,20 @@ export default function AppLayout() {
           أو الشريط السفلي (هاتف) بدل صف روابط مزدحم هنا. */}
       <header className="sticky top-0 z-30 border-b border-border bg-card/95 backdrop-blur shadow-card safe-area-pt">
         <div className="px-3 sm:px-4 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-4">
+          <div className="flex items-center gap-1">
+          {/* زر رجوع: التطبيق المثبّت على الآيفون ما فيهش زر رجوع. لو الصفحة فُتحت مباشرة
+              (رابط أو إشعار) ما فيش صفحة قبلها، فيرجع للرئيسية. */}
+          {pathname !== "/" && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-10"
+              aria-label="رجوع"
+              onClick={() => ((window.history.state?.idx ?? 0) > 0 ? navigate(-1) : navigate("/"))}
+            >
+              <ArrowRight className="size-6" />
+            </Button>
+          )}
           <Link to="/" className="flex items-center gap-2">
             {/* شعار المتجر الفعلي بدل أيقونة عامة — نفس النقش الذهبي على الحقل الزمرّدي */}
             <img
@@ -316,6 +333,7 @@ export default function AppLayout() {
               <p className="text-[9px] sm:text-[10px] text-muted-foreground -mt-0.5 hidden sm:block">إدارة المجوهرات</p>
             </div>
           </Link>
+          </div>
 
           <div className="flex items-center gap-1 sm:gap-2">
             <NotificationsBell />
