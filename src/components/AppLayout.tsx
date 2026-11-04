@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import NotificationsBell from "@/components/NotificationsBell";
 import InstallPrompt from "@/components/InstallPrompt";
+import PullToRefresh from "@/components/PullToRefresh";
 import StaleGoldPriceBanner from "@/components/StaleGoldPriceBanner";
 import { uploadQueue, useUploadQueuePendingCount } from "@/lib/uploadQueue";
 import { useResumeRoute } from "@/lib/resume";
@@ -461,6 +462,7 @@ export default function AppLayout() {
       </nav>
 
       <InstallPrompt />
+      <PullToRefresh />
     </div>
   );
 }
