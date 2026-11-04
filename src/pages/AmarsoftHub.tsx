@@ -1,7 +1,7 @@
 // صفحة أمارسوفت: كل ما يأتي من نظام المحل في مكان واحد، بأزرار كبيرة واضحة.
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Boxes, Building2, ClipboardCheck, History, Receipt, TrendingUp, Trophy, Truck, type LucideIcon } from "lucide-react";
+import { BarChart3, Boxes, Building2, ClipboardCheck, History, Receipt, TrendingUp, Trophy, Truck, type LucideIcon } from "lucide-react";
 import { useAuth, hasRole } from "@/hooks/useAuth";
 import { sb, formatTripoli, formatLD, formatGrams, daysToRange, tripoliToday } from "@/lib/amarsoft";
 
@@ -9,6 +9,7 @@ type Tile = { to: string; label: string; hint: string; icon: LucideIcon; admin?:
 type BranchToday = { branch_code: string; branch_name: string; invoices: number; grams: number; sales_dirhams: number };
 
 const TILES: Tile[] = [
+  { to: "/reports", label: "التقارير", hint: "كل الفروع ومقارنتها", icon: BarChart3, admin: true },
   { to: "/pos-sales", label: "المبيعات", hint: "كل الفواتير والبائعين", icon: Receipt, admin: true },
   { to: "/pos-sales?tab=profit", label: "الأرباح", hint: "سعر الغرام والمصنعية والربح", icon: TrendingUp, admin: true },
   { to: "/pos-sales?tab=log", label: "الممسوح والمعدّل", hint: "شن كان في الفاتورة قبل", icon: History, admin: true },

@@ -276,6 +276,8 @@ type View = {
   t: { sales: number; grams: number; invoices: number; making: number; customers: number; returns: number; deleted: number; edited: number };
   p: View["t"];
   branches: (Overview & { prev?: Overview })[];
+  all: View["branches"];
+  dormant: View["branches"];
   karats: KaratRow[];
   leaders: Leader[];
   silent: View["branches"];
@@ -364,8 +366,11 @@ export default function AmarsoftReports() {
       deleted: sum(rows, "deleted"), edited: sum(rows, "edited"),
     });
     const t = tot(data.now), p = tot(data.before);
-    const branches = [...data.now].sort((a, b) => Number(b.sales_dirhams) - Number(a.sales_dirhams))
+    const all = [...data.now].sort((a, b) => Number(b.sales_dirhams) - Number(a.sales_dirhams))
       .map((o) => ({ ...o, prev: data.before.find((b) => b.branch_code === o.branch_code) }));
+    // فرع ما باعش لا في الفترة ولا اللي قبلها (زي فرع مقفول) يطلع في سطر وحده، مش أصفار في كل جدول.
+    const branches = all.filter((b) => Number(b.invoices) || Number(b.prev?.invoices ?? 0));
+    const dormant = all.filter((b) => !branches.includes(b));
     const karats = Object.values(data.karats.reduce<Record<string, KaratRow>>((m, k) => {
       const key = k.karat ?? "—";
       const r = (m[key] ??= { karat: key, grams: 0, sales_dirhams: 0, invoices: 0 });
@@ -378,7 +383,7 @@ export default function AmarsoftReports() {
     const stock = { pcs: sum(data.now, "stock_pieces"), grams: sum(data.now, "stock_grams") };
     // فرع ما باعش في الفترة وهو عادة يبيع (باع في الفترة اللي قبلها).
     const silent = branches.filter((b) => !Number(b.invoices) && Number(b.prev?.invoices ?? 0) > 0);
-    return { t, p, branches, karats, leaders, stale, stock, silent };
+    return { t, p, all, branches, dormant, karats, leaders, stale, stock, silent };
   }, [data]);
 
   const best = Math.max(1, ...(v?.branches ?? []).map((b) => Number(b.sales_dirhams)));
@@ -465,7 +470,7 @@ export default function AmarsoftReports() {
               <h2 className="text-lg font-bold">الفروع</h2>
               <Link to="/branches" className="text-sm font-semibold text-primary">التفاصيل ←</Link>
             </div>
-            <Hint>مرتبة من الأكثر مبيعاً. السهم الأخضر يعني زاد عن الفترة اللي قبلها والأحمر نقص. اضغط على فرع تشوف تفاصيله.</Hint>
+            <Hint>مرتبة من الأكثر مبيعاً. السهم الأخضر يعني زاد عن الفترة اللي قبلها والأحمر نقص. اضغط على فرع تشوف تفاصيله، والأرقام كاملة في «مقارنة الفروع» تحت.</Hint>
             {v.branches.map((b) => (
               <Link key={b.branch_code} to={`/branches/${b.branch_code}`} className="block py-2.5 border-b last:border-0 active:bg-muted/40">
                 <div className="flex justify-between items-baseline gap-2">
@@ -475,18 +480,17 @@ export default function AmarsoftReports() {
                 <div className="h-1.5 rounded-full bg-muted overflow-hidden my-1">
                   <div className="h-full bg-primary" style={{ width: `${Math.round((Number(b.sales_dirhams) / best) * 100)}%` }} />
                 </div>
-                <div className="grid grid-cols-2 gap-x-2 text-xs text-muted-foreground">
+                <div className="flex justify-between text-xs text-muted-foreground">
                   <span>{n0(b.invoices)} فاتورة · {formatGrams(Math.round(Number(b.grams)))}</span>
-                  <span className="text-left">{v.t.sales ? Math.round((Number(b.sales_dirhams) / v.t.sales) * 100) : 0}% من مبيعات الكل</span>
-                  <span>الغرام بـ {n0(perGram(b.sales_dirhams, b.grams))} د.ل</span>
-                  <span className="text-left">متوسط الفاتورة {Number(b.invoices) ? formatLD(Number(b.sales_dirhams) / Number(b.invoices)) : "—"}</span>
-                  <span>{n0(b.customers)} زبون</span>
-                  <span className={`text-left ${Number(b.deleted) ? "text-destructive font-bold" : ""}`}>
-                    {Number(b.deleted) ? `${b.deleted} ممسوحة` : `آخر بيع ${formatTripoli(b.last_sale)}`}
-                  </span>
+                  <span>{v.t.sales ? Math.round((Number(b.sales_dirhams) / v.t.sales) * 100) : 0}% من مبيعات الكل</span>
                 </div>
               </Link>
             ))}
+            {!!v.dormant.length && (
+              <p className="text-xs text-muted-foreground pt-2">
+                ما فيش بيع في الفترتين: {v.dormant.map((b) => `${b.branch_name} (آخر بيع ${formatTripoli(b.last_sale)})`).join("، ")}
+              </p>
+            )}
           </Card>
 
           <BranchTable branches={v.branches} />
@@ -538,7 +542,7 @@ export default function AmarsoftReports() {
             </div>
             <div className="text-xl font-bold">{n0(v.stock.pcs)} قطعة · {formatGrams(Math.round(v.stock.grams))}</div>
             <Hint>هذا الموجود في الفروع توا (مش في الفترة المختارة).</Hint>
-            {v.branches.map((b) => (
+            {v.all.map((b) => (
               <div key={b.branch_code} className="flex justify-between text-sm">
                 <span>{b.branch_name}</span>
                 <span className="text-muted-foreground">{n0(b.stock_pieces)} قطعة · {formatGrams(Math.round(Number(b.stock_grams)))}</span>
