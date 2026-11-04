@@ -1,7 +1,7 @@
 // صفحة العملاء: بحث/إضافة عميل، وتاريخ شراء/حجز/طلبات كل عميل في مكان واحد. الربط
 // الفعلي بالمبيعات يتم عبر customer_id (راجع SellDialog/ReserveDialog — resolveCustomerId)
 // بدل الاكتفاء بالاسم كنص حر كما كان سابقاً.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePersistentState } from "@/lib/resume";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,12 +19,20 @@ import { formatCurrency, formatDate, normalizeDecimalInput } from "@/lib/constan
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import { sb, formatLD } from "@/lib/amarsoft";
+import CustomerDashboard from "@/components/amarsoft/CustomerDashboard";
 
 type Customer = { id: string; full_name: string; phone: string | null; notes: string | null; branch_id: string | null; created_at: string };
 
 export default function Customers() {
-  const { user } = useAuth();
+  const { user, roles } = useAuth();
+  const isAdmin = roles.includes("admin");
   const qc = useQueryClient();
+  const [view, setView] = useState<"dashboard" | "list">(isAdmin ? "dashboard" : "list");
+  // الأدوار تُحمَّل بعد فتح الصفحة أحياناً: المدير العام يبدأ باللوحة.
+  const shownDashboard = useRef(false);
+  useEffect(() => {
+    if (isAdmin && !shownDashboard.current) { shownDashboard.current = true; setView("dashboard"); }
+  }, [isAdmin]);
   const [q, setQ] = useState("");
   const [openNew, setOpenNew] = usePersistentState(`customer:new:openNew`, false);
   const [activeCustomer, setActiveCustomer] = useState<Customer | null>(null);
@@ -48,6 +56,11 @@ export default function Customers() {
   });
 
   const resetForm = () => clearDraft();
+
+  const openById = async (id: string) => {
+    const { data } = await supabase.from("customers").select("*").eq("id", id).maybeSingle();
+    if (data) setActiveCustomer(data as Customer);
+  };
 
   const createCustomer = async () => {
     if (!name.trim()) return toast.error("اكتب اسم العميل");
@@ -91,6 +104,14 @@ export default function Customers() {
         </Dialog>
       </div>
 
+      {isAdmin && (
+        <div className="grid grid-cols-2 gap-1.5">
+          <Button size="lg" variant={view === "dashboard" ? "default" : "outline"} onClick={() => setView("dashboard")} className="text-base">اللوحة</Button>
+          <Button size="lg" variant={view === "list" ? "default" : "outline"} onClick={() => setView("list")} className="text-base">القائمة</Button>
+        </div>
+      )}
+
+      {view === "dashboard" && isAdmin ? <CustomerDashboard onOpen={openById} /> : (<>
       <div className="relative">
         <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ابحث بالاسم أو الهاتف" className="pr-9" />
@@ -125,6 +146,7 @@ export default function Customers() {
           ))}
         </div>
       )}
+      </>)}
 
       <CustomerDetailSheet customer={activeCustomer} onClose={() => setActiveCustomer(null)} />
     </div>
