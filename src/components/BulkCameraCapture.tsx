@@ -629,18 +629,17 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
                 onBlur={() => flushWeight(s.id)}
                 className="w-16 h-7 rounded-md bg-white/10 border border-white/25 text-white text-[10px] text-center placeholder:text-white/40 focus:bg-white/20 focus:outline-none focus:ring-1 focus:ring-primary"
               />
-              {BARCODE_SCAN_ENABLED && (
-                <input
-                  type="text"
-                  inputMode="text"
-                  placeholder="باركود"
-                  value={s.barcode}
-                  onChange={(e) => setBarcode(s.id, e.target.value)}
-                  onBlur={() => flushBarcode(s.id)}
-                  dir="ltr"
-                  className="w-16 h-6 rounded-md bg-white/10 border border-white/25 text-white text-[9px] text-center font-mono placeholder:text-white/40 focus:bg-white/20 focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-              )}
+              {/* رقم التاق من ليبل أمارسوفت يُكتب باليد (القراءة بالكاميرا معطّلة) — يربط القطعة فوراً. */}
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="رقم التاق"
+                value={s.barcode}
+                onChange={(e) => setBarcode(s.id, e.target.value)}
+                onBlur={() => flushBarcode(s.id)}
+                dir="ltr"
+                className="w-16 h-6 rounded-md bg-white/10 border border-white/25 text-white text-[9px] text-center font-mono placeholder:text-white/40 focus:bg-white/20 focus:outline-none focus:ring-1 focus:ring-primary"
+              />
             </div>
           ))}
         </div>

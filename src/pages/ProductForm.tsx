@@ -526,7 +526,7 @@ export default function ProductForm() {
           </Field>
           <div className="grid grid-cols-3 gap-3">
             <Field label="الرقم التسلسلي"><Input value={form.serial_number} onChange={(e) => setForm({ ...form, serial_number: e.target.value })} maxLength={80} dir="ltr" /></Field>
-            <Field label="باركود/QR"><Input value={form.barcode_value} onChange={(e) => setForm({ ...form, barcode_value: e.target.value })} maxLength={80} dir="ltr" /></Field>
+            <Field label="رقم التاق (أمارسوفت)"><Input value={form.barcode_value} inputMode="numeric" placeholder="مثلاً 01001664" onChange={(e) => setForm({ ...form, barcode_value: e.target.value })} maxLength={80} dir="ltr" /></Field>
             <Field label="موقع العرض"><Input value={form.showcase_location} onChange={(e) => setForm({ ...form, showcase_location: e.target.value })} maxLength={80} placeholder="مثال: دولاب 3 - رف B" /></Field>
           </div>
           <AmarsoftTagCheck barcode={form.barcode_value} productId={id} />

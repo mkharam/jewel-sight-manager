@@ -1,7 +1,7 @@
 // صفحة أمارسوفت: كل ما يأتي من نظام المحل في مكان واحد، بأزرار كبيرة واضحة.
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, Boxes, Building2, ClipboardCheck, History, Receipt, TrendingUp, Trophy, Truck, type LucideIcon } from "lucide-react";
+import { BarChart3, Boxes, Building2, ClipboardCheck, History, Link2, Receipt, TrendingUp, Trophy, Truck, type LucideIcon } from "lucide-react";
 import { useAuth, hasRole } from "@/hooks/useAuth";
 import { sb, formatTripoli, formatLD, formatGrams, daysToRange, tripoliToday } from "@/lib/amarsoft";
 
@@ -13,6 +13,7 @@ const TILES: Tile[] = [
   { to: "/pos-sales", label: "المبيعات", hint: "كل الفواتير والبائعين", icon: Receipt, admin: true },
   { to: "/pos-sales?tab=profit", label: "الأرباح", hint: "سعر الغرام والمصنعية والربح", icon: TrendingUp, admin: true },
   { to: "/pos-sales?tab=log", label: "الممسوح والمعدّل", hint: "شن كان في الفاتورة قبل", icon: History, admin: true },
+  { to: "/amarsoft-link", label: "ربط القطع", hint: "قطع التطبيق برقم أمارسوفت", icon: Link2, admin: true },
   { to: "/suppliers", label: "الموردون", hint: "شن دخل وشن تباع وحسابهم", icon: Truck, admin: true },
   { to: "/pos-stock", label: "المخزون", hint: "القطع في كل فرع", icon: Boxes },
   { to: "/pos-count", label: "الجرد", hint: "امسح القطع وقارن", icon: ClipboardCheck },
