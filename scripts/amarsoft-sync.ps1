@@ -35,7 +35,9 @@ function Log([string]$msg) {
     Add-Content -Path $LogFile -Value $line -Encoding UTF8
 }
 
-function Read-Dbf([string]$Path, [string[]]$Want) {
+# -Deleted returns only the rows Amarsoft has marked deleted (FoxPro keeps them in the file until
+# the table is packed): deleted invoices, and the old lines of invoices that were edited.
+function Read-Dbf([string]$Path, [string[]]$Want, [switch]$Deleted) {
     $fs = [IO.File]::Open($Path, 'Open', 'Read', 'ReadWrite')
     try {
         $br = New-Object IO.BinaryReader($fs)
@@ -55,7 +57,7 @@ function Read-Dbf([string]$Path, [string[]]$Want) {
         for ($i = 0; $i -lt $count; $i++) {
             $rec = $br.ReadBytes($recLen)
             if ($rec.Length -lt $recLen) { break }   # file grew/shrank while reading
-            if ($rec[0] -eq 0x2A) { continue }       # deleted in Amarsoft
+            if (($rec[0] -eq 0x2A) -ne [bool]$Deleted) { continue }   # 0x2A = deleted in Amarsoft
             $row = @{}
             foreach ($f in $fields) {
                 if ($f.Type -eq 'T') {
@@ -93,6 +95,7 @@ function Read-Guests([string]$yearPath) {
 function Read-Branch($branch, [string]$fromKey) {
     $salesmen = @{}
     $invoices = New-Object System.Collections.Generic.List[object]
+    $history = New-Object System.Collections.Generic.List[object]
     foreach ($year in Get-ChildItem $branch.FullName -Directory | Where-Object Name -match '^\d{4}$' | Sort-Object Name) {
         $smanFile = Join-Path $year.FullName 'mst_sman.dbf'
         if (Test-Path $smanFile) {
@@ -188,9 +191,48 @@ function Read-Branch($branch, [string]$fromKey) {
                     details     = $details
                 })
             }
+
+            # What Amarsoft deleted but still keeps in the file: whole deleted invoices, and the old
+            # lines of invoices that were edited. Identical copies (saved twice) count once.
+            $live = @{}; foreach ($i in $invoices) { if ($i.year -eq $year.Name -and $i.kind -eq $src.Kind) { $live[$i.no] = $true } }
+            $oldLines = @{}
+            if (Test-Path $detPath) {
+                foreach ($d in Read-Dbf $detPath @('TRNNO', 'TRNDATE', 'ITEMCODE', 'ITEMSUB', 'ITEMDESC', 'PCS', 'GROSSQTY', 'AMOUNT', 'SMAN') -Deleted) {
+                    if (-not $d.TRNNO -or $d.TRNDATE -lt $fromKey) { continue }
+                    if (-not $oldLines.ContainsKey($d.TRNNO)) { $oldLines[$d.TRNNO] = @{} }
+                    $line = @{ code = $d.ITEMCODE; tag = $d.ITEMSUB; desc = ($d.ITEMDESC -replace '\s+', ' '); pcs = To-Num $d.PCS
+                               grams = To-Num $d.GROSSQTY; amount_dirhams = $src.Sign * (To-Dirhams $d.AMOUNT); sman = $d.SMAN }
+                    $oldLines[$d.TRNNO]["$($d.ITEMSUB)|$($d.GROSSQTY)|$($d.AMOUNT)|$($d.SMAN)"] = $line
+                }
+            }
+            $deletedHeads = @{}
+            foreach ($h in Read-Dbf $headPath @('TRNNO', 'TRNDATE', 'SYS_TIME', 'SMAN', 'NETAMT', 'CUSTOMER', 'PHONENO', 'GROSSQTY') -Deleted) {
+                if (-not $h.TRNNO -or $h.TRNDATE -lt $fromKey) { continue }
+                $deletedHeads["$($h.TRNNO)|$($h.NETAMT)|$($h.SMAN)|$($h.CUSTOMER)"] = $h
+            }
+            foreach ($h in $deletedHeads.Values) {
+                $items = if ($oldLines.ContainsKey($h.TRNNO)) { @($oldLines[$h.TRNNO].Values) } else { @() }
+                $history.Add(@{
+                    branch = $branch.Name; year = $year.Name; kind = $src.Kind; no = $h.TRNNO
+                    source = if ($live.ContainsKey($h.TRNNO)) { 'old_version' } else { 'deleted' }
+                    date = To-Date $h.TRNDATE; time = $h.SYS_TIME; sman = $h.SMAN; customer = $h.CUSTOMER; phone = $h.PHONENO
+                    net_dirhams = $src.Sign * (To-Dirhams $h.NETAMT); items = $items
+                })
+                $oldLines.Remove($h.TRNNO)
+            }
+            # Old lines of an invoice that still exists = it was edited.
+            foreach ($no in @($oldLines.Keys)) {
+                if (-not $live.ContainsKey($no)) { continue }
+                $old = @($oldLines[$no].Values)
+                $oldNet = [long]0; foreach ($l in $old) { $oldNet += $l.amount_dirhams }
+                $history.Add(@{
+                    branch = $branch.Name; year = $year.Name; kind = $src.Kind; no = $no; source = 'old_lines'
+                    items = $old; net_dirhams = $oldNet
+                })
+            }
         }
     }
-    @{ salesmen = @($salesmen.Values); invoices = $invoices.ToArray() }
+    @{ salesmen = @($salesmen.Values); invoices = $invoices.ToArray(); history = $history.ToArray() }
 }
 
 function To-Date([string]$yyyymmdd) {
@@ -329,6 +371,7 @@ try {
                 branches_scanned = @($branch.Name)
                 salesmen         = $data.salesmen
                 invoices         = $data.invoices
+                history          = $data.history
             } $branch.Name
             if ($DryRun) { Log "Branch $($branch.Name): $($data.invoices.Count) invoices, $($data.salesmen.Count) salesmen (dry run -> $($res.dry_run))" }
             else {

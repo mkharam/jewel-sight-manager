@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Boxes, Loader2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -39,7 +39,8 @@ function g(v?: number | null) {
 export default function PosStock() {
   const { roles } = useAuth();
   const isAdmin = hasRole(roles, "admin");
-  const [branch, setBranch] = useState(ALL);
+  const [params] = useSearchParams();
+  const [branch, setBranch] = useState(params.get("branch") ?? ALL);
   const [karat, setKarat] = useState(ALL);
   const [type, setType] = useState(ALL);
   const [status, setStatus] = useState<"in" | "sold" | "all">("in");

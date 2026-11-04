@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import InvoiceChanges from "@/components/amarsoft/InvoiceChanges";
 import SalesAnalytics from "@/components/amarsoft/SalesAnalytics";
 import DocLog from "@/components/amarsoft/DocLog";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -70,7 +71,7 @@ export default function PosSales() {
   const initialSman = params.get("sman") ?? ALL;
   const [from, setFrom] = useState(initialQ ? "2024-01-01" : initialSman !== ALL ? periodDays("month").from : today);
   const [to, setTo] = useState(today);
-  const [branch, setBranch] = useState(ALL);
+  const [branch, setBranch] = useState(params.get("branch") ?? ALL);
   const [sman, setSman] = useState(initialSman);
   const [search, setSearch] = useState(initialQ);
   const [tab, setTab] = useState<"invoices" | "profit" | "log">(
@@ -198,7 +199,24 @@ export default function PosSales() {
         ))}
       </div>
 
-      {tab === "profit" ? <SalesAnalytics /> : tab === "log" ? <DocLog branchName={branchName} /> : (<>
+      {/* الفروع قابلة للضغط: صفحة الفرع فيها مبيعاته ومخزونه وموظفوه والممسوح والمعدّل. */}
+      <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {branchMap.data?.map((b) => (
+          <Link key={b.code} to={`/branches/${b.code}`} className="shrink-0 rounded-full border border-primary/40 px-3 py-1.5 text-sm font-semibold text-primary">
+            {branchName(b.code)} ←
+          </Link>
+        ))}
+      </div>
+
+      {tab === "profit" ? <SalesAnalytics /> : tab === "log" ? (
+        <div className="space-y-4">
+          <InvoiceChanges />
+          <details>
+            <summary className="cursor-pointer text-sm font-bold py-2">السجل الكامل (إضافة، طباعة، فتح للتعديل، حذف)</summary>
+            <DocLog branchName={branchName} />
+          </details>
+        </div>
+      ) : (<>
       <div className="flex gap-2 flex-wrap">
         {CHIPS.map((c) => (
           <Button key={c.key} size="sm" variant={activeChip === c.key ? "default" : "outline"} onClick={() => pick(c.key)}>{c.label}</Button>

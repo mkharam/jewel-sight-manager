@@ -39,6 +39,12 @@ Deno.serve(async (req) => {
   const { data, error } = await supabase.rpc(master ? "amarsoft_ingest_master" : "amarsoft_ingest", { p: payload });
   if (error) return json(500, { error: error.message });
 
+  // Deleted invoices and old lines of edited ones, still inside Amarsoft's files.
+  if (!master && Array.isArray(payload.history) && payload.history.length) {
+    const { data: kept, error: histErr } = await supabase.rpc("amarsoft_ingest_history", { p: payload });
+    (data as Record<string, unknown>)[histErr ? "history_error" : "history_new"] = histErr ? histErr.message : kept;
+  }
+
   // App pieces follow Amarsoft now that stock changed: pending matched, sold marked, weights filled.
   if (master) {
     const out = data as Record<string, unknown>;

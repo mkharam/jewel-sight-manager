@@ -35,6 +35,7 @@ const PosSales = lazy(() => import("@/pages/PosSales"));
 const PosStock = lazy(() => import("@/pages/PosStock"));
 const PosCount = lazy(() => import("@/pages/PosCount"));
 const AmarsoftHub = lazy(() => import("@/pages/AmarsoftHub"));
+const Branches = lazy(() => import("@/pages/Branches"));
 const Leaderboard = lazy(() => import("@/pages/Leaderboard"));
 const Repairs = lazy(() => import("@/pages/Repairs"));
 const DailyClosing = lazy(() => import("@/pages/DailyClosing"));
@@ -120,6 +121,8 @@ const App = () => (
                 <Route path="/pos-stock" element={<RequireRole allow={["admin", "manager"]}><PosStock /></RequireRole>} />
                 <Route path="/pos-count" element={<RequireRole allow={["admin", "manager"]}><PosCount /></RequireRole>} />
                 <Route path="/amarsoft" element={<RequireRole allow={["admin", "manager"]}><AmarsoftHub /></RequireRole>} />
+                <Route path="/branches" element={<RequireRole allow={["admin"]}><Branches /></RequireRole>} />
+                <Route path="/branches/:code" element={<RequireRole allow={["admin"]}><Branches /></RequireRole>} />
                 <Route path="/leaderboard" element={<Leaderboard />} />
                 <Route path="/reservations" element={<Reservations />} />
                 <Route path="/buybacks" element={<RequireRole allow={["admin", "manager"]}><Buybacks /></RequireRole>} />
