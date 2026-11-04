@@ -61,6 +61,213 @@ function Change({ now, before }: { now: number; before: number }) {
   );
 }
 
+const WEEKDAY = new Intl.DateTimeFormat("ar-LY", { weekday: "long", timeZone: "UTC" });
+const dayName = (ymd: string) => WEEKDAY.format(new Date(`${ymd}T12:00:00Z`));
+const shortLD = (dirhams: number) => {
+  const ld = Number(dirhams) / 1000;
+  return ld >= 1_000_000 ? `${(ld / 1_000_000).toFixed(1)}م` : ld >= 1000 ? `${Math.round(ld / 1000)}ألف` : `${Math.round(ld)}`;
+};
+
+// المبيعات يوم بيوم: كل يوم عمود (حتى الأيام اللي ما فيهاش بيع تبان صفر)، تضغط على العمود
+// يطلعلك رقمه فوق، والرقم مكتوب على العمود لما الأيام قليلة، وفيه جدول بكل يوم.
+function DailyChart({ days, from, to }: { days: Day[]; from: string; to: string }) {
+  const all = useMemo(() => {
+    const byDay = new Map(days.map((d) => [d.day, d]));
+    const out: Day[] = [];
+    for (let d = from; d <= to; d = shift(d, 1)) out.push(byDay.get(d) ?? { day: d, invoices: 0, grams: 0, sales_dirhams: 0 });
+    return out;
+  }, [days, from, to]);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [table, setTable] = useState(false);
+  const max = Math.max(1, ...all.map((d) => Number(d.sales_dirhams)));
+  const selling = all.filter((d) => Number(d.sales_dirhams) > 0);
+  const avg = selling.length ? selling.reduce((t, d) => t + Number(d.sales_dirhams), 0) / selling.length : 0;
+  const best = selling.reduce<Day | null>((b, d) => (!b || Number(d.sales_dirhams) > Number(b.sales_dirhams) ? d : b), null);
+  const sel = all.find((d) => d.day === picked) ?? [...all].reverse().find((d) => Number(d.sales_dirhams) > 0) ?? all[all.length - 1];
+  const labels = all.length <= 14;
+
+  return (
+    <div className="space-y-2 mt-1">
+      {sel && (
+        <div className="rounded-lg bg-gold-soft p-2.5 text-center">
+          <div className="text-xs text-muted-foreground">{dayName(sel.day)} {fmtDay(sel.day)}</div>
+          <div className="text-xl font-bold">{formatLD(sel.sales_dirhams)}</div>
+          <div className="text-sm">{n0(sel.invoices)} فاتورة · {formatGrams(Math.round(Number(sel.grams)))}
+            {avg > 0 && Number(sel.sales_dirhams) > 0 && (
+              <span className="text-muted-foreground"> · {Number(sel.sales_dirhams) >= avg ? "فوق" : "تحت"} المتوسط</span>
+            )}
+          </div>
+        </div>
+      )}
+      <div className="relative">
+        <div className="text-[10px] text-muted-foreground absolute -top-0.5 right-0">{shortLD(max)}</div>
+        <div className="flex items-end gap-[2px] h-36 pt-3" dir="ltr">
+          {all.map((d) => {
+            const h = Math.round((Number(d.sales_dirhams) / max) * 100);
+            return (
+              <button key={d.day} onClick={() => setPicked(d.day)} className="flex-1 h-full flex flex-col justify-end items-center min-w-0" aria-label={`${d.day} ${formatLD(d.sales_dirhams)}`}>
+                {labels && Number(d.sales_dirhams) > 0 && <span className="text-[9px] leading-none mb-0.5 text-muted-foreground">{shortLD(d.sales_dirhams)}</span>}
+                <div className={`w-full rounded-t-sm min-h-[2px] ${d.day === sel?.day ? "bg-primary" : Number(d.sales_dirhams) ? "bg-primary/50" : "bg-muted"}`} style={{ height: `${h}%` }} />
+              </button>
+            );
+          })}
+        </div>
+        {avg > 0 && <div className="absolute left-0 right-0 border-t border-dashed border-foreground/30 pointer-events-none" style={{ bottom: `${(avg / max) * (100 - 8.3)}%` }} />}
+      </div>
+      <div className="flex justify-between text-[11px] text-muted-foreground" dir="ltr">
+        <span>{fmtDay(all[0].day)}</span><span>{fmtDay(all[all.length - 1].day)}</span>
+      </div>
+      <Hint>اضغط على أي عمود يطلعلك رقم اليوم فوق. الخط المقطّع = متوسط اليوم ({formatLD(avg)}). {selling.length} يوم فيه بيع من {all.length}.
+        {best ? ` أحسن يوم: ${dayName(best.day)} ${fmtDay(best.day)} بـ ${formatLD(best.sales_dirhams)}.` : ""}</Hint>
+      <Button variant="outline" className="w-full" onClick={() => setTable(!table)}>{table ? "إخفاء الجدول" : "عرض كل يوم في جدول"}</Button>
+      {table && (
+        <div className="text-sm">
+          {[...all].reverse().map((d) => (
+            <div key={d.day} className={`flex justify-between py-1.5 border-b last:border-0 ${Number(d.sales_dirhams) ? "" : "text-muted-foreground"}`}>
+              <span>{dayName(d.day)} {fmtDay(d.day)}</span>
+              <span>{Number(d.sales_dirhams) ? `${formatLD(d.sales_dirhams)} · ${n0(d.invoices)} ف · ${formatGrams(Math.round(Number(d.grams)))}` : "ما فيش بيع"}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// المقاييس اللي نقارن بيها، نفسها في المقارنتين (فرع مع فرع، وفرع مع نفسه).
+type Metric = { label: string; get: (o: Overview) => number; show: (v: number) => string };
+const METRICS: Metric[] = [
+  { label: "المبيعات", get: (o) => Number(o.sales_dirhams), show: (v) => formatLD(v) },
+  { label: "الفواتير", get: (o) => Number(o.invoices), show: (v) => n0(v) },
+  { label: "الوزن", get: (o) => Number(o.grams), show: (v) => formatGrams(Math.round(v)) },
+  { label: "سعر الغرام", get: (o) => perGram(o.sales_dirhams, o.grams), show: (v) => `${n0(v)} د.ل` },
+  { label: "متوسط الفاتورة", get: (o) => (Number(o.invoices) ? Number(o.sales_dirhams) / Number(o.invoices) : 0), show: (v) => formatLD(v) },
+  { label: "المصنعية", get: (o) => Number(o.making_dirhams), show: (v) => formatLD(v) },
+  { label: "الزبائن", get: (o) => Number(o.customers), show: (v) => n0(v) },
+  { label: "ممسوحة", get: (o) => Number(o.deleted), show: (v) => n0(v) },
+];
+
+// الفروع جنب بعض: كل سطر مقياس، والأحسن فيه بالأخضر.
+function BranchTable({ branches }: { branches: Overview[] }) {
+  if (branches.length < 2) return null;
+  return (
+    <Card className="p-3">
+      <h2 className="text-lg font-bold">مقارنة الفروع</h2>
+      <Hint>كل فرع في عمود. الأحسن في كل سطر بالأخضر (في «ممسوحة» الأقل هو الأحسن). اسحب الجدول يمين ويسار لو ما بانش كامل.</Hint>
+      <div className="overflow-x-auto -mx-3 px-3 mt-2">
+        <table className="w-full text-sm border-collapse min-w-[480px]">
+          <thead>
+            <tr>
+              <th className="text-right py-1.5 pl-2 sticky right-0 bg-card" />
+              {branches.map((b) => (
+                <th key={b.branch_code} className="py-1.5 px-1 font-bold text-center leading-tight">
+                  <Link to={`/branches/${b.branch_code}`} className="text-primary">{b.branch_name.replace(/^\d+\s*-\s*/, "")}</Link>
+                  <div className="text-[10px] text-muted-foreground font-normal">{b.branch_code}</div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {METRICS.map((m) => {
+              const vals = branches.map(m.get);
+              const target = m.label === "ممسوحة" ? Math.min(...vals) : Math.max(...vals);
+              return (
+                <tr key={m.label} className="border-t">
+                  <td className="py-1.5 pl-2 text-muted-foreground whitespace-nowrap sticky right-0 bg-card">{m.label}</td>
+                  {vals.map((x, i) => (
+                    <td key={branches[i].branch_code} className={`py-1.5 px-1 text-center whitespace-nowrap ${x === target && vals.some((y) => y !== x) ? "text-emerald-600 font-bold" : ""} ${m.label === "ممسوحة" && x > 0 ? "text-destructive" : ""}`}>
+                      {m.show(x)}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+// الفرع مع نفسه: تختار فرع، وتقارن فترتك بالفترة اللي قبلها أو بأي فترة تحددها.
+function BranchVsItself({ branches, from, to, prev, prevLabel }: {
+  branches: (Overview & { prev?: Overview })[]; from: string; to: string; prev: { from: string; to: string }; prevLabel: string;
+}) {
+  const [code, setCode] = useState<string | null>(null);
+  const [own, setOwn] = useState(false);
+  const [other, setOther] = useState(prev);
+  const b = branches.find((x) => x.branch_code === code) ?? branches[0];
+  const okOther = other.from && other.to && other.from <= other.to;
+  const cmp = useQuery({
+    queryKey: ["amarsoft-reports-compare", other.from, other.to],
+    enabled: own && !!okOther,
+    queryFn: async () => {
+      const r = daysToRange(other.from, other.to);
+      const { data, error } = await sb.rpc("amarsoft_branch_overview", { p_start: r.start, p_end: r.end });
+      if (error) throw error;
+      return (data ?? []) as Overview[];
+    },
+  });
+  if (!b) return null;
+  const then = own ? cmp.data?.find((x) => x.branch_code === b.branch_code) : b.prev;
+  const thenRange = own ? other : prev;
+
+  return (
+    <Card className="p-3 space-y-2">
+      <h2 className="text-lg font-bold">الفرع مع نفسه</h2>
+      <Hint>اختار فرع، وشوف أرقامه في الفترة المختارة جنب فترة ثانية: هل تحسّن ولا تراجع؟</Hint>
+      <div className="flex flex-wrap gap-1.5">
+        {branches.map((x) => (
+          <Button key={x.branch_code} size="sm" variant={x.branch_code === b.branch_code ? "default" : "outline"} onClick={() => setCode(x.branch_code)}>
+            {x.branch_name.replace(/^\d+\s*-\s*/, "")}
+          </Button>
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-1.5">
+        <Button variant={!own ? "default" : "outline"} onClick={() => setOwn(false)} className="text-xs h-auto py-2 whitespace-normal">مع {prevLabel}</Button>
+        <Button variant={own ? "default" : "outline"} onClick={() => setOwn(true)} className="text-xs h-auto py-2 whitespace-normal">مع فترة نختارها</Button>
+      </div>
+      {own && (
+        <div className="grid grid-cols-2 gap-2">
+          <label className="text-xs font-semibold">من يوم
+            <Input type="date" value={other.from} max={tripoliToday()} onChange={(e) => setOther({ ...other, from: e.target.value })} className="h-11 mt-1" />
+          </label>
+          <label className="text-xs font-semibold">لين يوم
+            <Input type="date" value={other.to} max={tripoliToday()} onChange={(e) => setOther({ ...other, to: e.target.value })} className="h-11 mt-1" />
+          </label>
+        </div>
+      )}
+      {own && cmp.isLoading ? (
+        <div className="flex justify-center py-6"><Loader2 className="size-5 animate-spin text-primary" /></div>
+      ) : (
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr className="text-xs text-muted-foreground">
+              <th className="text-right py-1 font-normal" />
+              <th className="py-1 font-normal">{rangeText(from, to)}</th>
+              <th className="py-1 font-normal">{okOther || !own ? rangeText(thenRange.from, thenRange.to) : "—"}</th>
+              <th className="py-1 font-normal">الفرق</th>
+            </tr>
+          </thead>
+          <tbody>
+            {METRICS.map((m) => {
+              const now = m.get(b), before = then ? m.get(then) : 0;
+              return (
+                <tr key={m.label} className="border-t">
+                  <td className="py-1.5 text-muted-foreground whitespace-nowrap">{m.label}</td>
+                  <td className="py-1.5 text-center font-bold whitespace-nowrap">{m.show(now)}</td>
+                  <td className="py-1.5 text-center whitespace-nowrap">{m.show(before)}</td>
+                  <td className="py-1.5 text-center">{m.label === "ممسوحة" ? (now - before ? `${now - before > 0 ? "+" : ""}${now - before}` : "—") : <Change now={now} before={before} />}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </Card>
+  );
+}
+
 function Hint({ children }: { children: React.ReactNode }) {
   return <p className="text-xs text-muted-foreground leading-relaxed">{children}</p>;
 }
@@ -174,7 +381,6 @@ export default function AmarsoftReports() {
     return { t, p, branches, karats, leaders, stale, stock, silent };
   }, [data]);
 
-  const maxDay = Math.max(1, ...(data?.days ?? []).map((d) => Number(d.sales_dirhams)));
   const best = Math.max(1, ...(v?.branches ?? []).map((b) => Number(b.sales_dirhams)));
 
   return (
@@ -283,25 +489,14 @@ export default function AmarsoftReports() {
             ))}
           </Card>
 
+          <BranchTable branches={v.branches} />
+          <BranchVsItself branches={v.branches} from={from} to={to} prev={prev} prevLabel={PREV_LABEL[period]} />
+
           {/* يوم بيوم */}
           {!!data.days.length && (
             <Card className="p-3">
               <h2 className="text-lg font-bold">المبيعات يوم بيوم{nDays >= 14 ? "" : " (آخر 30 يوم)"}</h2>
-              <Hint>كل عمود يوم؛ كل ما كان أطول كل ما كانت مبيعات اليوم أكثر. اضغط مطوّلاً على عمود تشوف رقمه.</Hint>
-              <div className="mb-2" />
-              <div className="flex items-end gap-[2px] h-28" dir="ltr">
-                {data.days.map((d) => (
-                  <div key={d.day} className="flex-1 bg-primary/80 rounded-t-sm min-h-[2px]" title={`${d.day}: ${formatLD(d.sales_dirhams)} · ${d.invoices} فاتورة`}
-                    style={{ height: `${Math.round((Number(d.sales_dirhams) / maxDay) * 100)}%` }} />
-                ))}
-              </div>
-              <div className="flex justify-between text-[11px] text-muted-foreground mt-1" dir="ltr">
-                <span>{data.days[0].day}</span><span>{data.days[data.days.length - 1].day}</span>
-              </div>
-              {(() => {
-                const top = [...data.days].sort((a, b) => Number(b.sales_dirhams) - Number(a.sales_dirhams))[0];
-                return top ? <p className="text-xs text-muted-foreground mt-1">أحسن يوم: {top.day} — {formatLD(top.sales_dirhams)} ({top.invoices} فاتورة)</p> : null;
-              })()}
+              <DailyChart days={data.days} from={nDays >= 14 ? from : shift(to, -29)} to={to} />
             </Card>
           )}
 
