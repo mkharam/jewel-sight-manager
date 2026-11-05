@@ -15,6 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ImageIcon, MapPin, MoreVertical, Check, Barcode, Tag } from "lucide-react";
 import type { LatestQuote } from "@/hooks/useLatestQuotes";
 import { useGoldPrices } from "@/hooks/useGoldPrices";
+import { businessToday, daysBetween } from "@/lib/dates";
 import { priceForPiece, PRICE_GAP_LABEL } from "@/lib/pricing";
 import { usePriceVisibleFor } from "@/hooks/useAppSettings";
 import { PRODUCT_STATUS, formatCurrency, formatWeight, getThumbUrl, ProductStatus } from "@/lib/constants";
@@ -94,6 +95,8 @@ export default function ProductCard({
   const computed = priceForPiece(product, goldPrices);
   const pricesVisible = usePriceVisibleFor(product.promo_price ?? product.sale_price ?? computed.price?.total ?? null);
   const todayPrice = pricesVisible ? computed.price : null;
+  // السعر المحسوب من سعر ذهب عمره أكثر من يومين ما يتسمّاش «سعر اليوم».
+  const goldOld = Array.from(goldPrices?.values() ?? []).some((r) => daysBetween(r.effective_date, businessToday()) > 2);
   const priceGap = pricesVisible ? computed.gap : null;
   const isAdmin = roles.includes("admin");
   const isManager = roles.includes("manager");
@@ -221,7 +224,9 @@ export default function ProductCard({
               <p className="text-base font-bold text-primary">{formatCurrency(product.sale_price)}</p>
             ) : todayPrice ? (
               <>
-                <p className="text-[10px] text-muted-foreground leading-none">سعر اليوم</p>
+                {goldOld
+                  ? <p className="text-[10px] text-amber-600 dark:text-amber-400 font-bold leading-none">بسعر ذهب قديم</p>
+                  : <p className="text-[10px] text-muted-foreground leading-none">سعر اليوم</p>}
                 <p className="text-base font-bold text-primary leading-tight">{formatCurrency(todayPrice.total)}</p>
               </>
             ) : lastQuote ? (

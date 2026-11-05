@@ -11,6 +11,7 @@ import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store, Chec
 import ProductCard, { MATCH_TIER_META, type PhotoMatchTier } from "@/components/ProductCard";
 import { useLatestQuotes } from "@/hooks/useLatestQuotes";
 import { useGoldPrices } from "@/hooks/useGoldPrices";
+import { businessToday, daysBetween } from "@/lib/dates";
 import ImageSearchButton from "@/components/ImageSearchButton";
 import AiAssistantSheet from "@/components/AiAssistantSheet";
 import MissingWeightsBanner from "@/components/MissingWeightsBanner";
@@ -204,6 +205,12 @@ export default function ProductSearch() {
   // بخلاف عرض سعر كل قطعة في الكتالوق الذي يستطيع المالك إطفاءه.
   const { data: goldPrices } = useGoldPrices();
   const goldRates = Array.from(goldPrices?.values() ?? []).sort((a, b) => a.karat.localeCompare(b.karat));
+  // سعر قديم (أكثر من يومين) ما يتكتبش «اليوم» — الموظف يشوف تاريخه فما يعطيش زبون سعر غلط.
+  const goldAge = goldRates.length ? Math.max(...goldRates.map((r) => daysBetween(r.effective_date, businessToday()))) : 0;
+  const goldOld = goldAge > 2;
+  const goldDate = goldRates.length
+    ? new Intl.DateTimeFormat("ar-LY-u-nu-latn", { day: "numeric", month: "long" }).format(new Date(`${goldRates.map((r) => r.effective_date).sort()[0]}T12:00:00Z`))
+    : "";
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
@@ -639,7 +646,9 @@ export default function ProductSearch() {
           {goldRates.length > 0 && (
             <div className="flex items-center gap-1.5 mb-2.5 flex-wrap">
               <Coins className="size-3.5 text-primary shrink-0" />
-              <span className="text-[11px] text-muted-foreground">سعر الغرام اليوم</span>
+              {goldOld
+                ? <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400">⚠️ سعر قديم من {goldDate} — اسأل المشرف</span>
+                : <span className="text-[11px] text-muted-foreground">سعر الغرام اليوم</span>}
               {goldRates.map((r) => (
                 <span
                   key={r.karat}

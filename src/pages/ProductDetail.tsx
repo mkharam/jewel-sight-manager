@@ -22,6 +22,7 @@ import SellDialog from "@/components/SellDialog";
 import ReserveDialog from "@/components/ReserveDialog";
 import ReorderRequestDialog from "@/components/ReorderRequestDialog";
 import QuantityControl from "@/components/QuantityControl";
+import { AmarsoftPieceInfo } from "@/components/AmarsoftTagCheck";
 import ImageLightbox from "@/components/ImageLightbox";
 import EditOwnProductSheet from "@/components/EditOwnProductSheet";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
@@ -392,6 +393,8 @@ export default function ProductDetail() {
                 <Spec label="آخر تحقق" value={formatDate(product.last_verified_at)} icon={<ShieldCheck className="size-3.5 text-primary" />} />
               )}
             </div>
+
+            {product.barcode_value && <AmarsoftPieceInfo barcode={product.barcode_value} appWeight={product.weight_grams} />}
 
             <div className="pt-3 border-t border-border">
               {!pricesVisible ? null : product.promo_price ? (
