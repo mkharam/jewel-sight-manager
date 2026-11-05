@@ -2,11 +2,12 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Building2, Loader2 } from "lucide-react";
+import { ArrowRight, Building2, CalendarDays, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import InvoiceChanges from "@/components/amarsoft/InvoiceChanges";
-import { sb, periodDays, daysToRange, formatLD, formatGrams, formatTripoli, type Period } from "@/lib/amarsoft";
+import { sb, periodDays, daysToRange, formatLD, formatGrams, formatTripoli, tripoliToday, type Period } from "@/lib/amarsoft";
 
 type Overview = {
   branch_code: string; branch_id: string; branch_name: string; invoices: number; returns: number; tagged: number;
@@ -17,16 +18,29 @@ type Day = { day: string; invoices: number; grams: number; sales_dirhams: number
 type Leader = { sman: string; salesman_name: string | null; invoices: number; grams: number; net_dirhams: number | null };
 type StockRow = { branch_code: string; karat: string | null; pieces: number; grams: number };
 
+// الفترة: وحدة من الجاهزين، ولا يوم معيّن يختاره المدير ("day:YYYY-MM-DD").
+type Sel = Period | `day:${string}`;
 const PERIODS: { key: Period; label: string }[] = [
   { key: "today", label: "اليوم" }, { key: "week", label: "الأسبوع" }, { key: "month", label: "الشهر" }, { key: "year", label: "السنة" },
 ];
 
-function range(p: Period) {
-  const { from, to } = periodDays(p);
+function shiftDay(ymd: string, n: number) {
+  const d = new Date(`${ymd}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+const dayOf = (s: Sel) => (s.startsWith("day:") ? s.slice(4) : null);
+function bounds(s: Sel) {
+  const d = dayOf(s);
+  return d ? { from: d, to: d } : periodDays(s as Period);
+}
+function range(s: Sel) {
+  const { from, to } = bounds(s);
   return daysToRange(from, to);
 }
+const dayTitle = (ymd: string) => new Intl.DateTimeFormat("ar-LY", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${ymd}T12:00:00Z`));
 
-function useOverview(period: Period) {
+function useOverview(period: Sel) {
   return useQuery({
     queryKey: ["amarsoft-branch-overview", period],
     queryFn: async () => {
@@ -38,12 +52,29 @@ function useOverview(period: Period) {
   });
 }
 
-function PeriodTabs({ period, setPeriod }: { period: Period; setPeriod: (p: Period) => void }) {
+function PeriodTabs({ period, setPeriod }: { period: Sel; setPeriod: (p: Sel) => void }) {
+  const day = dayOf(period);
+  const today = tripoliToday();
   return (
-    <div className="grid grid-cols-4 gap-1.5">
-      {PERIODS.map((p) => (
-        <Button key={p.key} size="lg" variant={period === p.key ? "default" : "outline"} onClick={() => setPeriod(p.key)} className="text-base">{p.label}</Button>
-      ))}
+    <div className="space-y-2">
+      <div className="grid grid-cols-5 gap-1.5">
+        {PERIODS.map((p) => (
+          <Button key={p.key} size="lg" variant={period === p.key ? "default" : "outline"} onClick={() => setPeriod(p.key)} className="text-base px-1">{p.label}</Button>
+        ))}
+        <Button size="lg" variant={day ? "default" : "outline"} onClick={() => setPeriod(`day:${day ?? shiftDay(today, -1)}`)} className="text-base px-1 gap-1">
+          <CalendarDays className="size-4" />يوم…
+        </Button>
+      </div>
+      {day && (
+        <Card className="p-2 space-y-1.5">
+          <div className="flex items-center gap-1.5">
+            <Button size="icon" variant="outline" className="h-11 w-11 shrink-0" onClick={() => setPeriod(`day:${shiftDay(day, -1)}`)} aria-label="اليوم اللي قبل"><ChevronRight className="size-5" /></Button>
+            <Input type="date" value={day} max={today} onChange={(e) => e.target.value && setPeriod(`day:${e.target.value}`)} className="h-11 text-base text-center" />
+            <Button size="icon" variant="outline" className="h-11 w-11 shrink-0" disabled={day >= today} onClick={() => setPeriod(`day:${shiftDay(day, 1)}`)} aria-label="اليوم اللي بعد"><ChevronLeft className="size-5" /></Button>
+          </div>
+          <p className="text-center text-sm font-semibold">{dayTitle(day)}</p>
+        </Card>
+      )}
     </div>
   );
 }
@@ -57,7 +88,7 @@ export default function Branches() {
 }
 
 function BranchList() {
-  const [period, setPeriod] = useState<Period>("month");
+  const [period, setPeriod] = useState<Sel>("month");
   const { data, isLoading } = useOverview(period);
   const total = useMemo(() => (data ?? []).reduce((t, o) => ({
     sales: t.sales + Number(o.sales_dirhams), grams: t.grams + Number(o.grams), invoices: t.invoices + Number(o.invoices),
@@ -114,7 +145,7 @@ function Stat({ label, value, tone }: { label: string; value: React.ReactNode; t
 }
 
 function BranchDetail({ code }: { code: string }) {
-  const [period, setPeriod] = useState<Period>("month");
+  const [period, setPeriod] = useState<Sel>("month");
   const overview = useOverview(period);
   const o = overview.data?.find((x) => x.branch_code === code);
 
@@ -122,9 +153,11 @@ function BranchDetail({ code }: { code: string }) {
     queryKey: ["amarsoft-branch-detail", code, period],
     queryFn: async () => {
       const { start, end } = range(period);
-      const daily = daysToRange(periodDays("month").from, periodDays("month").to);
+      // يوم بيوم: السنة كاملة للسنة، والا آخر 30 يوم لين نهاية الفترة (ليوم معيّن: الشهر اللي قبله).
+      const { to } = bounds(period);
+      const daily = daysToRange(shiftDay(to, -29), to);
       const [days, leaders, stock] = await Promise.all([
-        sb.rpc("amarsoft_daily", { p_start: period === "year" ? start : daily.start, p_end: end, p_branch: code }),
+        sb.rpc("amarsoft_daily", { p_start: period === "year" ? start : daily.start, p_end: daily.end, p_branch: code }),
         sb.rpc("amarsoft_leaderboard_v2", { p_start: start, p_end: end, p_branch: code }),
         sb.rpc("amarsoft_stock_summary"),
       ]);
