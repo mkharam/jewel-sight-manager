@@ -143,19 +143,11 @@ export default function ProductCard({
             <ImageIcon className="size-12 opacity-30" />
           </div>
         )}
-        {/* تدرّج خفيف أسفل الصورة يحسّن وضوح الشارات فوق أي صورة فاتحة */}
-        <div className="absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-black/25 to-transparent pointer-events-none" />
-        <Badge className={`absolute top-2 right-2 ${status.color} border-0 shadow-md`}>
-          {status.label}
-        </Badge>
-        {product.weight_grams == null && (
-          <Badge className="absolute bottom-2 left-2 bg-destructive text-destructive-foreground border-0 shadow-md">
-            بلا وزن
-          </Badge>
-        )}
-        {(product.karat || product.gold_color) && (
-          <Badge data-karat-badge variant="secondary" className="absolute top-2 left-2 bg-card/90 backdrop-blur border-0 shadow-sm">
-            {[product.karat, GOLD_COLORS.find((c) => c.value === product.gold_color)?.label].filter(Boolean).join(" · ")}
+        {/* الصورة نظيفة قدر الإمكان: الحالة تطلع بس لما القطعة مش متوفرة (المتوفر هو العادي)،
+            والعيار والوزن تحت الصورة مش فوقها. */}
+        {product.status !== "available" && (
+          <Badge className={`absolute top-2 right-2 ${status.color} border-0 shadow-md text-[11px]`}>
+            {status.label}
           </Badge>
         )}
         {/* شارة نسبة تشابه البحث بالصورة — أسفل يمين الصورة تحديداً كي لا تتراكب أبداً
@@ -187,19 +179,27 @@ export default function ProductCard({
             ))}
           </div>
         )}
+        {/* رقم القطعة والباركود على الشاشات الأوسع بس — على التلفون يزحموا البطاقة، وهم في صفحة القطعة. */}
         {product.sku && (
-          <p className="text-[11px] font-mono text-primary/80 truncate tracking-wide" dir="ltr">
+          <p className="hidden sm:block text-[11px] font-mono text-primary/80 truncate tracking-wide" dir="ltr">
             {product.sku}
           </p>
         )}
         {product.barcode_value && (
-          <p className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground truncate tracking-wide" dir="ltr">
+          <p className="hidden sm:flex items-center gap-1 text-[10px] font-mono text-muted-foreground truncate tracking-wide" dir="ltr">
             <Barcode className="size-3 shrink-0" />
             {product.barcode_value}
           </p>
         )}
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {product.weight_grams != null && <span>{formatWeight(product.weight_grams)}</span>}
+        <div className="flex items-center gap-1.5 flex-wrap text-xs text-muted-foreground">
+          {(product.karat || product.gold_color) && (
+            <span data-karat-badge className="font-semibold text-foreground">
+              {[product.karat, GOLD_COLORS.find((c) => c.value === product.gold_color)?.label].filter(Boolean).join(" · ")}
+            </span>
+          )}
+          {product.weight_grams != null
+            ? <span>{(product.karat || product.gold_color) ? "· " : ""}{formatWeight(product.weight_grams)}</span>
+            : <span className="text-destructive font-semibold">بلا وزن</span>}
           {match?.weightNote && (
             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${match.weightNote.tone === "light" ? "bg-sky-500/15 text-sky-700 dark:text-sky-300" : match.weightNote.tone === "heavy" ? "bg-amber-500/15 text-amber-700 dark:text-amber-300" : "bg-muted text-muted-foreground"}`}>
               {match.weightNote.text}
@@ -285,10 +285,11 @@ export default function ProductCard({
       {/* Quick-actions row (hidden in selectable mode to keep interaction simple) */}
       {!selectable && (
         <>
-          {/* Quick status menu — bottom-right of body (المدير/المشرف على فرعه فقط) */}
+          {/* Quick status menu — زاوية الصورة العلوية اليسرى (كان فوق اسم الفرع والسعر ويغطيهم) —
+              المدير/المشرف على فرعه فقط */}
           {canEditStatus && (
           <div
-            className="absolute bottom-2 right-2 z-10"
+            className="absolute top-2 left-2 z-10"
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
           >
             <DropdownMenu>
@@ -296,7 +297,7 @@ export default function ProductCard({
                 <Button
                   size="icon"
                   variant="secondary"
-                  className="size-9 rounded-full bg-card/95 backdrop-blur shadow-md"
+                  className="size-8 rounded-full bg-card/90 backdrop-blur shadow-md"
                   aria-label="تغيير الحالة سريعاً"
                   disabled={pending !== null}
                 >

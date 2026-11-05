@@ -20,7 +20,7 @@ import { CHAT_SEEN_KEY, NOTIFS_SEEN_KEY, SEEN_EVENT, readSeen, setIconBadge } fr
 
 type BadgeKey = "transfers" | "uploads" | "reorders" | "weights" | "chat";
 type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean; badgeKey?: BadgeKey };
-// compact: صفحات قليلة الاستعمال — تظهر في «المزيد» كأزرار صغيرة بدل مربعات كبيرة.
+// compact: صفحات قليلة الاستعمال — أيقوناتها في «المزيد» بلون هادي بدل الذهبي.
 type NavSection = { title: string; items: NavItem[]; compact?: boolean };
 
 // المدير العام: «المزيد» مركّز على الإدارة — الفروع والمبيعات والموردين والعملاء والموظفين أولاً،
@@ -474,49 +474,34 @@ export default function AppLayout() {
               <SheetHeader className="text-right">
                 <SheetTitle>المزيد</SheetTitle>
               </SheetHeader>
+              {/* شبكة أيقونات مرتّبة زي شاشة التلفون: أربعة في كل سطر، أيقونة صغيرة في مربع
+                  ملوّن واسمها تحتها. الأقسام الرئيسية بلون ذهبي، و«أخرى» (قليلة الاستعمال) بلون هادي. */}
               <div className="mt-3 space-y-4">
                 {moreSections.map((sec) => (
                   <div key={sec.title}>
-                    <p className="mb-2 text-sm font-bold text-muted-foreground">{sec.title}</p>
-                    {/* عمودان بأزرار كبيرة ونص واضح — أسهل للمس والقراءة من ثلاثة أعمدة صغيرة.
-                        «أخرى» (قليلة الاستعمال) أزرار صغيرة بسطر واحد حتى ما تزحمش الشاشة. */}
-                    {sec.compact ? (
-                      <div className="grid grid-cols-2 gap-2">
-                        {sec.items.map((item) => (
-                          <NavLink
-                            key={item.to}
-                            to={item.to}
-                            onClick={() => setMoreOpen(false)}
-                            className={({ isActive }) => cn(
-                              "relative flex items-center gap-2 rounded-xl border border-border px-3 h-12 text-sm font-semibold",
-                              isActive ? "bg-secondary text-primary" : "text-foreground active:bg-muted/50"
-                            )}
-                          >
-                            <item.icon className="size-5 shrink-0 text-muted-foreground" />
-                            <span className="truncate flex-1">{item.label}</span>
-                            <CountBadge count={countOf(item)} />
-                          </NavLink>
-                        ))}
-                      </div>
-                    ) : (
-                    <div className="grid grid-cols-2 gap-3">
+                    <p className="mb-1.5 px-1 text-xs font-bold text-muted-foreground">{sec.title}</p>
+                    <div className="grid grid-cols-4 gap-x-1 gap-y-3 rounded-2xl bg-muted/40 p-2">
                       {sec.items.map((item) => (
                         <NavLink
                           key={item.to}
                           to={item.to}
                           onClick={() => setMoreOpen(false)}
                           className={({ isActive }) => cn(
-                            "relative flex flex-col items-center justify-center gap-2 rounded-2xl border border-border p-3 min-h-[96px] text-base font-bold",
-                            isActive ? "bg-secondary text-primary" : "text-foreground active:bg-muted/50"
+                            "relative flex flex-col items-center gap-1 rounded-xl py-1.5 active:bg-muted",
+                            isActive ? "text-primary" : "text-foreground"
                           )}
                         >
-                          <item.icon className="size-8 text-primary" />
-                          <span className="text-center leading-tight">{item.label}</span>
-                          <CountBadge count={countOf(item)} className="absolute top-1.5 left-1.5" />
+                          <span className={cn(
+                            "relative flex size-11 items-center justify-center rounded-2xl",
+                            sec.compact ? "bg-card border border-border" : "bg-gold-soft",
+                          )}>
+                            <item.icon className={cn("size-5", sec.compact ? "text-muted-foreground" : "text-primary")} />
+                            <CountBadge count={countOf(item)} className="absolute -top-1 -left-1" />
+                          </span>
+                          <span className="text-[11px] font-semibold leading-tight text-center line-clamp-2 px-0.5">{item.label}</span>
                         </NavLink>
                       ))}
                     </div>
-                    )}
                   </div>
                 ))}
               </div>

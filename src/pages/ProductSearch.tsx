@@ -7,7 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store, CheckSquare, Trash2, Loader2, ArrowUpDown, ChevronDown, Coins } from "lucide-react";
+import { Search as SearchIcon, Plus, SlidersHorizontal, X, Sparkles, Store, CheckSquare, Trash2, Loader2, ArrowUpDown, ChevronDown, Coins, LayoutGrid, Square } from "lucide-react";
 import ProductCard, { MATCH_TIER_META, type PhotoMatchTier } from "@/components/ProductCard";
 import { useLatestQuotes } from "@/hooks/useLatestQuotes";
 import { useGoldPrices } from "@/hooks/useGoldPrices";
@@ -281,6 +281,10 @@ export default function ProductSearch() {
   const [photoQuery, setPhotoQuery] = useState<string | null>(restoredPhoto?.photoQuery ?? null);
   // ترتيب نتائج الصورة داخل كل مستوى: الأقرب شكلاً (افتراضي) ولا الأخف ولا الأثقل.
   const [photoSort, setPhotoSort] = useState<"match" | "light" | "heavy">("match");
+  // «صور كبيرة»: قطعة في كل سطر على التلفون (الصورة بعرض الشاشة) بدل قطعتين — يتحفظ في الجهاز.
+  const [bigView, setBigView] = useState(() => { try { return localStorage.getItem("search.bigView") === "1"; } catch { return false; } });
+  const toggleBigView = () => setBigView((v) => { try { localStorage.setItem("search.bigView", v ? "0" : "1"); } catch { /* تجاهل */ } return !v; });
+  const gridCls = bigView ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" : "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3";
   const similarIds = useMemo(() => similarMatches?.map((m) => m.product_id) ?? null, [similarMatches]);
 
   // "قطع مشابهة" من صفحة القطعة: /?similar=<productId> — يستخدم البصمة المحفوظة (بدون تحليل جديد)
@@ -910,6 +914,10 @@ export default function ProductSearch() {
         {/* نصوص مختصرة على الهاتف: الثلاثة أزرار بنصوصها الكاملة كانت تلتف لسطرين وتدفع
             القطع للأسفل. الأيقونات تكفي هنا والنص الكامل يظهر على الشاشات الأوسع. */}
         <div className="flex items-center gap-2">
+          <Button size="sm" variant={bigView ? "default" : "outline"} onClick={toggleBigView} title={bigView ? "شبكة (قطعتين في السطر)" : "صور كبيرة"} aria-label="طريقة العرض">
+            {bigView ? <LayoutGrid className="size-4" /> : <Square className="size-4" />}
+            <span className="hidden xs:inline xs:mr-1">{bigView ? "شبكة" : "صور كبيرة"}</span>
+          </Button>
           <Button
             size="sm"
             variant="outline"
@@ -997,6 +1005,7 @@ export default function ProductSearch() {
               products={similarityBuckets[t]}
               initialVisible={TIER_INITIAL[t]}
               quotes={latestQuotes}
+              gridCls={gridCls}
             />
           ))}
           {TIER_ORDER.every((t) => similarityBuckets[t].length === 0) && (
@@ -1007,7 +1016,7 @@ export default function ProductSearch() {
         </div>
       ) : products && products.length > 0 ? (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div className={gridCls}>
             {products.map((p: any) => (
               <ProductCard
                 key={p.id}
@@ -1045,6 +1054,7 @@ function SimilaritySection({
   products,
   initialVisible,
   quotes,
+  gridCls,
 }: {
   tier: PhotoMatchTier;
   title: string;
@@ -1052,6 +1062,7 @@ function SimilaritySection({
   products: any[];
   initialVisible?: number;
   quotes?: Map<string, import("@/hooks/useLatestQuotes").LatestQuote>;
+  gridCls: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const limit = !expanded && initialVisible && products.length > initialVisible + 2 ? initialVisible : products.length;
@@ -1065,7 +1076,7 @@ function SimilaritySection({
         </h3>
         <p className="text-[11px] text-muted-foreground">{subtitle}</p>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+      <div className={gridCls}>
         {products.slice(0, limit).map((p: any) => (
           <ProductCard key={p.id} product={p} match={p._match} lastQuote={quotes?.get(p.id) ?? null} />
         ))}
