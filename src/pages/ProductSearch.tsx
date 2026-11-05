@@ -279,6 +279,8 @@ export default function ProductSearch() {
   // Image-search results — when set, overrides normal query with similarity-ranked matches.
   const [similarMatches, setSimilarMatches] = useState<PhotoMatchState[] | null>(restoredPhoto?.similarMatches ?? null);
   const [photoQuery, setPhotoQuery] = useState<string | null>(restoredPhoto?.photoQuery ?? null);
+  // ترتيب نتائج الصورة داخل كل مستوى: الأقرب شكلاً (افتراضي) ولا الأخف ولا الأثقل.
+  const [photoSort, setPhotoSort] = useState<"match" | "light" | "heavy">("match");
   const similarIds = useMemo(() => similarMatches?.map((m) => m.product_id) ?? null, [similarMatches]);
 
   // "قطع مشابهة" من صفحة القطعة: /?similar=<productId> — يستخدم البصمة المحفوظة (بدون تحليل جديد)
@@ -527,30 +529,66 @@ export default function ProductSearch() {
   const { data: latestQuotes } = useLatestQuotes(visibleIds);
 
   // Group products by similarity bucket when in photo-search mode
-  const similarityBuckets = useMemo(() => {
+  const photoView = useMemo(() => {
     if (!similarMatches || !products) return null;
     // التصنيف يعتمد على تصنيف الخادم (kind) المبني على التشابه البصري تحديداً، لا على
     // الدرجة المركّبة — وإلا صارت قطعة تشترك في الوصف فقط تظهر تحت "مطابقة تماماً".
     // نسقط للعتبات القديمة إن غاب kind (استجابة قديمة مخزّنة مثلاً).
     const byId = new Map(similarMatches.map((m) => [m.product_id, m]));
     const buckets: Record<PhotoMatchTier, any[]> = { exact: [], very_close: [], similar_look: [], same_attributes: [], might_like: [] };
+
+    // الوزن مقارنة بالمشابهين: وسط أوزان القطع القريبة شكلاً (مطابقة/قريبة جداً/شكل مشابه) من نفس
+    // الفئة (طقم مع أطقم، خاتم مع خواتم). القطعة اللي تفرق 15% أو أكثر يطلع عليها «أخف/أثقل بـ X%».
+    const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); const h = s.length >> 1; return s.length % 2 ? s[h] : (s[h - 1] + s[h]) / 2; };
+    const groupOf = (p: any) => p.category?.name ?? "all";
+    const close = (products as any[]).filter((p) => {
+      const k = toTier(byId.get(p.id)?.kind);
+      return byId.has(p.id) && Number(p.weight_grams) > 0 && (k === "exact" || k === "very_close" || k === "similar_look");
+    });
+    const refAll = close.length >= 3 ? median(close.map((p) => Number(p.weight_grams))) : null;
+    const refByGroup = new Map<string, number>();
+    for (const g of new Set(close.map(groupOf))) {
+      const ws = close.filter((p) => groupOf(p) === g).map((p) => Number(p.weight_grams));
+      if (ws.length >= 3) refByGroup.set(g, median(ws));
+    }
+    const weightNote = (p: any) => {
+      const w = Number(p.weight_grams);
+      const ref = refByGroup.get(groupOf(p)) ?? refAll;
+      if (!(w > 0) || !ref) return undefined;
+      const d = Math.round(((w - ref) / ref) * 100);
+      if (Math.abs(d) < 15) return { text: "وزن عادي", tone: "same" as const };
+      return d < 0 ? { text: `أخف بـ ${-d}%`, tone: "light" as const } : { text: `أثقل بـ ${d}%`, tone: "heavy" as const };
+    };
+
     // products مرتّبة أصلاً بترتيب الخادم (الأقرب أولاً) — نحافظ عليه داخل كل مستوى.
     for (const p of products as any[]) {
       const m = byId.get(p.id);
       if (!m) continue;
       const tier = toTier(m.kind);
-      buckets[tier].push({ ...p, _match: { tier, reasons: m.reasons ?? [] } });
+      buckets[tier].push({ ...p, _match: { tier, reasons: m.reasons ?? [], weightNote: weightNote(p) } });
     }
     // المتوفر أولاً داخل كل مستوى: الزبون يريد قطعة يأخذها اليوم، والمبيع/المحجوز يبقى ظاهراً
-    // بعدها (مفيد لطلب نسخة مشابهة) بدل أن يُخفى.
+    // بعدها (مفيد لطلب نسخة مشابهة) بدل أن يُخفى. لو الموظف اختار «الأخف/الأثقل» نرتّب بالوزن.
+    const wOf = (p: any) => (Number(p.weight_grams) > 0 ? Number(p.weight_grams) : null);
     for (const t of TIER_ORDER) {
       buckets[t] = buckets[t]
         .map((p, i) => ({ p, i }))
-        .sort((a, b) => Number(b.p.status === "available") - Number(a.p.status === "available") || a.i - b.i)
+        .sort((a, b) => {
+          const avail = Number(b.p.status === "available") - Number(a.p.status === "available");
+          if (avail) return avail;
+          if (photoSort !== "match") {
+            const wa = wOf(a.p), wb = wOf(b.p);
+            if (wa == null || wb == null) return wa == null ? (wb == null ? a.i - b.i : 1) : -1;
+            return photoSort === "light" ? wa - wb : wb - wa;
+          }
+          return a.i - b.i;
+        })
         .map(({ p }) => p);
     }
-    return buckets;
-  }, [similarMatches, products]);
+    const weights = close.map((p) => Number(p.weight_grams));
+    return { buckets, weightRange: weights.length >= 2 ? { min: Math.min(...weights), max: Math.max(...weights), mid: median(weights) } : null };
+  }, [similarMatches, products, photoSort]);
+  const similarityBuckets = photoView?.buckets ?? null;
 
   const activeFilterCount = useMemo(() => {
     let n = 0;
@@ -832,6 +870,20 @@ export default function ProductSearch() {
             <Button size="sm" variant="ghost" onClick={clearSimilar} className="shrink-0">
               <X className="size-4 ml-1" /> إلغاء
             </Button>
+          </div>
+          <div className="flex items-center gap-1.5 overflow-x-auto -mx-1 px-1 text-xs">
+            <span className="shrink-0 text-muted-foreground">الترتيب:</span>
+            {([["match", "الأقرب شكلاً"], ["light", "الأخف وزناً"], ["heavy", "الأثقل وزناً"]] as const).map(([k, l]) => (
+              <button key={k} type="button" onClick={() => setPhotoSort(k)}
+                className={`shrink-0 h-7 px-2.5 rounded-full border font-semibold ${photoSort === k ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border"}`}>
+                {l}
+              </button>
+            ))}
+            {photoView?.weightRange && (
+              <span className="shrink-0 text-muted-foreground">
+                · وزن المشابهين بين {Math.round(photoView.weightRange.min)} و {Math.round(photoView.weightRange.max)} جم، عادة {Math.round(photoView.weightRange.mid)} جم
+              </span>
+            )}
           </div>
           <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1">
             {TIER_ORDER.filter((t) => similarityBuckets[t].length > 0).map((t) => (

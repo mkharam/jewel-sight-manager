@@ -60,7 +60,8 @@ interface ProductCardProps {
 }
 
 export type PhotoMatchTier = "exact" | "very_close" | "similar_look" | "same_attributes" | "might_like";
-export type PhotoMatchInfo = { tier: PhotoMatchTier; reasons: string[] };
+/** weightNote: وزن القطعة مقارنة بالقطع المشابهة لها في نفس نتائج البحث ("أخف بـ 25%"). */
+export type PhotoMatchInfo = { tier: PhotoMatchTier; reasons: string[]; weightNote?: { text: string; tone: "light" | "heavy" | "same" } };
 
 export const MATCH_TIER_META: Record<PhotoMatchTier, { label: string; badge: string }> = {
   exact: { label: "🎯 مطابقة", badge: "bg-green-600 text-white" },
@@ -179,7 +180,7 @@ export default function ProductCard({
         </div>
         {match && match.reasons.length > 0 && (
           <div className="flex flex-wrap gap-1">
-            {match.reasons.slice(0, 2).map((r) => (
+            {match.reasons.slice(0, 3).map((r) => (
               <span key={r} className="text-[10px] leading-tight px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
                 {r}
               </span>
@@ -199,6 +200,11 @@ export default function ProductCard({
         )}
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {product.weight_grams != null && <span>{formatWeight(product.weight_grams)}</span>}
+          {match?.weightNote && (
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${match.weightNote.tone === "light" ? "bg-sky-500/15 text-sky-700 dark:text-sky-300" : match.weightNote.tone === "heavy" ? "bg-amber-500/15 text-amber-700 dark:text-amber-300" : "bg-muted text-muted-foreground"}`}>
+              {match.weightNote.text}
+            </span>
+          )}
           {product.ring_size && <span>· مقاس {product.ring_size}</span>}
         </div>
         <div className="flex items-end justify-between pt-1.5 border-t border-border/60 mt-1">
