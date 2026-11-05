@@ -22,7 +22,9 @@ export const EMPLOYEE_CRITERIA = [
   { key: "customers", label: "التعامل مع الزبائن" },
   { key: "sales", label: "البيع والمبادرة" },
   { key: "knowledge", label: "معرفة البضاعة والأسعار" },
-  { key: "honesty", label: "الأمانة والدقة في الكاش والفواتير" },
+  { key: "cleanliness", label: "نظافة وصيانة المحل" },
+  { key: "display", label: "ترتيب الفترينة والعروض" },
+  { key: "goods_care", label: "سلامة البضاعة والتبليغ عن أي كسر في القطع" },
   { key: "teamwork", label: "التعاون مع الزملاء" },
   { key: "app", label: "استعمال التطبيق والمنظومة" },
 ] as const;
