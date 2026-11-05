@@ -288,10 +288,11 @@ export default function ProductSearch() {
   const [photoQuery, setPhotoQuery] = useState<string | null>(restoredPhoto?.photoQuery ?? null);
   // ترتيب نتائج الصورة داخل كل مستوى: الأقرب شكلاً (افتراضي) ولا الأخف ولا الأثقل.
   const [photoSort, setPhotoSort] = useState<"match" | "light" | "heavy">("match");
-  // «صور كبيرة»: قطعة في كل سطر على التلفون (الصورة بعرض الشاشة) بدل قطعتين — يتحفظ في الجهاز.
+  // العرض العادي: شبكة كثيفة، 3 قطع في السطر على التلفون (حوالي 6 صور في الشاشة) بخط صغير.
+  // «صور كبيرة»: قطعة في كل سطر (الصورة بعرض الشاشة) بكل التفاصيل — يتحفظ في الجهاز.
   const [bigView, setBigView] = useState(() => { try { return localStorage.getItem("search.bigView") === "1"; } catch { return false; } });
   const toggleBigView = () => setBigView((v) => { try { localStorage.setItem("search.bigView", v ? "0" : "1"); } catch { /* تجاهل */ } return !v; });
-  const gridCls = bigView ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" : "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3";
+  const gridCls = bigView ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" : "grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2";
   const similarIds = useMemo(() => similarMatches?.map((m) => m.product_id) ?? null, [similarMatches]);
 
   // "قطع مشابهة" من صفحة القطعة: /?similar=<productId> — يستخدم البصمة المحفوظة (بدون تحليل جديد)
@@ -923,7 +924,7 @@ export default function ProductSearch() {
         {/* نصوص مختصرة على الهاتف: الثلاثة أزرار بنصوصها الكاملة كانت تلتف لسطرين وتدفع
             القطع للأسفل. الأيقونات تكفي هنا والنص الكامل يظهر على الشاشات الأوسع. */}
         <div className="flex items-center gap-2">
-          <Button size="sm" variant={bigView ? "default" : "outline"} onClick={toggleBigView} title={bigView ? "شبكة (قطعتين في السطر)" : "صور كبيرة"} aria-label="طريقة العرض">
+          <Button size="sm" variant={bigView ? "default" : "outline"} onClick={toggleBigView} title={bigView ? "شبكة (3 قطع في السطر)" : "صور كبيرة"} aria-label="طريقة العرض">
             {bigView ? <LayoutGrid className="size-4" /> : <Square className="size-4" />}
             <span className="hidden xs:inline xs:mr-1">{bigView ? "شبكة" : "صور كبيرة"}</span>
           </Button>
@@ -998,8 +999,8 @@ export default function ProductSearch() {
       )}
 
       {isLoading ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {Array.from({ length: 8 }).map((_, i) => (
+        <div className={gridCls}>
+          {Array.from({ length: 9 }).map((_, i) => (
             <div key={i} className="aspect-square rounded-xl skeleton" style={{ animationDelay: `${(i % 4) * 120}ms` }} />
           ))}
         </div>
@@ -1035,6 +1036,7 @@ export default function ProductSearch() {
                 onToggleSelect={toggleSelect}
                 onStatusChanged={refreshProducts}
                 lastQuote={latestQuotes?.get(p.id) ?? null}
+                dense={!bigView}
               />
             ))}
           </div>
@@ -1087,7 +1089,7 @@ function SimilaritySection({
       </div>
       <div className={gridCls}>
         {products.slice(0, limit).map((p: any) => (
-          <ProductCard key={p.id} product={p} match={p._match} lastQuote={quotes?.get(p.id) ?? null} />
+          <ProductCard key={p.id} product={p} match={p._match} lastQuote={quotes?.get(p.id) ?? null} dense={!gridCls.includes("grid-cols-1")} />
         ))}
       </div>
       {limit < products.length && (

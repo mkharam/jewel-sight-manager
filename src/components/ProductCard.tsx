@@ -58,6 +58,8 @@ interface ProductCardProps {
   match?: PhotoMatchInfo;
   /** آخر سعر أُعطي لزبون في هذه القطعة (راجع useLatestQuotes) — يُعرض حين لا سعر بيع مثبّت. */
   lastQuote?: LatestQuote | null;
+  /** شبكة كثيفة على التلفون (3 قطع في السطر): الصورة هي الأساس، وتحتها الاسم والعيار والوزن والسعر بخط صغير. */
+  dense?: boolean;
 }
 
 export type PhotoMatchTier = "exact" | "very_close" | "similar_look" | "same_attributes" | "might_like";
@@ -82,6 +84,7 @@ export default function ProductCard({
   lastQuote,
   onToggleSelect,
   onStatusChanged,
+  dense,
 }: ProductCardProps) {
   const primary = product.images?.find((i) => i.is_primary) ?? product.images?.[0];
   const imgUrl = getThumbUrl(primary);
@@ -95,6 +98,7 @@ export default function ProductCard({
   const computed = priceForPiece(product, goldPrices);
   const pricesVisible = usePriceVisibleFor(product.promo_price ?? product.sale_price ?? computed.price?.total ?? null);
   const todayPrice = pricesVisible ? computed.price : null;
+  const priceCls = dense ? "text-sm font-bold text-primary leading-tight" : "text-base font-bold text-primary leading-tight";
   // السعر المحسوب من سعر ذهب عمره أكثر من يومين ما يتسمّاش «سعر اليوم».
   const goldOld = Array.from(goldPrices?.values() ?? []).some((r) => daysBetween(r.effective_date, businessToday()) > 2);
   const priceGap = pricesVisible ? computed.gap : null;
@@ -149,14 +153,14 @@ export default function ProductCard({
         {/* الصورة نظيفة قدر الإمكان: الحالة تطلع بس لما القطعة مش متوفرة (المتوفر هو العادي)،
             والعيار والوزن تحت الصورة مش فوقها. */}
         {product.status !== "available" && (
-          <Badge className={`absolute top-2 right-2 ${status.color} border-0 shadow-md text-[11px]`}>
+          <Badge className={`absolute ${dense ? "top-1 right-1 text-[9px] px-1 py-0" : "top-2 right-2 text-[11px]"} ${status.color} border-0 shadow-md`}>
             {status.label}
           </Badge>
         )}
         {/* شارة نسبة تشابه البحث بالصورة — أسفل يمين الصورة تحديداً كي لا تتراكب أبداً
             مع شارتي الحالة (أعلى يمين) والعيار (أعلى يسار). */}
         {match && (
-          <span className={`absolute bottom-2 right-2 z-10 text-[10px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur shadow ${MATCH_TIER_META[match.tier].badge}`}>
+          <span className={`absolute z-10 font-bold rounded-md backdrop-blur shadow ${dense ? "bottom-1 right-1 text-[9px] px-1 py-0" : "bottom-2 right-2 text-[10px] px-1.5 py-0.5"} ${MATCH_TIER_META[match.tier].badge}`}>
             {MATCH_TIER_META[match.tier].label}
           </span>
         )}
@@ -164,16 +168,16 @@ export default function ProductCard({
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
         )}
       </div>
-      <div className="p-3 space-y-1.5">
+      <div className={dense ? "p-1.5 space-y-0.5" : "p-3 space-y-1.5"}>
         <div className="flex items-center gap-1.5">
-          <h3 className="font-semibold text-sm line-clamp-1 flex-1">{product.name}</h3>
+          <h3 className={`font-semibold line-clamp-1 flex-1 ${dense ? "text-[11px] leading-tight" : "text-sm"}`}>{product.name}</h3>
           {(product.quantity ?? 1) > 1 && (
             <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-primary/12 text-primary text-[11px] font-bold tabular-nums" title="الكمية المتوفرة">
               ×{product.quantity}
             </span>
           )}
         </div>
-        {match && match.reasons.length > 0 && (
+        {match && !dense && match.reasons.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {match.reasons.slice(0, 3).map((r) => (
               <span key={r} className="text-[10px] leading-tight px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
@@ -194,7 +198,7 @@ export default function ProductCard({
             {product.barcode_value}
           </p>
         )}
-        <div className="flex items-center gap-1.5 flex-wrap text-xs text-muted-foreground">
+        <div className={`flex items-center flex-wrap text-muted-foreground ${dense ? "gap-1 text-[10px] leading-tight" : "gap-1.5 text-xs"}`}>
           {(product.karat || product.gold_color) && (
             <span data-karat-badge className="font-semibold text-foreground">
               {[product.karat, GOLD_COLORS.find((c) => c.value === product.gold_color)?.label].filter(Boolean).join(" · ")}
@@ -210,7 +214,7 @@ export default function ProductCard({
           )}
           {product.ring_size && <span>· مقاس {product.ring_size}</span>}
         </div>
-        <div className="flex items-end justify-between pt-1.5 border-t border-border/60 mt-1">
+        <div className={dense ? "pt-1 border-t border-border/60 mt-0.5 space-y-0.5" : "flex items-end justify-between pt-1.5 border-t border-border/60 mt-1"}>
           <div className="min-w-0">
             {/* تسعيرة القطعة (مثبّتة أو محسوبة من سعر الذهب) تخضع لمفتاح المالك، أما
                 «آخر سعر» فيبقى ظاهراً دائماً: هو ما أُعطي لزبون فعلاً لا تسعيرة المتجر،
@@ -218,16 +222,16 @@ export default function ProductCard({
             {pricesVisible && product.promo_price ? (
               <>
                 <p className="text-xs text-muted-foreground line-through">{formatCurrency(product.sale_price)}</p>
-                <p className="text-base font-bold text-primary">{formatCurrency(product.promo_price)}</p>
+                <p className={priceCls}>{formatCurrency(product.promo_price)}</p>
               </>
             ) : pricesVisible && product.sale_price != null ? (
-              <p className="text-base font-bold text-primary">{formatCurrency(product.sale_price)}</p>
+              <p className={priceCls}>{formatCurrency(product.sale_price)}</p>
             ) : todayPrice ? (
               <>
                 {goldOld
                   ? <p className="text-[10px] text-amber-600 dark:text-amber-400 font-bold leading-none">بسعر ذهب قديم</p>
                   : <p className="text-[10px] text-muted-foreground leading-none">سعر اليوم</p>}
-                <p className="text-base font-bold text-primary leading-tight">{formatCurrency(todayPrice.total)}</p>
+                <p className={priceCls}>{formatCurrency(todayPrice.total)}</p>
               </>
             ) : lastQuote ? (
               <>
@@ -235,7 +239,7 @@ export default function ProductCard({
                   <Tag className="size-2.5" /> آخر سعر
                   {lastQuote.branch_name && <span className="truncate">· {lastQuote.branch_name}</span>}
                 </p>
-                <p className="text-base font-bold text-primary leading-tight">{formatCurrency(lastQuote.price)}</p>
+                <p className={priceCls}>{formatCurrency(lastQuote.price)}</p>
               </>
             ) : pricesVisible ? (
               <p className="text-xs text-muted-foreground">{priceGap ? PRICE_GAP_LABEL[priceGap] : "لم يُسعَّر بعد"}</p>
@@ -244,13 +248,13 @@ export default function ProductCard({
           {/* القطعة بلا فرع تترك الخانة فارغة فيبدو الأمر عطلاً — والموظف يُسأل «وين
               القطعة؟» فلا يجد جواباً. نقولها صراحةً: وصلت ولم تُوزَّع على محل بعد. */}
           {product.branch?.name ? (
-            <div className="flex items-center gap-0.5 text-[11px] text-muted-foreground">
-              <MapPin className="size-3" />
-              {product.branch.name}
+            <div className={`flex items-center gap-0.5 text-muted-foreground ${dense ? "text-[9px] truncate" : "text-[11px]"}`}>
+              <MapPin className={dense ? "size-2.5 shrink-0" : "size-3"} />
+              <span className="truncate">{dense ? product.branch.name.replace(/^\d+\s*-\s*/, "") : product.branch.name}</span>
             </div>
           ) : (
-            <div className="flex items-center gap-0.5 text-[11px] text-muted-foreground/70">
-              <MapPin className="size-3" />
+            <div className={`flex items-center gap-0.5 text-muted-foreground/70 ${dense ? "text-[9px]" : "text-[11px]"}`}>
+              <MapPin className={dense ? "size-2.5" : "size-3"} />
               لم تُوزَّع
             </div>
           )}
@@ -294,7 +298,7 @@ export default function ProductCard({
               المدير/المشرف على فرعه فقط */}
           {canEditStatus && (
           <div
-            className="absolute top-2 left-2 z-10"
+            className={`absolute z-10 ${dense ? "top-1 left-1" : "top-2 left-2"}`}
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
           >
             <DropdownMenu>
@@ -302,7 +306,7 @@ export default function ProductCard({
                 <Button
                   size="icon"
                   variant="secondary"
-                  className="size-8 rounded-full bg-card/90 backdrop-blur shadow-md"
+                  className={`${dense ? "size-6" : "size-8"} rounded-full bg-card/90 backdrop-blur shadow-md`}
                   aria-label="تغيير الحالة سريعاً"
                   disabled={pending !== null}
                 >
