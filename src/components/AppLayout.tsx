@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Building2, Truck, UserCog, Watch, type LucideIcon } from "lucide-react";
+import { ArrowRight, Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Building2, Truck, UserCog, Wallet, Watch, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -41,6 +41,8 @@ function buildAdminNav(): NavSection[] {
       items: [
         { to: "/branches", label: "الفروع", icon: Building2 },
         { to: "/pos-sales", label: "المبيعات", icon: Receipt },
+        { to: "/gram-price", label: "سعر الغرام", icon: Coins },
+        { to: "/accountant", label: "المحاسب", icon: Wallet },
         { to: "/suppliers", label: "الموردون", icon: Truck },
         { to: "/customers", label: "العملاء", icon: Users },
         { to: "/staff", label: "الموظفون", icon: UserCog },

@@ -51,6 +51,8 @@ const AmarsoftSuppliers = lazy(() => import("@/pages/AmarsoftSuppliers"));
 const AmarsoftReports = lazy(() => import("@/pages/AmarsoftReports"));
 const Watches = lazy(() => import("@/pages/Watches"));
 const AmarsoftLink = lazy(() => import("@/pages/AmarsoftLink"));
+const GramPrice = lazy(() => import("@/pages/GramPrice"));
+const Accountant = lazy(() => import("@/pages/Accountant"));
 
 function PageLoader() {
   return (
@@ -133,6 +135,8 @@ const App = () => (
                 <Route path="/reservations" element={<Reservations />} />
                 <Route path="/watches" element={<Watches />} />
                 <Route path="/amarsoft-link" element={<RequireRole allow={["admin"]}><AmarsoftLink /></RequireRole>} />
+                <Route path="/gram-price" element={<RequireRole allow={["admin"]}><GramPrice /></RequireRole>} />
+                <Route path="/accountant" element={<RequireRole allow={["admin"]}><Accountant /></RequireRole>} />
                 <Route path="/buybacks" element={<RequireRole allow={["admin", "manager"]}><Buybacks /></RequireRole>} />
                 <Route path="/closing" element={<RequireRole allow={["admin", "manager"]}><DailyClosing /></RequireRole>} />
                 <Route path="/admin/repairs" element={<RequireRole allow={["admin", "manager"]}><Repairs /></RequireRole>} />
