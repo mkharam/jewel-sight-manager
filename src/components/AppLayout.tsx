@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Building2, Truck, UserCog, Wallet, Watch, type LucideIcon } from "lucide-react";
+import { ArrowRight, Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Building2, Truck, UserCog, Wallet, Watch, ClipboardList, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import NotificationsBell from "@/components/NotificationsBell";
 import InstallPrompt from "@/components/InstallPrompt";
 import PullToRefresh from "@/components/PullToRefresh";
+import { useIsEvalAdmin } from "@/lib/evaluation";
 import StaleGoldPriceBanner from "@/components/StaleGoldPriceBanner";
 import { uploadQueue, useUploadQueuePendingCount } from "@/lib/uploadQueue";
 import { useResumeRoute } from "@/lib/resume";
@@ -43,6 +44,7 @@ function buildAdminNav(): NavSection[] {
         { to: "/pos-sales", label: "المبيعات", icon: Receipt },
         { to: "/gram-price", label: "سعر الغرام", icon: Coins },
         { to: "/accountant", label: "المحاسب", icon: Wallet },
+        { to: "/evaluations", label: "تقييم الموظفين", icon: ClipboardList },
         { to: "/suppliers", label: "الموردون", icon: Truck },
         { to: "/customers", label: "العملاء", icon: Users },
         { to: "/staff", label: "الموظفون", icon: UserCog },
@@ -82,7 +84,7 @@ function buildAdminNav(): NavSection[] {
 // سطح المكتب، مشتركة، مشرف، مدير، موظف) فتتكرّر العناصر وتظهر للمدير 20 رابطاً في صف واحد
 // أعلى الشاشة على الآيباد والكمبيوتر. الآن: شريط جانبي بأقسام على الشاشات الكبيرة، ونفس
 // الأقسام داخل «المزيد» على الهاتف.
-function buildNav(isAdmin: boolean, isManager: boolean): NavSection[] {
+function buildNav(isAdmin: boolean, isManager: boolean, isEvalRecorder = false): NavSection[] {
   if (isAdmin) return buildAdminNav();
   const sections: NavSection[] = [
     {
@@ -122,6 +124,8 @@ function buildNav(isAdmin: boolean, isManager: boolean): NavSection[] {
       ],
     });
   }
+  // مسؤول التقييم (أيمن) يشوف لوحة التقييمات ويسجّل فيها، حتى لو موظف عادي.
+  if (isEvalRecorder) sections[1].items.unshift({ to: "/evaluations", label: "تقييم الموظفين", icon: ClipboardList });
   return sections;
 }
 
@@ -321,7 +325,8 @@ export default function AppLayout() {
   const [moreOpen, setMoreOpen] = useState(false);
 
   const isStaff = !isAdmin && !isManager;
-  const sections = buildNav(isAdmin, isManager);
+  const isEvalRecorder = !!useIsEvalAdmin();
+  const sections = buildNav(isAdmin, isManager, isEvalRecorder);
   const allItems = sections.flatMap((sec) => sec.items);
   const barPaths = isAdmin ? MOBILE_BAR_ADMIN : isStaff ? MOBILE_BAR_STAFF : MOBILE_BAR;
   const mobileBar = barPaths.map((to) => allItems.find((i) => i.to === to)!).filter(Boolean);

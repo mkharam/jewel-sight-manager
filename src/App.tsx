@@ -53,6 +53,8 @@ const Watches = lazy(() => import("@/pages/Watches"));
 const AmarsoftLink = lazy(() => import("@/pages/AmarsoftLink"));
 const GramPrice = lazy(() => import("@/pages/GramPrice"));
 const Accountant = lazy(() => import("@/pages/Accountant"));
+const Evaluations = lazy(() => import("@/pages/Evaluations"));
+const EvaluatePublic = lazy(() => import("@/pages/EvaluatePublic"));
 
 function PageLoader() {
   return (
@@ -97,6 +99,8 @@ const App = () => (
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/auth" element={<Auth />} />
+              {/* رابط التقييم الشهري: يفتح بلا تسجيل دخول، بالرمز السري. */}
+              <Route path="/evaluate/:token" element={<EvaluatePublic />} />
               <Route path="/index" element={<Navigate to="/" replace />} />
               {/* الإيصال خارج AppLayout حتى يُطبع بلا شريط تنقّل. */}
               <Route path="/sales/:id/receipt" element={<ProtectedRoute><SaleReceipt /></ProtectedRoute>} />
@@ -137,6 +141,8 @@ const App = () => (
                 <Route path="/amarsoft-link" element={<RequireRole allow={["admin"]}><AmarsoftLink /></RequireRole>} />
                 <Route path="/gram-price" element={<RequireRole allow={["admin"]}><GramPrice /></RequireRole>} />
                 <Route path="/accountant" element={<RequireRole allow={["admin"]}><Accountant /></RequireRole>} />
+                {/* المدير العام ومسؤول التقييم (أيمن) — الصلاحية في قاعدة البيانات (is_eval_admin). */}
+                <Route path="/evaluations" element={<Evaluations />} />
                 <Route path="/buybacks" element={<RequireRole allow={["admin", "manager"]}><Buybacks /></RequireRole>} />
                 <Route path="/closing" element={<RequireRole allow={["admin", "manager"]}><DailyClosing /></RequireRole>} />
                 <Route path="/admin/repairs" element={<RequireRole allow={["admin", "manager"]}><Repairs /></RequireRole>} />
