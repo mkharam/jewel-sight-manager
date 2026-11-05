@@ -37,6 +37,8 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Camera, X, Check, Trash2, RotateCcw, SwitchCamera, ImageOff, Scale, ScanLine, Loader2, AlertCircle } from "lucide-react";
 import { useBoxedBarcodeScanner } from "@/lib/useBoxedBarcodeScanner";
+import { readTag } from "@/lib/tagReader";
+import { supabase } from "@/integrations/supabase/client";
 import ScanBoxOverlay from "@/components/ScanBoxOverlay";
 import { normalizeDecimalInput } from "@/lib/constants";
 import { saveCapturedPiece, updateCapturedPiece, deleteCapturedPiece, analyzeCapturedPiece } from "@/lib/uploadRunner";
@@ -49,7 +51,11 @@ const SONY_LABEL = /sony|zv-|ilce|alpha|imaging edge/i;
 const isMobile = typeof navigator !== "undefined" && (/iphone|ipad|ipod|android/i.test(navigator.userAgent)
     || (navigator.userAgent.includes("Macintosh") && navigator.maxTouchPoints > 1));
 
-const BARCODE_SCAN_ENABLED = false;
+// قراءة ليبل أمارسوفت شغّالة (zxing-cpp، راجع tagReader.ts): وجّه الكاميرا على الليبل → يطلع
+// الرقم ونوع القطعة ووزنها من أمارسوفت → صوّر → الوزن والعيار ينكتبوا وحدهم.
+const BARCODE_SCAN_ENABLED = true;
+
+type TagInfo = { tag: string; found: boolean; in_stock: boolean; branch_name: string | null; type_name: string | null; karat: string | null; grams: number | null; existing_product_name: string | null };
 
 type SaveState = "saving" | "saved" | "error";
 type Shot = { id: string; url: string; weight: string; barcode: string; saveState: SaveState };
@@ -110,6 +116,13 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
       : { facingMode: f, width: { ideal: 1920 }, height: { ideal: 1920 } };
   };
   const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
+  // بيانات القطعة من أمارسوفت للرقم المقروء — تتعرض فوق الكاميرا وتعبّي الوزن والعيار.
+  const [tagInfo, setTagInfo] = useState<TagInfo | null>(null);
+  const tagInfoRef = useRef<TagInfo | null>(null);
+  tagInfoRef.current = tagInfo;
+  // آخر رقم انربط بصورة: الليبل غالباً يقعد قدام الكاميرا بعد التصوير، فما نعاودش نلصقه بالقطعة اللي بعدها.
+  const lastUsedTag = useRef<string | null>(null);
+  const autoWeighted = useRef(false);
   // العيار يُختار قبل التصوير بدل ترك الذكاء الاصطناعي يخمّنه من الصورة لاحقاً — أغلب
   // المخزون 18K فهو الافتراضي، ويبقى ظاهراً وقابلاً للتبديل طوال الجلسة (القطع عادة
   // مرتّبة حسب العيار في نفس الدرج/الفاترينة فلا حاجة لتبديله كل صورة).
@@ -285,8 +298,24 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
     }
   };
 
-  // فحص مستمر للباركود/QR — معطَّل مؤقتاً (BARCODE_SCAN_ENABLED)، راجع التعليق أعلى الملف.
-  useBoxedBarcodeScanner(videoRef, open && ready && BARCODE_SCAN_ENABLED, (text) => setPendingBarcode(text));
+  // يجيب نوع القطعة ووزنها وعيارها من أمارسوفت لرقم التاق (وهل مضافة في التطبيق من قبل).
+  const lookupTag = async (tag: string): Promise<TagInfo | null> => {
+    const { data } = await (supabase as any).rpc("amarsoft_lookup_tag", { p_code: tag });
+    const r = Array.isArray(data) ? data[0] : null;
+    if (!r) return null;
+    return { tag, found: !!r.found, in_stock: !!r.in_stock, branch_name: r.branch_name, type_name: r.type_name, karat: r.karat,
+      grams: r.grams != null ? Number(r.grams) : null, existing_product_name: r.existing_product_name };
+  };
+
+  // فحص مستمر لليبل داخل الإطار. نفس الرقم ما يتعاودش، والرقم اللي انربط بآخر صورة يتجاهل لين يتبدّل الليبل.
+  useBoxedBarcodeScanner(videoRef, open && ready && BARCODE_SCAN_ENABLED && !useNativeCamera, (tag) => {
+    if (tag === lastUsedTag.current || tag === pendingBarcode) return;
+    lastUsedTag.current = null;
+    setPendingBarcode(tag);
+    setTagInfo(null);
+    if (navigator.vibrate) navigator.vibrate(30);
+    void lookupTag(tag).then((info) => { if (info) setTagInfo(info); });
+  });
 
   // تحرير روابط الصور الملتقطة عند إغلاق المكوّن نهائياً لتفادي تسرّب الذاكرة
   useEffect(() => {
@@ -315,7 +344,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
 
   // تركيز تلقائي على حقل وزن آخر صورة مُلتقطة — الميزان أمام الموظف عادة فور تصوير القطعة
   useEffect(() => {
-    if (!lastShotId.current) return;
+    if (!lastShotId.current || autoWeighted.current) return;
     const el = weightInputRefs.current[lastShotId.current];
     if (el) {
       el.focus();
@@ -351,18 +380,35 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
   // الطريقة، فيظهران في نفس شريط المصغّرات وحقول الوزن بلا أي فرق. راجع useNativeCamera.
   const saveShot = (blob: Blob) => {
     const barcodeForShot = pendingBarcode ?? "";
+    // الوزن والعيار من أمارسوفت لو الليبل انقرا والقطعة موجودة — الموظف ما يكتبش شي.
+    const info = tagInfoRef.current?.tag === barcodeForShot && tagInfoRef.current.in_stock ? tagInfoRef.current : null;
+    const autoWeight = info?.grams ? String(info.grams) : "";
+    const shotKarat = info?.karat === "21" ? "21K" : info?.karat === "18" ? "18K" : karat;
+    if (barcodeForShot) lastUsedTag.current = barcodeForShot;
     setPendingBarcode(null);
+    setTagInfo(null);
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     lastShotId.current = id;
+    autoWeighted.current = !!autoWeight;
     const url = URL.createObjectURL(blob);
-    weightsRef.current[id] = "";
+    weightsRef.current[id] = autoWeight;
     barcodesRef.current[id] = barcodeForShot;
-    setShots((prev) => [...prev, { id, url, weight: "", barcode: barcodeForShot, saveState: "saving" }]);
+    setShots((prev) => [...prev, { id, url, weight: autoWeight, barcode: barcodeForShot, saveState: "saving" }]);
+
+    // ما انقراش ليبل قبل التصوير؟ نجرّب نقراه من الصورة نفسها (لو الليبل باين فيها).
+    if (!barcodeForShot) {
+      void readTag(blob).then(async (tag) => {
+        if (!tag || barcodesRef.current[id] || !(id in barcodesRef.current)) return;
+        setBarcode(id, tag);
+        const found = await lookupTag(tag);
+        if (found?.in_stock && found.grams && !weightsRef.current[id]) setWeight(id, String(found.grams));
+      });
+    }
 
     // نرفع ونحفظ فوراً — لا ننتظر ضغط "تم"، حتى لا يُفقد التقاط سابق عند إغلاق التبويب
     // أو قفل الهاتف قبل إنهاء الجلسة.
     const file = new File([blob], `capture-${id}.jpg`, { type: "image/jpeg" });
-    saveCapturedPiece(file, { userId, branchId, trayMode: false }, null, barcodeForShot || null, karat)
+    saveCapturedPiece(file, { userId, branchId, trayMode: false }, autoWeight ? Number(autoWeight) : null, barcodeForShot || null, shotKarat)
       .then(({ productId, imageId }) => {
         if (pendingDeleteRef.current.has(id)) {
           pendingDeleteRef.current.delete(id);
@@ -584,15 +630,32 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
             <ScanBoxOverlay active={!!pendingBarcode} />
 
             {/* شريط الباركود المكتشَف — سيُرفق تلقائياً بالصورة القادمة */}
-            {pendingBarcode && (
-              <div className="absolute top-3 inset-x-3 flex items-center gap-2 bg-status-available/90 text-white rounded-xl px-3 py-2 shadow-lg">
-                <ScanLine className="size-4 shrink-0" />
-                <span className="text-xs font-mono truncate flex-1" dir="ltr">{pendingBarcode}</span>
-                <span className="text-[10px] shrink-0">سيُرفق بالصورة القادمة</span>
-                <button onClick={() => setPendingBarcode(null)} className="shrink-0 p-1 -m-1" aria-label="تجاهل الباركود">
-                  <X className="size-3.5" />
-                </button>
-              </div>
+            {pendingBarcode ? (() => {
+              const info = tagInfo?.tag === pendingBarcode ? tagInfo : null;
+              const bad = info && (!info.found || !info.in_stock || info.existing_product_name);
+              return (
+                <div className={`absolute top-3 inset-x-3 rounded-xl px-3 py-2 shadow-lg text-white ${bad ? "bg-amber-600/95" : "bg-status-available/95"}`}>
+                  <div className="flex items-center gap-2">
+                    <ScanLine className="size-5 shrink-0" />
+                    <span className="text-base font-bold font-mono flex-1" dir="ltr">{pendingBarcode}</span>
+                    <button onClick={() => { setPendingBarcode(null); setTagInfo(null); }} className="shrink-0 p-1.5 -m-1" aria-label="تجاهل الباركود">
+                      <X className="size-4" />
+                    </button>
+                  </div>
+                  <p className="text-xs mt-0.5">
+                    {!info ? "يدوّر في أمارسوفت…"
+                      : !info.found ? "الرقم هذا مش موجود في أمارسوفت — تأكد من الليبل"
+                      : !info.in_stock ? `تباعت في أمارسوفت (${info.type_name ?? ""})`
+                      : `${info.type_name ?? "قطعة"} · عيار ${info.karat ?? "?"} · ${info.grams ?? "?"} جم · ${info.branch_name ?? ""}`}
+                  </p>
+                  {info?.existing_product_name && <p className="text-xs font-bold">⚠️ مضافة في التطبيق من قبل: {info.existing_product_name}</p>}
+                  {info?.in_stock && !info.existing_product_name && <p className="text-[11px] opacity-90">صوّر توا — الوزن والعيار ينكتبوا وحدهم</p>}
+                </div>
+              );
+            })() : (
+              <p className="absolute top-3 inset-x-6 text-center text-xs text-white/85 bg-black/50 rounded-full px-3 py-1">
+                حط ليبل القطعة داخل الإطار باش ينقرا، ثم صوّر
+              </p>
             )}
           </>
         )}

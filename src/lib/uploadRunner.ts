@@ -20,6 +20,7 @@ import { isPdf, pdfToImageFiles } from "@/lib/pdf-to-images";
 import { uploadQueue } from "@/lib/uploadQueue";
 import { normalizeAr } from "@/lib/arabic-search";
 import { deleteProducts, removeUnreferencedFiles, uploadProductImage } from "@/lib/productImages";
+import { readTag } from "@/lib/tagReader";
 
 export type UploadOptions = {
   userId: string;
@@ -532,6 +533,20 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
   const karats: (string | null)[] = [...karatsForImages, ...pdfPages.map(() => null)];
   const itemTypesForImages = images.map((f) => (f as any).itemType ?? null);
   const itemTypes: (string | null)[] = [...itemTypesForImages, ...pdfPages.map(() => null)];
+
+  // صور المعرض: نقرا ليبل أمارسوفت من كل صورة (الأصلية قبل التصغير، أوضح للباركود). لو
+  // انقرا، القطعة تنربط بأمارسوفت ووزنها وعيارها ينكتبوا وحدهم عند الحفظ.
+  if (!opts.trayMode && images.some((_, i) => !barcodes[i])) {
+    const t = toast.loading("يقرا ليبلات أمارسوفت من الصور…");
+    let found = 0;
+    for (let i = 0; i < images.length; i++) {
+      if (barcodes[i]) continue;
+      barcodes[i] = await readTag(images[i]);
+      if (barcodes[i]) found++;
+      toast.loading(`يقرا الليبلات ${i + 1}/${images.length}…`, { id: t });
+    }
+    toast.success(found ? `انقرا رقم أمارسوفت من ${found} صورة` : "ما انقرا حتى ليبل من الصور", { id: t });
+  }
 
   const picked = [...images, ...pdfPages];
   if (!picked.length) {
