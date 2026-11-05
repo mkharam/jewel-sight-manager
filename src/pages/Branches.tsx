@@ -191,7 +191,7 @@ function BranchDetail({ code }: { code: string }) {
             <Stat label="المصنعية المحصّلة" value={formatLD(o.making_dirhams)} />
             <Stat label="تكلفة المصنعية (المورّد)" value={formatLD(o.making_cost_dirhams)} />
             <Stat label="المخزون الآن" value={`${n0(Number(o.stock_pieces))} قطعة · ${formatGrams(o.stock_grams)}`} />
-            <Stat label="الزبائن في أمارسوفت" value={n0(Number(o.customers))} />
+            <Stat label="زبائن اشتروا" value={n0(Number(o.customers))} />
             <Stat label="ممسوحة" value={o.deleted} tone={Number(o.deleted) ? "bad" : undefined} />
             <Stat label="فُتحت للتعديل" value={o.edited} />
           </div>

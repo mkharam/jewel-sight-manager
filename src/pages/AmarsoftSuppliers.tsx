@@ -139,7 +139,7 @@ function SupplierRow({ s, onOpen }: { s: Supplier; onOpen: () => void }) {
           <span>دخل {n0(s.received_pcs)} قطعة</span>
           <span>تباع {n0(s.sold_pcs)}</span>
           <span>في المخزون {n0(s.stock_pcs)}</span>
-          <span className={sellThrough < 30 ? "text-destructive font-bold" : ""}>نسبة البيع {sellThrough}%</span>
+          <span className={sellThrough < 30 ? "text-destructive font-bold" : ""}>انباع {sellThrough}% من الكل</span>
           <span>{s.avg_days_to_sell != null ? `يتباع في ${n0(s.avg_days_to_sell)} يوم` : "—"}</span>
           <span className="text-muted-foreground">مصنعية {s.making_rate ?? "—"}/جم</span>
         </div>

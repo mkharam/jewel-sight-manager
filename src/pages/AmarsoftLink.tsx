@@ -21,7 +21,7 @@ type Tab = "sure" | "choose" | "none";
 export default function AmarsoftLink() {
   const qc = useQueryClient();
   const confirm = useConfirm();
-  const [tab, setTab] = useState<Tab>("sure");
+  const [chosenTab, setTab] = useState<Tab | null>(null);
   const [skip, setSkip] = useState<Set<string>>(new Set());
   const [picked, setPicked] = useState<Record<string, string>>({});
   const [typed, setTyped] = useState<Record<string, string>>({});
@@ -45,6 +45,8 @@ export default function AmarsoftLink() {
       none: data.filter((p) => !p.candidates.length),
     };
   }, [data]);
+  // لين ما يختارش، نفتح أول خانة فيها شي.
+  const tab: Tab = chosenTab ?? (v.sure.length ? "sure" : v.choose.length ? "choose" : "none");
 
   // رقم مختار لقطعة ما يتختارش لقطعة ثانية.
   const takenBy = useMemo(() => new Map(Object.entries(picked).map(([id, tag]) => [tag, id])), [picked]);

@@ -15,7 +15,8 @@ type Credit = { branch_code: string; branch_name: string; invoice_no: string; in
 type Data = { days: Day[]; accounts: Acct[]; credit: Credit[] };
 
 // أسماء طرق الدفع كيف يكتبها أمارسوفت. SELL و C مش واضحين من أمارسوفت — نسأل المحاسب.
-const ACCOUNT: Record<string, string> = { CASH: "نقدي", BANK: "مصرف / تحويل", CARD: "بطاقة", CRE: "آجل (دين)", SELL: "SELL", C: "C" };
+const ACCOUNT: Record<string, string> = { CASH: "نقدي", BANK: "مصرف / تحويل", CARD: "بطاقة", CRE: "آجل (دين)", SELL: "حساب SELL (؟)", C: "حساب C (؟)" };
+const UNKNOWN = ["SELL", "C"];
 const ORDER = ["CASH", "BANK", "CARD", "CRE", "SELL", "C"];
 const label = (a: string) => ACCOUNT[a] ?? a;
 const PERIODS: { key: Period | "custom"; label: string }[] = [
@@ -127,6 +128,9 @@ export default function Accountant() {
             </div>
             {Math.abs(v.paid - v.sales) > 1000 && (
               <p className="text-xs text-center text-destructive">مجموع طرق الدفع ({formatLD(v.paid)}) مختلف على المبيعات بـ {formatLD(v.sales - v.paid)}.</p>
+            )}
+            {v.cols.some((a) => UNKNOWN.includes(a)) && (
+              <p className="text-xs text-center text-muted-foreground">«SELL» و«C» حسابات في أمارسوفت مش معروف معناها — اسأل المحاسب وين تمشي الفلوس هذي.</p>
             )}
           </Card>
 
