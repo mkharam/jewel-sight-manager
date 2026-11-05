@@ -17,13 +17,13 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import EvaluationForm from "@/components/EvaluationForm";
 import { businessToday } from "@/lib/dates";
 import {
-  ALL_CRITERIA, EMPLOYEE_CRITERIA, MANAGER_CRITERIA, KIND_LABEL, db, defaultMonth, grade, monthLabel, shiftMonth,
+  ALL_CRITERIA, EMPLOYEE_CRITERIA, GM_CRITERIA, MANAGER_CRITERIA, KIND_LABEL, db, defaultMonth, grade, monthLabel, shiftMonth,
   type EvalStaff, type Evaluation, useIsEvalAdmin,
 } from "@/lib/evaluation";
 
 type Tab = "board" | "record" | "settings";
 type Person = EvalStaff & {
-  final: number | null; self: number | null; others: number | null; prev: number | null;
+  final: number | null; self: number | null; others: number | null; gm: number | null; prev: number | null;
   evals: Evaluation[]; missing: string[];
 };
 
@@ -40,6 +40,7 @@ export default function Evaluations() {
   const [tab, setTab] = useState<Tab>("board");
   const [month, setMonth] = useState(() => defaultMonth(businessToday()));
   const [openId, setOpenId] = useState<string | null>(null);
+  const [recordMode, setRecordMode] = useState<"gm" | "behalf">("gm");
 
   const { data, isLoading } = useQuery({
     queryKey: ["evaluations", month],
@@ -60,14 +61,16 @@ export default function Evaluations() {
 
   const v = useMemo(() => {
     if (!data) return null;
-    const active = data.staff.filter((s) => s.active !== false);
+    // «المدير العام» صف للتقييم بس (هو اللي يقيّم)، ما يدخلش في الترتيب.
+    const active = data.staff.filter((s) => s.active !== false && s.role !== "gm");
     const byMonth = (m: string) => data.evals.filter((e) => e.month === m);
     // درجة الشخص في شهر: تقييم الغير (المشرف للموظف، الموظفين للمشرف) ولو ما فيش، تقييمه لنفسه.
     const scoreOf = (s: EvalStaff, m: string) => {
       const es = byMonth(m).filter((e) => e.subject_id === s.id);
       const others = avg(es.filter((e) => e.kind !== "self").map((e) => e.overall));
       const self = avg(es.filter((e) => e.kind === "self").map((e) => e.overall));
-      return { others, self, final: others ?? self, evals: es };
+      const gm = avg(es.filter((e) => e.kind === "by_gm").map((e) => e.overall));
+      return { others, self, gm, final: others ?? self, evals: es };
     };
     const people: Person[] = active.map((s) => {
       const cur = scoreOf(s, month);
@@ -76,6 +79,7 @@ export default function Evaluations() {
       const missing = [
         ...(cur.evals.some((e) => e.kind === "self") ? [] : ["تقييمه لنفسه"]),
         ...(s.role === "employee" && hasManager && !cur.evals.some((e) => e.kind === "by_manager") ? ["تقييم المشرف ليه"] : []),
+        ...(cur.evals.some((e) => e.kind === "by_gm") ? [] : ["تقييم المدير العام"]),
       ];
       return { ...s, ...cur, prev, missing };
     });
@@ -116,9 +120,17 @@ export default function Evaluations() {
       </div>
 
       {tab === "record" && (
-        <Card className="p-3">
-          <p className="text-sm text-muted-foreground mb-3">سجّل التقييم اللي وصلك من موظف ولا مشرف ما يعرفش يبعته من الرابط — اختار اسمه وعبّي البنود كيف قالك.</p>
-          <EvaluationForm recorder />
+        <Card className="p-3 space-y-3">
+          <div className="grid grid-cols-2 gap-1.5">
+            <Button variant={recordMode === "gm" ? "default" : "outline"} onClick={() => setRecordMode("gm")}>تقييم المدير العام</Button>
+            <Button variant={recordMode === "behalf" ? "default" : "outline"} onClick={() => setRecordMode("behalf")}>نيابة عن موظف</Button>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {recordMode === "gm"
+              ? "تقييم المدير العام لكل موظف ومشرف: الحضور والانصراف، الالتزام، النتائج… منفصل على تقييم المشرف."
+              : "سجّل التقييم اللي وصلك من موظف ولا مشرف ما يعرفش يبعته من الرابط — اختار اسمه وعبّي البنود كيف قالك."}
+          </p>
+          <EvaluationForm key={recordMode} recorder={recordMode === "behalf"} gm={recordMode === "gm"} />
         </Card>
       )}
 
@@ -163,7 +175,7 @@ export default function Evaluations() {
               {/* الترتيب */}
               <Card className="p-3">
                 <h2 className="text-lg font-bold mb-1">الترتيب</h2>
-                <p className="text-xs text-muted-foreground mb-2">الدرجة من تقييم المشرف (وللمشرف من تقييم موظفينه)، ولو ما فيش، من تقييمه لنفسه. اضغط على أي اسم للتفاصيل.</p>
+                <p className="text-xs text-muted-foreground mb-2">الدرجة = متوسط تقييم المدير العام وتقييم المشرف (وللمشرف تقييم موظفينه)، ولو ما فيش، تقييمه لنفسه. اضغط على أي اسم للتفاصيل.</p>
                 {!v.rated.length ? <p className="text-center text-muted-foreground py-6">ما فيش تقييمات لهذا الشهر لين توا.</p> : v.rated.map((p, i) => {
                   const g = grade(p.final);
                   const d = p.prev != null && p.final != null ? p.final - p.prev : null;
@@ -174,7 +186,7 @@ export default function Evaluations() {
                           <span className={`size-7 shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${i < 3 ? "bg-gold-gradient text-primary-foreground" : "bg-muted"}`}>{i + 1}</span>
                           <span className="min-w-0">
                             <span className="block font-bold truncate">{p.name}</span>
-                            <span className="block text-[11px] text-muted-foreground truncate">{p.role === "manager" ? "مشرف" : "موظف"} · {p.branch_name ?? "—"}{p.self != null && p.others != null ? ` · قيّم نفسه ${f1(p.self)}` : ""}</span>
+                            <span className="block text-[11px] text-muted-foreground truncate">{p.role === "manager" ? "مشرف" : "موظف"} · {p.branch_name ?? "—"}{p.gm != null ? ` · المدير العام ${f1(p.gm)}` : ""}{p.self != null && p.others != null ? ` · قيّم نفسه ${f1(p.self)}` : ""}</span>
                           </span>
                         </span>
                         <span className="shrink-0 text-left">
@@ -260,10 +272,11 @@ function Kpi({ icon: Icon, label, value, sub, tone }: { icon: typeof Star; label
 
 function PersonDetail({ p, month, staff, scoreOf }: {
   p: Person; month: string; staff: EvalStaff[];
-  scoreOf: (s: EvalStaff, m: string) => { others: number | null; self: number | null; final: number | null; evals: Evaluation[] };
+  scoreOf: (s: EvalStaff, m: string) => { others: number | null; self: number | null; gm: number | null; final: number | null; evals: Evaluation[] };
 }) {
   const criteria = p.role === "manager" ? MANAGER_CRITERIA : EMPLOYEE_CRITERIA;
-  const others = p.evals.filter((e) => e.kind !== "self");
+  const others = p.evals.filter((e) => e.kind !== "self" && e.kind !== "by_gm");
+  const gmEvals = p.evals.filter((e) => e.kind === "by_gm");
   const self = p.evals.find((e) => e.kind === "self");
   const crit = (k: string, es: Evaluation[]) => {
     const xs = es.map((e) => e.scores?.[k]).filter((x) => x != null).map(Number);
@@ -281,11 +294,27 @@ function PersonDetail({ p, month, staff, scoreOf }: {
         <SheetTitle className="text-xl">{p.name}</SheetTitle>
         <p className="text-xs text-muted-foreground">{p.role === "manager" ? "مشرف" : "موظف"} · {p.branch_name ?? "—"} · {monthLabel(month)}</p>
       </SheetHeader>
-      <div className="grid grid-cols-3 gap-2 text-center">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
         <Card className="p-2"><div className="text-[11px] text-muted-foreground">الدرجة</div><div className={`text-2xl font-bold ${g.text}`}>{f1(p.final)}</div><div className="text-[11px]">{g.label}</div></Card>
-        <Card className="p-2"><div className="text-[11px] text-muted-foreground">{p.role === "manager" ? "تقييم موظفينه" : "تقييم المشرف"}</div><div className="text-xl font-bold">{f1(p.others)}</div></Card>
+        <Card className="p-2"><div className="text-[11px] text-muted-foreground">المدير العام</div><div className="text-xl font-bold">{f1(p.gm)}</div></Card>
+        <Card className="p-2"><div className="text-[11px] text-muted-foreground">{p.role === "manager" ? "تقييم موظفينه" : "تقييم المشرف"}</div><div className="text-xl font-bold">{f1(avg(others.map((e) => e.overall)))}</div></Card>
         <Card className="p-2"><div className="text-[11px] text-muted-foreground">قيّم نفسه</div><div className="text-xl font-bold">{f1(p.self)}</div></Card>
       </div>
+
+      {gmEvals.length > 0 && (
+        <Card className="p-3">
+          <h3 className="font-bold mb-2">بنود المدير العام</h3>
+          {GM_CRITERIA.map((c) => {
+            const val = crit(c.key, gmEvals);
+            return (
+              <div key={c.key} className="mb-1.5">
+                <div className="flex justify-between text-sm"><span>{c.label}</span><span className={`font-bold ${grade(val).text}`}>{f1(val)}</span></div>
+                <div className="h-1.5 bg-muted rounded-full overflow-hidden"><div className={`h-full ${grade(val).bg}`} style={{ width: `${((val ?? 0) / 5) * 100}%` }} /></div>
+              </div>
+            );
+          })}
+        </Card>
+      )}
       {p.self != null && p.others != null && Math.abs(p.self - p.others) >= 0.75 && (
         <p className="text-xs rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-300 p-2">
           فرق كبير بين تقييمه لنفسه ({f1(p.self)}) و{p.role === "manager" ? "تقييم موظفينه" : "تقييم مشرفه"} ({f1(p.others)}) — يستاهل جلسة كلام معاه.
@@ -423,7 +452,7 @@ function SettingsTab({ isAdmin, staff }: { isAdmin: boolean; staff: EvalStaff[] 
       </Card>
 
       <Card className="p-3 space-y-2">
-        <h2 className="font-bold">اللي يتقيّموا ({staff.filter((s) => s.active !== false).length})</h2>
+        <h2 className="font-bold">اللي يتقيّموا ({staff.filter((s) => s.active !== false && s.role !== "gm").length})</h2>
         <p className="text-xs text-muted-foreground">زيد أي موظف ولا مشرف حتى لو ما عندهش حساب في التطبيق. اللي يخرج من الشغل وقّفه بدل ما تمسحه — تقييماته القديمة تبقى.</p>
         <div className="grid grid-cols-2 gap-2">
           <Input placeholder="الاسم" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="col-span-2 h-11" />
@@ -438,7 +467,7 @@ function SettingsTab({ isAdmin, staff }: { isAdmin: boolean; staff: EvalStaff[] 
           <Button className="col-span-2" disabled={add.isPending} onClick={() => add.mutate()}><Plus className="size-4" />إضافة</Button>
         </div>
         <div className="divide-y">
-          {staff.map((s) => (
+          {staff.filter((s) => s.role !== "gm").map((s) => (
             <div key={s.id} className={`flex items-center gap-2 py-2 text-sm ${s.active === false ? "opacity-50" : ""}`}>
               <span className="flex-1 min-w-0 truncate font-semibold">{s.name} <span className="text-xs text-muted-foreground font-normal">· {s.branch_name ?? "—"}</span></span>
               <select value={s.role} onChange={(e) => patch.mutate({ id: s.id, p: { role: e.target.value } })} className="h-8 rounded-md border border-input bg-background px-1 text-xs">

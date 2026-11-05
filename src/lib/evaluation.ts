@@ -6,8 +6,8 @@ import { useAuth } from "@/hooks/useAuth";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const db = supabase as any; // جداول التقييم جديدة ومش في الأنواع المولّدة بعد.
 
-export type Role = "employee" | "manager";
-export type Kind = "self" | "by_manager" | "of_manager";
+export type Role = "employee" | "manager" | "gm";
+export type Kind = "self" | "by_manager" | "of_manager" | "by_gm";
 export type EvalStaff = { id: string; name: string; role: Role; branch_id: string | null; branch_name: string | null; active?: boolean; profile_id?: string | null };
 export type Evaluation = {
   id: string; month: string; kind: Kind; evaluator_id: string; subject_id: string; scores: Record<string, number>;
@@ -38,10 +38,24 @@ export const MANAGER_CRITERIA = [
   { key: "problems", label: "حل المشاكل والشكاوي" },
   { key: "stock", label: "ضبط البضاعة والجرد" },
   { key: "reporting", label: "التواصل مع الإدارة" },
+  { key: "system", label: "الاهتمام بالمنظومة وإنشاء الفواتير أول بأول" },
+  { key: "loyalty", label: "الاهتمام بولاء الزبائن" },
+] as const;
+
+/** بنود المدير العام: اللي يهمّه هو في كل موظف ومشرف — منفصلة على اللي يقيّمه المشرف. */
+export const GM_CRITERIA = [
+  { key: "punctuality", label: "الحضور والانصراف في الوقت" },
+  { key: "absence", label: "الغياب والإجازات (بإذن ومن غير تكرار)" },
+  { key: "rules", label: "الالتزام بقوانين وتعليمات الإدارة" },
+  { key: "results", label: "نتائج البيع والأرقام" },
+  { key: "invoices", label: "تسجيل الفواتير في المنظومة أول بأول" },
+  { key: "custody", label: "المحافظة على البضاعة والعهدة" },
+  { key: "conduct", label: "السلوك والأخلاق مع الزملاء والزبائن" },
+  { key: "growth", label: "التطوّر والاستعداد للتعلّم" },
 ] as const;
 
 export const ALL_CRITERIA: Record<string, string> = Object.fromEntries(
-  [...EMPLOYEE_CRITERIA, ...MANAGER_CRITERIA].map((c) => [c.key, c.label]),
+  [...EMPLOYEE_CRITERIA, ...MANAGER_CRITERIA, ...GM_CRITERIA].map((c) => [`${c.key}`, c.label]),
 );
 
 export const SCALE = [
@@ -56,6 +70,7 @@ export const KIND_LABEL: Record<Kind, string> = {
   self: "تقييم ذاتي",
   by_manager: "تقييم المشرف",
   of_manager: "تقييم الموظفين لمشرفهم",
+  by_gm: "تقييم المدير العام",
 };
 
 const MONTHS = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];

@@ -9,22 +9,41 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  db, EMPLOYEE_CRITERIA, MANAGER_CRITERIA, SCALE, defaultMonth, monthLabel, shiftMonth,
+  db, EMPLOYEE_CRITERIA, GM_CRITERIA, MANAGER_CRITERIA, SCALE, defaultMonth, monthLabel, shiftMonth,
   type EvalStaff, type Kind, type Role,
 } from "@/lib/evaluation";
+
+/** تذكير قبل التقييم: أمانة. آية النساء 135، وحديث «لا إيمان لمن لا أمانة له» (رواه أحمد). */
+function TrustNote() {
+  return (
+    <Card className="p-4 bg-gold-soft border-primary/30 text-center space-y-2">
+      <p className="font-bold text-lg text-primary">التقييم أمانة بينك وبين الله</p>
+      <p className="text-[15px] leading-loose">
+        ﴿يَا أَيُّهَا الَّذِينَ آمَنُوا كُونُوا قَوَّامِينَ بِالْقِسْطِ شُهَدَاءَ لِلَّهِ وَلَوْ عَلَىٰ أَنفُسِكُمْ﴾
+        <span className="block text-xs text-muted-foreground">سورة النساء، الآية 135</span>
+      </p>
+      <p className="text-[15px]">
+        قال رسول الله ﷺ: «لا إيمانَ لمن لا أمانةَ له، ولا دِينَ لمن لا عهدَ له»
+        <span className="block text-xs text-muted-foreground">رواه أحمد</span>
+      </p>
+      <p className="text-sm text-muted-foreground">قيّم بصدق: لا تجامل ولا تظلم. التقييم يعاون الكل يتحسّن، ويبقى بين الإدارة وبينك.</p>
+    </Card>
+  );
+}
 
 type Entry = { scores: Record<string, number>; strengths: string; improvements: string; notes: string };
 type Card_ = { key: string; kind: Kind; subject: EvalStaff | null; title: string; criteria: readonly { key: string; label: string }[]; required: boolean };
 const blank = (): Entry => ({ scores: {}, strengths: "", improvements: "", notes: "" });
 
-export default function EvaluationForm({ token, recorder }: { token?: string; recorder?: boolean }) {
+/** gm: تقييم المدير العام لموظف ولا مشرف (بنود GM_CRITERIA) — من لوحة التقييم بس. */
+export default function EvaluationForm({ token, recorder, gm }: { token?: string; recorder?: boolean; gm?: boolean }) {
   const { data, isLoading, error } = useQuery({
     queryKey: ["eval-form", token ?? "recorder"],
     queryFn: async () => {
       const { data, error } = await db.rpc("eval_form", { p_token: token ?? null });
       if (error) throw error;
       if (!data) throw new Error("الرابط غير صالح — اطلب من الإدارة رابط جديد");
-      return data as { staff: EvalStaff[]; today: string };
+      return data as { staff: EvalStaff[]; today: string; gm_id: string | null };
     },
   });
   const [role, setRole] = useState<Role | null>(null);
@@ -40,10 +59,14 @@ export default function EvaluationForm({ token, recorder }: { token?: string; re
     return [shiftMonth(d, -1), d, ...(d < `${data.today.slice(0, 7)}-01` ? [`${data.today.slice(0, 7)}-01`] : [])];
   }, [data]);
   const curMonth = month ?? (data ? defaultMonth(data.today) : null);
+  const gmId = data?.gm_id ?? null;
 
   // البطاقات حسب الدور: نفسه دايماً، وموظفين فرعه (للمشرف) ولا مشرف فرعه (للموظف).
   const cards = useMemo<Card_[]>(() => {
     if (!me || !data) return [];
+    if (gm) {
+      return [{ key: `by_gm:${me.id}`, kind: "by_gm" as Kind, subject: me, title: `تقييم المدير العام لـ ${me.name}`, criteria: GM_CRITERIA, required: true }];
+    }
     const sameBranch = data.staff.filter((s) => s.id !== me.id && s.branch_id === me.branch_id);
     if (me.role === "manager") {
       return [
@@ -59,7 +82,7 @@ export default function EvaluationForm({ token, recorder }: { token?: string; re
         key: `of_manager:${s.id}`, kind: "of_manager" as Kind, subject: s, title: `قيّم مشرفك ${s.name} (اختياري)`, criteria: MANAGER_CRITERIA, required: false,
       })),
     ];
-  }, [me, data]);
+  }, [me, data, gm]);
 
   const entry = (k: string) => entries[k] ?? blank();
   const setEntry = (k: string, patch: Partial<Entry>) => setEntries((s) => ({ ...s, [k]: { ...entry(k), ...patch } }));
@@ -72,7 +95,10 @@ export default function EvaluationForm({ token, recorder }: { token?: string; re
         kind: c.kind, subject_id: c.subject?.id ?? me!.id, scores: entry(c.key).scores,
         strengths: entry(c.key).strengths, improvements: entry(c.key).improvements, notes: entry(c.key).notes,
       }));
-      const { data, error } = await db.rpc("eval_submit", { p_token: token ?? null, p: { month: curMonth, evaluator_id: me!.id, entries: list } });
+      // في تقييم المدير العام: اللي يقيّم = صف المدير العام، واللي يتقيّم = الاسم المختار.
+      const evaluator = gm ? gmId : me!.id;
+      if (!evaluator) throw new Error("صف المدير العام مش موجود في قائمة التقييم");
+      const { data, error } = await db.rpc("eval_submit", { p_token: token ?? null, p: { month: curMonth, evaluator_id: evaluator, entries: list } });
       if (error) throw error;
       return data as number;
     },
@@ -86,10 +112,10 @@ export default function EvaluationForm({ token, recorder }: { token?: string; re
     return (
       <Card className="p-8 text-center space-y-3">
         <CheckCircle2 className="size-14 mx-auto text-emerald-600" />
-        <p className="text-xl font-bold">تم إرسال التقييم، شكراً {recorder ? "" : me?.name}</p>
-        <p className="text-sm text-muted-foreground">{n(done)} تقييم لشهر {monthLabel(curMonth!)}{recorder ? ` باسم ${me?.name}` : ""}</p>
+        <p className="text-xl font-bold">تم إرسال التقييم{recorder || gm ? "" : `، شكراً ${me?.name}`}</p>
+        <p className="text-sm text-muted-foreground">{n(done)} تقييم لشهر {monthLabel(curMonth!)}{gm ? ` لـ ${me?.name}` : recorder ? ` باسم ${me?.name}` : ""}</p>
         <Button variant="outline" onClick={() => { setDone(null); setMe(null); setRole(null); setEntries({}); }}>
-          {recorder ? "سجّل تقييم شخص ثاني" : "رجوع"}
+          {recorder || gm ? "قيّم شخص ثاني" : "رجوع"}
         </Button>
       </Card>
     );
@@ -97,6 +123,7 @@ export default function EvaluationForm({ token, recorder }: { token?: string; re
 
   return (
     <div className="space-y-4">
+      <TrustNote />
       {/* الشهر */}
       <div>
         <p className="text-sm font-semibold mb-1.5">تقييم شهر</p>
@@ -111,7 +138,7 @@ export default function EvaluationForm({ token, recorder }: { token?: string; re
       {!me && (
         <>
           <div>
-            <p className="text-sm font-semibold mb-1.5">{recorder ? "اللي تسجّل عنه:" : "أنت:"}</p>
+            <p className="text-sm font-semibold mb-1.5">{gm ? "اللي تقيّمه:" : recorder ? "اللي تسجّل عنه:" : "أنت:"}</p>
             <div className="grid grid-cols-2 gap-2">
               {([["employee", "موظف", Users], ["manager", "مشرف", UserCheck]] as const).map(([r, l, Icon]) => (
                 <button key={r} onClick={() => setRole(r)}
@@ -123,7 +150,7 @@ export default function EvaluationForm({ token, recorder }: { token?: string; re
           </div>
           {role && (
             <div>
-              <p className="text-sm font-semibold mb-1.5">اختار {recorder ? "الاسم" : "اسمك"}:</p>
+              <p className="text-sm font-semibold mb-1.5">اختار {recorder || gm ? "الاسم" : "اسمك"}:</p>
               <div className="space-y-3">
                 {Object.entries(groupBy(data.staff.filter((s) => s.role === role), (s) => s.branch_name ?? "بدون فرع")).map(([b, list]) => (
                   <div key={b}>
@@ -150,7 +177,7 @@ export default function EvaluationForm({ token, recorder }: { token?: string; re
           <Card className="p-3 flex items-center justify-between bg-gold-soft border-primary/30">
             <div>
               <p className="font-bold text-lg">{me.name}</p>
-              <p className="text-xs text-muted-foreground">{me.role === "manager" ? "مشرف" : "موظف"} · {me.branch_name ?? "بدون فرع"}{recorder ? " · تسجيل نيابة عنه" : ""}</p>
+              <p className="text-xs text-muted-foreground">{me.role === "manager" ? "مشرف" : "موظف"} · {me.branch_name ?? "بدون فرع"}{gm ? " · تقييم المدير العام" : recorder ? " · تسجيل نيابة عنه" : ""}</p>
             </div>
             <Button size="sm" variant="ghost" onClick={() => { setMe(null); setEntries({}); }}>تغيير</Button>
           </Card>
