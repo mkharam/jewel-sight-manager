@@ -72,10 +72,6 @@ export default function ImageSearchButton({ categories, onResults, variant = "bu
   // آخر صورة أُرسلت — لإعادة المحاولة بعد انقطاع دون أن يختارها الموظف من جديد.
   const current = useRef<{ base64: string; mimeType: string } | null>(saved ? { base64: saved.base64, mimeType: saved.mimeType } : null);
   const [interrupted, setInterrupted] = useState(false);
-  // النتائج المعروضة من البحث السريع (بالشكل بس) والتحليل الكامل لسه يكمّل.
-  const [quick, setQuick] = useState(false);
-  const quickRef = useRef(false);
-  quickRef.current = quick;
   const uploadRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
 
@@ -85,34 +81,22 @@ export default function ImageSearchButton({ categories, onResults, variant = "bu
     setMatches(null);
     setLoading(false);
     setInterrupted(false);
-    setQuick(false);
     current.current = null;
     clearResume(RESUME_KEY);
     if (uploadRef.current) uploadRef.current.value = "";
     if (cameraRef.current) cameraRef.current.value = "";
   };
 
-  // على مرحلتين: بحث سريع بشكل القطعة بس (2–3 ثواني) يطلع نتائج فوراً، وفي نفس الوقت
-  // التحليل الكامل (نوع، عيار، أحجار) يكمّل ويرتّب النتائج أدق ويعطي الأسباب.
+  // بحث واحد كامل (الشكل + الوصف + الماركة) ونتيجة وحدة — بدون نتائج أولية تتبدّل قدام الموظف.
+  // بصمة الصورة تنحسب على الخادم بالتوازي مع التحليل، فالبحث الكامل أسرع من قبل.
   const runSearch = async (base64: string, mimeType: string) => {
     setLoading(true);
     setInterrupted(false);
     setAnalysis(null);
     setMatches(null);
-    setQuick(false);
     try {
-      const fast = await supabase.functions.invoke("image-search", {
-        body: { imageBase64: base64, mimeType, matchCount: 140, mode: "fast" },
-      }).catch(() => null);
-      const fastData = fast && !fast.error ? (fast.data as { matches?: PhotoMatch[]; imageEmbedding?: number[] } | null) : null;
-      if (current.current?.base64 !== base64) return;
-      if (fastData?.matches) {
-        setMatches(fastData.matches);
-        setQuick(true);
-      }
-
       const { data, error } = await supabase.functions.invoke("image-search", {
-        body: { imageBase64: base64, mimeType, categories, matchCount: 140, imageEmbedding: fastData?.imageEmbedding },
+        body: { imageBase64: base64, mimeType, categories, matchCount: 140 },
       });
 
       if (error) throw error;
@@ -124,12 +108,9 @@ export default function ImageSearchButton({ categories, onResults, variant = "bu
       if (current.current?.base64 !== base64) return;
       setAnalysis(a);
       setMatches(m);
-      setQuick(false);
       saveResume<Saved>(RESUME_KEY, { base64, mimeType, analysis: a, matches: m });
     } catch (e: any) {
       if (current.current?.base64 !== base64) return;
-      // التحليل الكامل فشل لكن النتائج السريعة موجودة — نخليها بدل ما نمسحها.
-      if (quickRef.current) return;
       if (isNetworkError(e)) {
         // غالباً خرج الموظف من التطبيق فعلّقه النظام — نعيد المحاولة تلقائياً عند العودة.
         setInterrupted(true);
@@ -306,24 +287,10 @@ export default function ImageSearchButton({ categories, onResults, variant = "bu
               </div>
             )}
 
-            {loading && !quick && (
-              <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground py-4">
-                <Loader2 className="size-4 animate-spin" />
-                يدوّر على قطع بنفس الشكل…
-              </div>
-            )}
-
-            {quick && matches && (
-              <div className="rounded-xl bg-gold-soft border border-primary/20 p-3 space-y-2">
-                <p className="text-sm font-semibold">لقينا {matches.length} قطعة بنفس الشكل</p>
-                {loading && (
-                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Loader2 className="size-3.5 animate-spin" />يكمّل التحليل (النوع والعيار والأحجار) باش يرتّبهم أدق…
-                  </p>
-                )}
-                <Button onClick={apply} variant="outline" className="w-full h-11">
-                  عرضهم توا
-                </Button>
+            {loading && (
+              <div className="flex flex-col items-center justify-center gap-1 text-sm text-muted-foreground py-4">
+                <span className="flex items-center gap-2"><Loader2 className="size-4 animate-spin" />يحلّل الصورة ويدوّر في المخزون…</span>
+                <span className="text-xs">الشكل والنوع والعيار والأحجار والماركة — حوالي 10 ثواني</span>
               </div>
             )}
 
