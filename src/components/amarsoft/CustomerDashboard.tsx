@@ -31,14 +31,14 @@ function ago(iso: string) {
   return d <= 0 ? "اليوم" : d === 1 ? "أمس" : d < 30 ? `من ${d} يوم` : d < 365 ? `من ${Math.round(d / 30)} شهر` : `من ${Math.round(d / 365)} سنة`;
 }
 
-// أول 5 فقط، وزر «عرض المزيد» يفتح للعشرة — حتى ما تطولش الصفحة على الهاتف.
+// أول 5 فقط، وزر «عرض الكل» يفتح القائمة كاملة — حتى ما تطولش الصفحة على الهاتف.
 function ShowMore({ rows, render }: { rows: Row[]; render: (r: Row, i: number) => ReactNode }) {
   const [all, setAll] = useState(false);
   return (
     <>
       {(all ? rows : rows.slice(0, 5)).map(render)}
       {rows.length > 5 && (
-        <Button variant="ghost" className="w-full mt-1 text-primary" onClick={() => setAll(!all)}>{all ? "أقل" : `عرض المزيد (${rows.length})`}</Button>
+        <Button variant="ghost" className="w-full mt-1 text-primary" onClick={() => setAll(!all)}>{all ? "أقل" : `عرض الكل (${rows.length})`}</Button>
       )}
     </>
   );
@@ -59,7 +59,7 @@ export default function CustomerDashboard({ onOpen }: { onOpen: (customerId: str
     const active = all.filter((r) => Number(r.invoices) > 0);
     const start = new Date(startOf(days)).getTime();
     const month = tripoliToday().slice(5, 7);
-    const top = (rows: Row[], key: (r: Row) => number) => [...rows].sort((a, b) => key(b) - key(a)).slice(0, 10);
+    const top = (rows: Row[], key: (r: Row) => number) => [...rows].sort((a, b) => key(b) - key(a));
     const sales = active.reduce((s, r) => s + Number(r.sales_dirhams), 0);
     const invoices = active.reduce((s, r) => s + Number(r.invoices), 0);
     return {

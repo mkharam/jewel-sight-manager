@@ -177,7 +177,7 @@ export default function Evaluations() {
               {/* الترتيب */}
               <Card className="p-3">
                 <h2 className="text-lg font-bold mb-1">الترتيب</h2>
-                <p className="text-xs text-muted-foreground mb-2">الدرجة = متوسط تقييم المدير العام وتقييم المشرف (وللمشرف تقييم موظفينه)، ولو ما فيش، تقييمه لنفسه. اضغط على أي اسم للتفاصيل.</p>
+                <p className="text-xs text-muted-foreground mb-2">الدرجة = متوسط {GM_EVAL_ENABLED ? "تقييم المدير العام وتقييم المشرف" : "تقييم المشرف"} (وللمشرف تقييم موظفينه)، ولو ما فيش، تقييمه لنفسه. اضغط على أي اسم للتفاصيل.</p>
                 {!v.rated.length ? <p className="text-center text-muted-foreground py-6">ما فيش تقييمات لهذا الشهر لين توا.</p> : v.rated.map((p, i) => {
                   const g = grade(p.final);
                   const d = p.prev != null && p.final != null ? p.final - p.prev : null;
