@@ -31,15 +31,18 @@ function ago(iso: string) {
   return d <= 0 ? "اليوم" : d === 1 ? "أمس" : d < 30 ? `من ${d} يوم` : d < 365 ? `من ${Math.round(d / 30)} شهر` : `من ${Math.round(d / 365)} سنة`;
 }
 
-// أول 5 فقط، وزر «عرض الكل» يفتح القائمة كاملة — حتى ما تطولش الصفحة على الهاتف.
+// أول 10، وكل ضغطة على «عرض المزيد» تزيد 20 — حتى ما تطولش الصفحة على الهاتف.
 function ShowMore({ rows, render }: { rows: Row[]; render: (r: Row, i: number) => ReactNode }) {
-  const [all, setAll] = useState(false);
+  const [shown, setShown] = useState(10);
   return (
     <>
-      {(all ? rows : rows.slice(0, 5)).map(render)}
-      {rows.length > 5 && (
-        <Button variant="ghost" className="w-full mt-1 text-primary" onClick={() => setAll(!all)}>{all ? "أقل" : `عرض الكل (${rows.length})`}</Button>
-      )}
+      {rows.slice(0, shown).map(render)}
+      <div className="flex gap-1">
+        {rows.length > shown && (
+          <Button variant="ghost" className="flex-1 mt-1 text-primary" onClick={() => setShown(shown + 20)}>عرض المزيد ({rows.length - shown} باقي)</Button>
+        )}
+        {shown > 10 && <Button variant="ghost" className="mt-1 text-muted-foreground" onClick={() => setShown(10)}>أقل</Button>}
+      </div>
     </>
   );
 }

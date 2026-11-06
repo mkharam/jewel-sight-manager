@@ -18,6 +18,7 @@ import { Users, Search, UserPlus, Phone, Receipt, Bookmark, Heart, Package, Load
 import { formatCurrency, formatDate, normalizeDecimalInput } from "@/lib/constants";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
+import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { sb, formatLD } from "@/lib/amarsoft";
 import CustomerDashboard from "@/components/amarsoft/CustomerDashboard";
 
@@ -219,14 +220,16 @@ function CustomerDetailSheet({ customer, onClose }: { customer: Customer | null;
                 </div>
               ) : (
                 <>
-                  <Card className="p-3 flex items-center justify-between bg-gold-soft border-primary/20">
-                    <span className="text-sm font-semibold flex items-center gap-1.5"><Receipt className="size-4 text-primary" /> إجمالي المشتريات</span>
-                    <span className="font-bold text-primary">{formatCurrency(totalSpent)}</span>
-                  </Card>
-
                   <AmarsoftSection customerId={customer.id} />
 
-                  <Section title="سجل الشراء" icon={Receipt} empty="لا توجد مبيعات بعد">
+                  {totalSpent > 0 && (
+                    <Card className="p-3 flex items-center justify-between bg-gold-soft border-primary/20">
+                      <span className="text-sm font-semibold flex items-center gap-1.5"><Receipt className="size-4 text-primary" /> مشتريات مسجّلة في التطبيق</span>
+                      <span className="font-bold text-primary">{formatCurrency(totalSpent)}</span>
+                    </Card>
+                  )}
+
+                  <Section title="سجل الشراء في التطبيق" icon={Receipt} empty="لا توجد مبيعات بعد">
                     {(data?.sales ?? []).map((s) => (
                       <Link key={s.id} to={s.product_id ? `/products/${s.product_id}` : "#"} className="flex items-center justify-between py-2 border-b border-border last:border-0 hover:bg-muted/30 rounded px-1">
                         <div className="min-w-0">
@@ -285,15 +288,23 @@ type AmarsoftLink = {
     last_sale_no?: string; last_sale_on?: string | null; total_sales_dirhams?: number;
   };
 };
+type AmarsoftItem = { desc?: string; grams?: number; code?: string; tag?: string; pcs?: number; purity?: number };
 type AmarsoftInvoice = {
   id: number; branch_code: string; invoice_no: string; invoice_date: string; kind: string; net_dirhams: number;
-  items: { desc?: string; grams?: number; code?: string }[] | null;
+  items: AmarsoftItem[] | null;
 };
 
-// الزبون كما هو مسجّل في أمارسوفت (ملف الضيوف) وفواتيره هناك. الفواتير تظهر للمدير العام فقط.
-// رمز الزبون في أمارسوفت خاص بكل فرع، فالزبون اللي زار أكثر من فرع عنده رمز في كل واحد —
-// نجمعهم هنا ونبين كم شرى من كل فرع.
+const karatOf = (p?: number) => (!p ? null : p >= 0.99 ? "24" : p >= 0.91 ? "22" : p >= 0.86 ? "21" : p >= 0.74 ? "18" : null);
+const daysBetween = (a: string, b: string) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86_400_000);
+const gramsOf = (inv: AmarsoftInvoice) => (inv.items ?? []).reduce((s, i) => s + Number(i.grams ?? 0), 0);
+function sinceText(d: number) {
+  return d <= 0 ? "اليوم" : d === 1 ? "أمس" : d < 30 ? `من ${d} يوم` : d < 365 ? `من ${Math.round(d / 30)} شهر` : `من ${Math.round(d / 365)} سنة`;
+}
+
+// ملف الزبون من أمارسوفت: كم مرة جا، شن يحب، وهل مشترياته تكبر ولا تصغر، وفواتيره.
+// رمز الزبون في أمارسوفت خاص بكل فرع، فالزبون اللي زار أكثر من فرع عنده رمز في كل واحد — نجمعهم.
 function AmarsoftSection({ customerId }: { customerId: string }) {
+  const [shown, setShown] = useState(10);
   const { data } = useQuery({
     queryKey: ["customer-amarsoft", customerId],
     queryFn: async () => {
@@ -303,65 +314,180 @@ function AmarsoftSection({ customerId }: { customerId: string }) {
       ]);
       const list = (links ?? []) as AmarsoftLink[];
       const names = new Map<string, string>(((map ?? []) as { code: string; branches: { name: string } | null }[]).map((m) => [m.code, m.branches?.name ?? m.code]));
-      if (!list.length) return { links: list, invoices: [] as AmarsoftInvoice[], names };
+      const types = new Map<string, string>();
+      if (!list.length) return { links: list, invoices: [] as AmarsoftInvoice[], names, types };
       const or = list.map((l) => `and(branch_code.eq.${l.branch_code},details->>guest_code.eq.${l.guest_code})`).join(",");
       const { data: invoices } = await sb.from("amarsoft_invoices").select("id, branch_code, invoice_no, invoice_date, kind, net_dirhams, items")
-        .eq("is_deleted", false).or(or).order("sold_at", { ascending: false }).limit(50);
-      return { links: list, invoices: (invoices ?? []) as AmarsoftInvoice[], names };
+        .eq("is_deleted", false).or(or).order("sold_at", { ascending: false }).limit(500);
+      const invs = (invoices ?? []) as AmarsoftInvoice[];
+      // نوع كل قطعة (خاتم، طقم...) من مخزون أمارسوفت برقم التاق.
+      const tags = [...new Set(invs.flatMap((i) => (i.items ?? []).map((it) => it.tag).filter((t): t is string => !!t && /^\d+$/.test(t))))];
+      if (tags.length) {
+        const { data: stock } = await sb.from("amarsoft_stock").select("tag, type").in("tag", tags.slice(0, 500));
+        for (const s of (stock ?? []) as { tag: string; type: string | null }[]) if (s.type) types.set(s.tag, s.type);
+      }
+      return { links: list, invoices: invs, names, types };
     },
   });
-  if (!data?.links.length) return null;
 
+  const v = useMemo(() => {
+    if (!data?.invoices.length) return null;
+    const sales = data.invoices.filter((i) => i.kind !== "return" && Number(i.net_dirhams) > 0);
+    const oldest = [...sales].reverse();
+    const days = [...new Set(oldest.map((i) => i.invoice_date))];
+    const total = sales.reduce((s, i) => s + Number(i.net_dirhams), 0);
+    const grams = sales.reduce((s, i) => s + gramsOf(i), 0);
+    const gaps = days.slice(1).map((d, i) => daysBetween(days[i], d));
+    // شن يحب: الأنواع والعيار من القطع اللي شراها.
+    const typeCount = new Map<string, number>();
+    const karatGrams = new Map<string, number>();
+    for (const inv of sales) for (const it of inv.items ?? []) {
+      const t = (it.tag && data.types.get(it.tag)) || (it.desc && !it.desc.startsWith("ذهب") ? it.desc : null);
+      if (t) typeCount.set(t, (typeCount.get(t) ?? 0) + 1);
+      const k = karatOf(it.purity);
+      if (k) karatGrams.set(k, (karatGrams.get(k) ?? 0) + Number(it.grams ?? 0));
+    }
+    const likes = [...typeCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const karats = [...karatGrams.entries()].sort((a, b) => b[1] - a[1]);
+    const karatTotal = karats.reduce((s, [, g]) => s + g, 0);
+    const sortedGrams = sales.map(gramsOf).sort((a, b) => a - b);
+    const typicalGrams = sortedGrams[Math.floor(sortedGrams.length / 2)] ?? 0;
+    // تكبر ولا تصغر: نقارن متوسط آخر نص الفواتير بأول نص.
+    let trend: number | null = null;
+    if (oldest.length >= 2) {
+      const half = Math.floor(oldest.length / 2);
+      const avgOf = (xs: AmarsoftInvoice[]) => xs.reduce((s, i) => s + Number(i.net_dirhams), 0) / xs.length;
+      const before = avgOf(oldest.slice(0, half)), after = avgOf(oldest.slice(oldest.length - half));
+      trend = before ? Math.round(((after - before) / before) * 100) : null;
+    }
+    const chart = oldest.map((i) => ({ date: i.invoice_date.slice(2).replace(/-/g, "/"), value: Number(i.net_dirhams) / 1000 }));
+    const byBranch = [...sales.reduce((m, inv) => {
+      const b = m.get(inv.branch_code) ?? { code: inv.branch_code, invoices: 0, sales: 0, last: inv.invoice_date };
+      b.invoices += 1; b.sales += Number(inv.net_dirhams);
+      if (inv.invoice_date > b.last) b.last = inv.invoice_date;
+      return m.set(inv.branch_code, b);
+    }, new Map<string, { code: string; invoices: number; sales: number; last: string }>()).values()].sort((a, b) => b.sales - a.sales);
+    return {
+      visits: days.length, invoices: sales.length, total, grams, avgTicket: sales.length ? total / sales.length : 0,
+      first: days[0], last: days[days.length - 1], everyDays: gaps.length ? Math.round(gaps.reduce((s, g) => s + g, 0) / gaps.length) : null,
+      likes, karats, karatTotal, typicalGrams, trend, chart, byBranch,
+    };
+  }, [data]);
+
+  if (!data?.links.length) return null;
   const branchName = (c: string) => data.names.get(c) ?? `فرع ${c}`;
-  const total = data.links.reduce((s, l) => s + Number(l.data.total_sales_dirhams ?? 0), 0);
-  const last = data.links.map((l) => l.data.last_sale_on).filter(Boolean).sort().pop();
   const phones = [...new Set(data.links.flatMap((l) => l.data.phones ?? []))];
   const info = data.links[0].data;
-  const byBranch = [...data.invoices.reduce((m, inv) => {
-    const b = m.get(inv.branch_code) ?? { code: inv.branch_code, invoices: 0, sales: 0, last: inv.invoice_date };
-    b.invoices += 1; b.sales += Number(inv.net_dirhams);
-    if (inv.invoice_date > b.last) b.last = inv.invoice_date;
-    return m.set(inv.branch_code, b);
-  }, new Map<string, { code: string; invoices: number; sales: number; last: string }>()).values()].sort((a, b) => b.sales - a.sales);
+  const sinceLast = v ? daysBetween(v.last, new Date().toISOString().slice(0, 10)) : null;
+
   return (
-    <Section title="في أمارسوفت" icon={Package} empty="">
-      <div className="space-y-1 text-sm py-1">
-        <div className="flex justify-between"><span className="text-muted-foreground">إجمالي مشترياته</span><span className="font-bold text-primary">{formatLD(total)}</span></div>
-        {last && <div className="flex justify-between"><span className="text-muted-foreground">آخر شراء</span><span>{last}</span></div>}
-        {phones.length > 1 && <div className="flex justify-between"><span className="text-muted-foreground">الهواتف</span><span dir="ltr">{phones.join(" · ")}</span></div>}
-        {(info.city || info.area || info.address) && (
-          <div className="flex justify-between"><span className="text-muted-foreground">العنوان</span><span>{[info.city, info.area, info.address].filter(Boolean).join("، ")}</span></div>
-        )}
-        {info.dob && <div className="flex justify-between"><span className="text-muted-foreground">تاريخ الميلاد</span><span>{info.dob}</span></div>}
-        <div className="text-[11px] text-muted-foreground">رمز الزبون: {data.links.map((l) => `${l.guest_code} (${branchName(l.branch_code)})`).join("، ")}</div>
-      </div>
-      {byBranch.length > 0 && (
-        <div className="rounded-lg bg-muted/40 p-2 my-1">
-          <p className="text-xs font-bold mb-1">{byBranch.length > 1 ? `زار ${byBranch.length} فروع` : "يشري من فرع واحد"}</p>
-          {byBranch.map((b) => (
-            <Link key={b.code} to={`/branches/${b.code}`} className="flex justify-between text-sm py-0.5">
-              <span>{branchName(b.code)}</span>
-              <span className="text-muted-foreground">{b.invoices} فاتورة · <b className="text-foreground">{formatLD(b.sales)}</b> · آخرها {b.last}</span>
+    <div className="space-y-3">
+      {v && (
+        <>
+          {/* الخلاصة */}
+          <div className="grid grid-cols-3 gap-1.5 text-center">
+            <Card className="p-2"><div className="text-[11px] text-muted-foreground">جا</div><div className="text-xl font-bold">{v.visits}</div><div className="text-[11px] text-muted-foreground">مرة</div></Card>
+            <Card className="p-2"><div className="text-[11px] text-muted-foreground">شرى بـ</div><div className="text-base font-bold text-primary">{formatLD(v.total)}</div><div className="text-[11px] text-muted-foreground">{v.invoices} فاتورة</div></Card>
+            <Card className="p-2"><div className="text-[11px] text-muted-foreground">الفاتورة عادة</div><div className="text-base font-bold">{formatLD(v.avgTicket)}</div><div className="text-[11px] text-muted-foreground">{v.grams.toFixed(1)} جم الكل</div></Card>
+          </div>
+          <Card className="p-3 space-y-1.5 text-sm">
+            <div className="flex justify-between"><span className="text-muted-foreground">آخر مرة جا</span><span className={sinceLast! > 120 ? "text-destructive font-bold" : ""}>{sinceText(sinceLast!)} ({v.last})</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">أول مرة</span><span>{v.first}</span></div>
+            {v.everyDays != null && <div className="flex justify-between"><span className="text-muted-foreground">يرجع عادة كل</span><span>{v.everyDays} يوم</span></div>}
+            {v.trend != null && (
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">مشترياته</span>
+                <span className={`font-bold ${v.trend > 10 ? "text-status-available" : v.trend < -10 ? "text-destructive" : ""}`}>
+                  {v.trend > 10 ? `تكبر ↑ ${v.trend}%` : v.trend < -10 ? `تصغر ↓ ${Math.abs(v.trend)}%` : "ثابتة تقريباً"}
+                </span>
+              </div>
+            )}
+            {v.trend != null && <p className="text-[11px] text-muted-foreground">نقارن متوسط فواتيره الأخيرة بفواتيره الأولى.</p>}
+          </Card>
+
+          {/* شن يحب */}
+          <Card className="p-3 space-y-2">
+            <h3 className="text-sm font-bold flex items-center gap-1.5"><Heart className="size-4 text-primary" /> شن يحب</h3>
+            {v.likes.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {v.likes.map(([t, n]) => <Badge key={t} variant="secondary" className="text-sm">{t}{n > 1 ? ` ×${n}` : ""}</Badge>)}
+              </div>
+            ) : <p className="text-xs text-muted-foreground">نوع القطع مش مسجّل في فواتيره.</p>}
+            {v.karatTotal > 0 && (
+              <div className="space-y-1">
+                <div className="flex h-3 rounded-full overflow-hidden bg-muted">
+                  {v.karats.map(([k, g], i) => <div key={k} style={{ width: `${(g / v.karatTotal) * 100}%` }} className={i === 0 ? "bg-primary" : "bg-primary/40"} />)}
+                </div>
+                <p className="text-xs text-muted-foreground">{v.karats.map(([k, g]) => `عيار ${k}: ${Math.round((g / v.karatTotal) * 100)}%`).join(" · ")}</p>
+              </div>
+            )}
+            {v.typicalGrams > 0 && <p className="text-xs text-muted-foreground">يشري عادة قطع وزنها حوالي <b className="text-foreground">{v.typicalGrams.toFixed(1)} جم</b> في الفاتورة.</p>}
+          </Card>
+
+          {/* المشتريات مع الوقت */}
+          {v.chart.length > 1 && (
+            <Card className="p-3">
+              <h3 className="text-sm font-bold mb-1">كل فاتورة بقداش (بالألف د.ل)</h3>
+              <div className="h-36" dir="ltr">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={v.chart} margin={{ top: 4, right: 4, left: -24, bottom: 0 }}>
+                    <XAxis dataKey="date" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+                    <YAxis tick={{ fontSize: 10 }} tickFormatter={(x) => `${Math.round(x / 1000)}`} />
+                    <Tooltip formatter={(x: number) => formatLD(x * 1000)} labelFormatter={(l) => String(l)} />
+                    <Bar dataKey="value" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+          )}
+
+          {v.byBranch.length > 0 && (
+            <Card className="p-3">
+              <p className="text-sm font-bold mb-1">{v.byBranch.length > 1 ? `زار ${v.byBranch.length} فروع` : "يشري من فرع واحد"}</p>
+              {v.byBranch.map((b) => (
+                <Link key={b.code} to={`/branches/${b.code}`} className="flex justify-between text-sm py-0.5">
+                  <span>{branchName(b.code)}</span>
+                  <span className="text-muted-foreground">{b.invoices} فاتورة · <b className="text-foreground">{formatLD(b.sales)}</b></span>
+                </Link>
+              ))}
+            </Card>
+          )}
+        </>
+      )}
+
+      <Section title="بياناته في أمارسوفت" icon={Package} empty="">
+        <div className="space-y-1 text-sm py-1">
+          {phones.length > 1 && <div className="flex justify-between"><span className="text-muted-foreground">الهواتف</span><span dir="ltr">{phones.join(" · ")}</span></div>}
+          {(info.city || info.area || info.address) && (
+            <div className="flex justify-between"><span className="text-muted-foreground">العنوان</span><span>{[info.city, info.area, info.address].filter(Boolean).join("، ")}</span></div>
+          )}
+          {info.dob && <div className="flex justify-between"><span className="text-muted-foreground">تاريخ الميلاد</span><span>{info.dob}</span></div>}
+          <div className="text-[11px] text-muted-foreground">رمز الزبون: {data.links.map((l) => `${l.guest_code} (${branchName(l.branch_code)})`).join("، ")}</div>
+        </div>
+      </Section>
+
+      {data.invoices.length > 0 && (
+        <Section title={`فواتيره (${data.invoices.length})`} icon={Receipt} empty="">
+          {data.invoices.slice(0, shown).map((inv) => (
+            <Link key={inv.id} to={`/pos-sales?q=${encodeURIComponent(inv.invoice_no)}&branch=${inv.branch_code}`}
+              className="flex items-center justify-between gap-2 py-2 border-b border-border last:border-0 hover:bg-muted/30 rounded px-1">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">{inv.invoice_date} · {branchName(inv.branch_code)}{inv.kind === "return" ? " · مرتجع" : ""}</p>
+                {!!inv.items?.length && (
+                  <p className="text-[11px] text-muted-foreground truncate">
+                    {inv.items.map((i) => `${(i.tag && data.types.get(i.tag)) || i.desc || i.code || "قطعة"}${i.grams ? ` ${Number(i.grams)}جم` : ""}`).join(" · ")}
+                  </p>
+                )}
+              </div>
+              <span className={`text-sm font-bold shrink-0 ${inv.net_dirhams < 0 ? "text-destructive" : "text-primary"}`}>{formatLD(inv.net_dirhams)}</span>
             </Link>
           ))}
-        </div>
+          {data.invoices.length > shown && (
+            <Button variant="ghost" className="w-full text-primary" onClick={() => setShown(shown + 20)}>عرض المزيد ({data.invoices.length - shown} باقي)</Button>
+          )}
+        </Section>
       )}
-      {data.invoices.map((inv) => (
-        <Link key={inv.id} to={`/pos-sales?q=${encodeURIComponent(inv.invoice_no)}&branch=${inv.branch_code}`}
-          className="flex items-center justify-between gap-2 py-2 border-b border-border last:border-0 hover:bg-muted/30 rounded px-1">
-          <div className="min-w-0">
-            <p className="text-sm font-medium">فاتورة #{inv.invoice_no}{inv.kind === "return" ? " · مرتجع" : ""}</p>
-            <p className="text-[11px] text-muted-foreground">{inv.invoice_date} · {branchName(inv.branch_code)}</p>
-            {!!inv.items?.length && (
-              <p className="text-[11px] text-muted-foreground truncate">
-                {inv.items.map((i) => `${i.desc || i.code || "قطعة"}${i.grams ? ` ${Number(i.grams)}جم` : ""}`).join(" · ")}
-              </p>
-            )}
-          </div>
-          <span className={`text-sm font-bold shrink-0 ${inv.net_dirhams < 0 ? "text-destructive" : "text-primary"}`}>{formatLD(inv.net_dirhams)}</span>
-        </Link>
-      ))}
-    </Section>
+    </div>
   );
 }
 
