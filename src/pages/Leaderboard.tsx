@@ -19,6 +19,7 @@ type Row = {
 type Tagging = { branch_code: string; branch_name: string; invoices: number; tagged: number; salesmen: number };
 
 const MEDALS = ["🥇", "🥈", "🥉"];
+const ORDINALS = ["الأول", "الثاني", "الثالث", "الرابع", "الخامس", "السادس", "السابع", "الثامن", "التاسع", "العاشر"];
 const ALL = "all";
 const PERIODS: { key: Period; label: string }[] = [
   { key: "today", label: "اليوم" }, { key: "week", label: "الأسبوع" },
@@ -51,7 +52,7 @@ function describe(weightRank: number, invoiceRank: number, n: number) {
   if (invoiceRank === 0) return "الأكثر فواتير، لكن قطعه أخف";
   if (invoiceRank < weightRank) return "فواتيره كثيرة، لكن القطع خفيفة";
   if (invoiceRank > weightRank) return "فواتير أقل، لكن قطع ثقيلة";
-  return "";
+  return `${ORDINALS[weightRank] ?? "نفس الترتيب"} في الوزن والفواتير`;
 }
 
 export default function Leaderboard() {
