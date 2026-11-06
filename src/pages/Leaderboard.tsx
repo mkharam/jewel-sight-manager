@@ -1,3 +1,5 @@
+// لوحة المتصدرين: الترتيب بالوزن (هو الربح)، وبدل الأرقام كلام بسيط: مين الأكثر وزن، مين الأكثر
+// فواتير، ومين فواتيره كثيرة بس قطعه خفيفة. الأرقام للمدير العام في صفحات أمارسوفت.
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -8,14 +10,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useAuth, hasRole } from "@/hooks/useAuth";
-import { sb, periodDays, daysToRange, formatLD, formatGrams, type Period } from "@/lib/amarsoft";
+import { sb, periodDays, daysToRange, type Period } from "@/lib/amarsoft";
 
 type Row = {
   branch_code: string; branch_name: string | null; sman: string; salesman_name: string | null; profile_id: string | null;
   invoices: number; returns: number; pieces: number; grams: number; pure_grams: number; net_dirhams: number | null;
 };
 type Tagging = { branch_code: string; branch_name: string; invoices: number; tagged: number; salesmen: number };
-type SortKey = "amount" | "grams" | "invoices";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 const ALL = "all";
@@ -32,12 +33,32 @@ async function fetchBoard(period: Period, branch: string | null) {
   return (data ?? []) as Row[];
 }
 
+const nameOf = (r: Row) => r.salesman_name || r.sman;
+const sameAs = (a: Row, b: Row) => a.branch_code === b.branch_code && a.sman === b.sman;
+
+/** ترتيب بالوزن، ومعاه ترتيب كل واحد بالفواتير — باش نكتبوا الكلام. */
+function rank(list: Row[]) {
+  const byGrams = [...list].sort((a, b) => Number(b.grams) - Number(a.grams));
+  const byInvoices = [...list].sort((a, b) => Number(b.invoices) - Number(a.invoices) || Number(b.grams) - Number(a.grams));
+  return byGrams.map((r, i) => ({ row: r, weightRank: i, invoiceRank: byInvoices.findIndex((x) => sameAs(x, r)) }));
+}
+
+/** جملة قصيرة لكل بائع: وين هو في الوزن مقارنة بالفواتير. */
+function describe(weightRank: number, invoiceRank: number, n: number) {
+  if (n === 1) return "الوحيد اللي باع في الفترة هذي";
+  if (weightRank === 0 && invoiceRank === 0) return "الأكثر وزن والأكثر فواتير 👏";
+  if (weightRank === 0) return "الأكثر وزن — باع قطع ثقيلة";
+  if (invoiceRank === 0) return "الأكثر فواتير، لكن قطعه أخف";
+  if (invoiceRank < weightRank) return "فواتيره كثيرة، لكن القطع خفيفة";
+  if (invoiceRank > weightRank) return "فواتير أقل، لكن قطع ثقيلة";
+  return "";
+}
+
 export default function Leaderboard() {
   const { roles, user } = useAuth();
   const isAdmin = hasRole(roles, "admin");
   const [period, setPeriod] = useState<Period>("month");
   const [branch, setBranch] = useState(ALL);
-  const [sort, setSort] = useState<SortKey>(isAdmin ? "amount" : "grams");
   const [open, setOpen] = useState<Row | null>(null);
 
   const board = useQuery({
@@ -55,15 +76,9 @@ export default function Leaderboard() {
     },
   });
 
-  const rows = useMemo(() => {
-    const list = [...(board.data ?? [])];
-    const val = (r: Row) => (sort === "grams" ? Number(r.grams) : sort === "invoices" ? Number(r.invoices) : Number(r.net_dirhams ?? 0));
-    return list.sort((a, b) => val(b) - val(a));
-  }, [board.data, sort]);
-  const totals = useMemo(() => rows.reduce(
-    (t, r) => ({ grams: t.grams + Number(r.grams), invoices: t.invoices + Number(r.invoices), pieces: t.pieces + Number(r.pieces) }),
-    { grams: 0, invoices: 0, pieces: 0 },
-  ), [rows]);
+  const ranked = useMemo(() => rank(board.data ?? []), [board.data]);
+  const topWeight = ranked[0]?.row;
+  const topInvoices = ranked.find((r) => r.invoiceRank === 0)?.row;
   const scopeTagging = (tagging.data ?? []).filter((t) => branch === ALL || t.branch_code === branch);
   const untaggedBranches = scopeTagging.filter((t) => Number(t.invoices) > 0 && Number(t.tagged) < Number(t.invoices));
 
@@ -90,69 +105,63 @@ export default function Leaderboard() {
         ))}
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
-        <Stat label="الوزن المباع" value={formatGrams(totals.grams)} />
-        <Stat label="الفواتير" value={totals.invoices.toLocaleString("en-US")} />
-        <Stat label="القطع" value={totals.pieces.toLocaleString("en-US")} />
-      </div>
-
-      <div className="flex items-center gap-2 text-xs">
-        <span className="text-muted-foreground">الترتيب حسب:</span>
-        {isAdmin && <SortButton k="amount" sort={sort} setSort={setSort}>المبلغ</SortButton>}
-        <SortButton k="grams" sort={sort} setSort={setSort}>الوزن</SortButton>
-        <SortButton k="invoices" sort={sort} setSort={setSort}>الفواتير</SortButton>
-      </div>
-
       {board.isLoading ? (
         <div className="flex justify-center py-16"><Loader2 className="size-6 animate-spin text-primary" /></div>
       ) : board.error ? (
         <Card className="p-6 text-center text-sm text-destructive">تعذّر تحميل اللوحة: {(board.error as Error).message}</Card>
-      ) : !rows.length ? (
+      ) : !ranked.length ? (
         <Card className="p-6 text-center text-sm text-muted-foreground leading-relaxed">
           لم يتم تسجيل أي بائع على الفواتير في هذه الفترة. اختر اسم الموظف في خانة "الناقل" في أمارسوفت عند كل بيع.
         </Card>
       ) : (
-        <div className="space-y-2">
-          {rows.map((r, i) => {
-            const me = !!user && r.profile_id === user.id;
-            return (
-              <button key={`${r.branch_code}-${r.sman}`} onClick={() => setOpen(r)} className="w-full text-right">
-                <Card className={`p-3 flex items-center gap-3 ${i < 3 ? "border-primary/40" : ""} ${me ? "ring-2 ring-primary" : ""}`}>
-                  <div className="w-10 text-center text-2xl font-bold shrink-0">
-                    {i < 3 ? MEDALS[i] : <span className="text-base text-muted-foreground">{i + 1}</span>}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-bold truncate flex items-center gap-1.5">
-                      {r.salesman_name || r.sman}
-                      {me && <Badge className="text-[10px]">أنت</Badge>}
+        <>
+          {topWeight && topInvoices && (
+            <Card className="p-4 bg-gold-soft border-primary/30 space-y-1">
+              {sameAs(topWeight, topInvoices) ? (
+                <p className="text-base"><b>{nameOf(topWeight)}</b> الأول: باع أكثر وزن وعنده أكثر فواتير 👏</p>
+              ) : (
+                <p className="text-base">
+                  <b>{nameOf(topWeight)}</b> الأول لأنه باع أكثر وزن، و<b>{nameOf(topInvoices)}</b> عنده فواتير أكثر لكن قطعه أخف.
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">الترتيب بالوزن، لأن الوزن هو الربح.</p>
+            </Card>
+          )}
+
+          <div className="space-y-2">
+            {ranked.map(({ row: r, weightRank: i, invoiceRank }) => {
+              const me = !!user && r.profile_id === user.id;
+              const note = describe(i, invoiceRank, ranked.length);
+              return (
+                <button key={`${r.branch_code}-${r.sman}`} onClick={() => setOpen(r)} className="w-full text-right">
+                  <Card className={`p-3 flex items-center gap-3 ${i < 3 ? "border-primary/40" : ""} ${me ? "ring-2 ring-primary" : ""}`}>
+                    <div className="w-10 text-center text-2xl font-bold shrink-0">
+                      {i < 3 ? MEDALS[i] : <span className="text-base text-muted-foreground">{i + 1}</span>}
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      {r.branch_name ?? r.branch_code} · {r.invoices} فاتورة · {Number(r.pieces)} قطعة
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold truncate flex items-center gap-1.5">
+                        {nameOf(r)}
+                        {me && <Badge className="text-[10px]">أنت</Badge>}
+                      </div>
+                      <div className="text-xs text-muted-foreground">{r.branch_name ?? r.branch_code}</div>
+                      {note && <div className="text-sm mt-0.5">{note}</div>}
                     </div>
-                  </div>
-                  <div className="text-left shrink-0">
-                    <div className="font-bold text-primary whitespace-nowrap">{formatGrams(r.grams)}</div>
-                    {r.net_dirhams != null && <div className="text-xs text-muted-foreground whitespace-nowrap">{formatLD(r.net_dirhams)}</div>}
-                  </div>
-                </Card>
-              </button>
-            );
-          })}
-        </div>
+                  </Card>
+                </button>
+              );
+            })}
+          </div>
+        </>
       )}
 
       {untaggedBranches.length > 0 && (
         <Card className="p-3 space-y-1.5 border-amber-500/40">
-          <p className="text-xs font-bold flex items-center gap-1.5 text-amber-600"><AlertTriangle className="size-3.5" /> مبيعات بدون بائع (لا تُحسب في اللوحة)</p>
-          {untaggedBranches.map((t) => {
-            const missing = Number(t.invoices) - Number(t.tagged);
-            return (
-              <div key={t.branch_code} className="flex justify-between text-xs">
-                <span>{t.branch_name}{Number(t.salesmen) === 0 ? " — لا يوجد بائعون في أمارسوفت" : ""}</span>
-                <span className="text-muted-foreground">{missing} من {t.invoices} فاتورة</span>
-              </div>
-            );
-          })}
+          <p className="text-xs font-bold flex items-center gap-1.5 text-amber-600"><AlertTriangle className="size-3.5" /> فيه فواتير بدون اسم البائع (ما تنحسبش في اللوحة)</p>
+          {untaggedBranches.map((t) => (
+            <div key={t.branch_code} className="text-xs">
+              {t.branch_name}{Number(t.salesmen) === 0 ? " — ما فيش بائعين مسجلين في أمارسوفت" : " — اختاروا اسم البائع في كل فاتورة"}
+            </div>
+          ))}
         </Card>
       )}
 
@@ -165,32 +174,19 @@ export default function Leaderboard() {
   );
 }
 
-function SortButton({ k, sort, setSort, children }: { k: SortKey; sort: SortKey; setSort: (k: SortKey) => void; children: React.ReactNode }) {
-  return (
-    <Button size="sm" variant={sort === k ? "default" : "outline"} className="h-7 px-2 text-xs" onClick={() => setSort(k)}>{children}</Button>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <Card className="p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="font-bold mt-1">{value}</div>
-    </Card>
-  );
-}
-
-// أداء موظف واحد في كل الفترات، مع ترتيبه داخل فرعه.
+// ترتيب موظف واحد داخل فرعه في كل الفترات — كلام بدل أرقام.
 function EmployeeStats({ row, isAdmin }: { row: Row; isAdmin: boolean }) {
   const { data, isLoading } = useQuery({
     queryKey: ["amarsoft-employee-stats", row.branch_code, row.sman],
     queryFn: async () => {
-      const out: { period: Period; label: string; me: Row | null; rank: number | null; of: number }[] = [];
+      const out: { period: Period; label: string; place: number | null; of: number; note: string }[] = [];
       for (const p of PERIODS) {
-        const list = await fetchBoard(p.key, row.branch_code);
-        list.sort((a, b) => Number(b.grams) - Number(a.grams));
-        const idx = list.findIndex((r) => r.sman === row.sman);
-        out.push({ period: p.key, label: p.label, me: idx >= 0 ? list[idx] : null, rank: idx >= 0 ? idx + 1 : null, of: list.length });
+        const list = rank(await fetchBoard(p.key, row.branch_code));
+        const me = list.find((x) => sameAs(x.row, row));
+        out.push({
+          period: p.key, label: p.label, place: me ? me.weightRank + 1 : null, of: list.length,
+          note: me ? describe(me.weightRank, me.invoiceRank, list.length) : "",
+        });
       }
       return out;
     },
@@ -199,30 +195,22 @@ function EmployeeStats({ row, isAdmin }: { row: Row; isAdmin: boolean }) {
   return (
     <>
       <SheetHeader>
-        <SheetTitle>{row.salesman_name || row.sman} — {row.branch_name}</SheetTitle>
+        <SheetTitle>{nameOf(row)} — {row.branch_name}</SheetTitle>
       </SheetHeader>
-      <p className="text-xs text-muted-foreground mt-1">رمز البائع في أمارسوفت: {row.sman}{row.profile_id ? "" : " · غير مربوط بموظف في التطبيق"}</p>
+      <p className="text-xs text-muted-foreground mt-1">ترتيبه في فرعه بالوزن.{row.profile_id ? "" : " غير مربوط بموظف في التطبيق."}</p>
       {isLoading ? (
         <div className="flex justify-center py-10"><Loader2 className="size-5 animate-spin text-primary" /></div>
       ) : (
         <div className="mt-3 space-y-2">
           {data?.map((d) => (
             <Card key={d.period} className="p-3">
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center gap-2">
                 <span className="font-bold">{d.label}</span>
-                {d.rank && <span className="text-xs text-muted-foreground">المركز {d.rank} من {d.of} في الفرع (بالوزن)</span>}
+                {d.place
+                  ? <span className="text-sm">{d.place <= 3 ? MEDALS[d.place - 1] : ""} المركز {d.place} من {d.of}</span>
+                  : <span className="text-xs text-muted-foreground">ما باعش في الفترة هذي</span>}
               </div>
-              {d.me ? (
-                <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                  <span className="text-muted-foreground">الوزن المباع</span><span className="font-bold text-primary">{formatGrams(d.me.grams)}</span>
-                  <span className="text-muted-foreground">الوزن الصافي</span><span>{formatGrams(d.me.pure_grams)}</span>
-                  <span className="text-muted-foreground">الفواتير</span><span>{d.me.invoices}{d.me.returns ? ` (+${d.me.returns} مرتجع)` : ""}</span>
-                  <span className="text-muted-foreground">القطع</span><span>{Number(d.me.pieces)}</span>
-                  <span className="text-muted-foreground">متوسط الوزن للفاتورة</span>
-                  <span>{formatGrams(d.me.invoices ? Number(d.me.grams) / Number(d.me.invoices) : 0)}</span>
-                  {d.me.net_dirhams != null && (<><span className="text-muted-foreground">المبيعات</span><span>{formatLD(d.me.net_dirhams)}</span></>)}
-                </div>
-              ) : <p className="text-xs text-muted-foreground mt-1">لا مبيعات في هذه الفترة.</p>}
+              {d.note && <p className="text-sm text-muted-foreground mt-1">{d.note}</p>}
             </Card>
           ))}
           {isAdmin && (
