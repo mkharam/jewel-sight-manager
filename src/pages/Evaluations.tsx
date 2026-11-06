@@ -17,7 +17,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import EvaluationForm from "@/components/EvaluationForm";
 import { businessToday } from "@/lib/dates";
 import {
-  ALL_CRITERIA, EMPLOYEE_CRITERIA, GM_CRITERIA, MANAGER_CRITERIA, KIND_LABEL, db, defaultMonth, grade, monthLabel, shiftMonth,
+  ALL_CRITERIA, EMPLOYEE_CRITERIA, GM_CRITERIA, GM_EVAL_ENABLED, MANAGER_CRITERIA, KIND_LABEL, db, defaultMonth, grade, monthLabel, shiftMonth,
   type EvalStaff, type Evaluation, useIsEvalAdmin,
 } from "@/lib/evaluation";
 
@@ -40,7 +40,7 @@ export default function Evaluations() {
   const [tab, setTab] = useState<Tab>("board");
   const [month, setMonth] = useState(() => defaultMonth(businessToday()));
   const [openId, setOpenId] = useState<string | null>(null);
-  const [recordMode, setRecordMode] = useState<"gm" | "behalf">("gm");
+  const [recordMode, setRecordMode] = useState<"gm" | "behalf">(GM_EVAL_ENABLED ? "gm" : "behalf");
 
   const { data, isLoading } = useQuery({
     queryKey: ["evaluations", month],
@@ -79,7 +79,7 @@ export default function Evaluations() {
       const missing = [
         ...(cur.evals.some((e) => e.kind === "self") ? [] : ["تقييمه لنفسه"]),
         ...(s.role === "employee" && hasManager && !cur.evals.some((e) => e.kind === "by_manager") ? ["تقييم المشرف ليه"] : []),
-        ...(cur.evals.some((e) => e.kind === "by_gm") ? [] : ["تقييم المدير العام"]),
+        ...(!GM_EVAL_ENABLED || cur.evals.some((e) => e.kind === "by_gm") ? [] : ["تقييم المدير العام"]),
       ];
       return { ...s, ...cur, prev, missing };
     });
@@ -121,10 +121,12 @@ export default function Evaluations() {
 
       {tab === "record" && (
         <Card className="p-3 space-y-3">
-          <div className="grid grid-cols-2 gap-1.5">
-            <Button variant={recordMode === "gm" ? "default" : "outline"} onClick={() => setRecordMode("gm")}>تقييم المدير العام</Button>
-            <Button variant={recordMode === "behalf" ? "default" : "outline"} onClick={() => setRecordMode("behalf")}>نيابة عن موظف</Button>
-          </div>
+          {GM_EVAL_ENABLED && (
+            <div className="grid grid-cols-2 gap-1.5">
+              <Button variant={recordMode === "gm" ? "default" : "outline"} onClick={() => setRecordMode("gm")}>تقييم المدير العام</Button>
+              <Button variant={recordMode === "behalf" ? "default" : "outline"} onClick={() => setRecordMode("behalf")}>نيابة عن موظف</Button>
+            </div>
+          )}
           <p className="text-sm text-muted-foreground">
             {recordMode === "gm"
               ? "تقييم المدير العام لكل موظف ومشرف: الحضور والانصراف، الالتزام، النتائج… منفصل على تقييم المشرف."
@@ -294,9 +296,9 @@ function PersonDetail({ p, month, staff, scoreOf }: {
         <SheetTitle className="text-xl">{p.name}</SheetTitle>
         <p className="text-xs text-muted-foreground">{p.role === "manager" ? "مشرف" : "موظف"} · {p.branch_name ?? "—"} · {monthLabel(month)}</p>
       </SheetHeader>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+      <div className={`grid gap-2 text-center ${GM_EVAL_ENABLED ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"}`}>
         <Card className="p-2"><div className="text-[11px] text-muted-foreground">الدرجة</div><div className={`text-2xl font-bold ${g.text}`}>{f1(p.final)}</div><div className="text-[11px]">{g.label}</div></Card>
-        <Card className="p-2"><div className="text-[11px] text-muted-foreground">المدير العام</div><div className="text-xl font-bold">{f1(p.gm)}</div></Card>
+        {GM_EVAL_ENABLED && <Card className="p-2"><div className="text-[11px] text-muted-foreground">المدير العام</div><div className="text-xl font-bold">{f1(p.gm)}</div></Card>}
         <Card className="p-2"><div className="text-[11px] text-muted-foreground">{p.role === "manager" ? "تقييم موظفينه" : "تقييم المشرف"}</div><div className="text-xl font-bold">{f1(avg(others.map((e) => e.overall)))}</div></Card>
         <Card className="p-2"><div className="text-[11px] text-muted-foreground">قيّم نفسه</div><div className="text-xl font-bold">{f1(p.self)}</div></Card>
       </div>

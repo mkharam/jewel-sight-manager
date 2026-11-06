@@ -42,6 +42,9 @@ export const MANAGER_CRITERIA = [
   { key: "loyalty", label: "الاهتمام بولاء الزبائن" },
 ] as const;
 
+/** تقييم المدير العام موقّف لين يقرروا يرجّعوه — خلّيها true ترجع الخانة والبنود. */
+export const GM_EVAL_ENABLED = false;
+
 /** بنود المدير العام: اللي يهمّه هو في كل موظف ومشرف — منفصلة على اللي يقيّمه المشرف. */
 export const GM_CRITERIA = [
   { key: "punctuality", label: "الحضور والانصراف في الوقت" },
