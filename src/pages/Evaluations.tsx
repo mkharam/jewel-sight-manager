@@ -6,7 +6,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { AlertTriangle, Award, ClipboardList, Copy, Loader2, MessageCircle, Plus, Settings2, Star, TrendingDown, TrendingUp, Users } from "lucide-react";
+import { AlertTriangle, Award, Building2, ClipboardList, Copy, Loader2, MessageCircle, Plus, Settings2, Star, TrendingDown, TrendingUp, Users } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -15,13 +15,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import EvaluationForm from "@/components/EvaluationForm";
+import BranchEval from "@/components/evaluation/BranchEval";
 import { businessToday } from "@/lib/dates";
 import {
   ALL_CRITERIA, EMPLOYEE_CRITERIA, GM_CRITERIA, GM_EVAL_ENABLED, MANAGER_CRITERIA, KIND_LABEL, db, defaultMonth, grade, monthLabel, shiftMonth,
   type EvalStaff, type Evaluation, useIsEvalAdmin,
 } from "@/lib/evaluation";
 
-type Tab = "board" | "record" | "settings";
+type Tab = "board" | "branches" | "record" | "settings";
 type Person = EvalStaff & {
   final: number | null; self: number | null; others: number | null; gm: number | null; prev: number | null;
   evals: Evaluation[]; missing: string[];
@@ -113,11 +114,22 @@ export default function Evaluations() {
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-2xl font-bold flex items-center gap-2"><ClipboardList className="size-7 text-primary" />تقييم الموظفين</h1>
       </div>
-      <div className="grid grid-cols-3 gap-1.5">
-        {([["board", "اللوحة", Award], ["record", "تسجيل تقييم", Plus], ["settings", "الإعدادات", Settings2]] as const).map(([k, l, Icon]) => (
-          <Button key={k} variant={tab === k ? "default" : "outline"} onClick={() => setTab(k)} className="gap-1"><Icon className="size-4" />{l}</Button>
+      {/* «الفروع» للمدير العام بس — فيها مبيعات وأسعار. */}
+      <div className={`grid gap-1.5 ${isAdmin ? "grid-cols-4" : "grid-cols-3"}`}>
+        {([["board", "اللوحة", Award], ...(isAdmin ? [["branches", "الفروع", Building2]] as const : []), ["record", "تسجيل", Plus], ["settings", "الإعدادات", Settings2]] as const).map(([k, l, Icon]) => (
+          <Button key={k} variant={tab === k ? "default" : "outline"} onClick={() => setTab(k)} className="gap-1 px-1"><Icon className="size-4" />{l}</Button>
         ))}
       </div>
+
+      {(tab === "board" || tab === "branches") && (
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
+          {months.map((m) => (
+            <Button key={m} size="sm" variant={m === month ? "default" : "outline"} onClick={() => setMonth(m)} className="shrink-0">{monthLabel(m)}</Button>
+          ))}
+        </div>
+      )}
+
+      {tab === "branches" && isAdmin && <BranchEval month={month} />}
 
       {tab === "record" && (
         <Card className="p-3 space-y-3">
@@ -140,11 +152,6 @@ export default function Evaluations() {
 
       {tab === "board" && (
         <>
-          <div className="flex gap-1.5 overflow-x-auto pb-1">
-            {months.map((m) => (
-              <Button key={m} size="sm" variant={m === month ? "default" : "outline"} onClick={() => setMonth(m)} className="shrink-0">{monthLabel(m)}</Button>
-            ))}
-          </div>
           {isLoading || !v ? (
             <div className="flex justify-center py-16"><Loader2 className="size-6 animate-spin text-primary" /></div>
           ) : (

@@ -16,9 +16,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
-import { UserPlus, Trash2, KeyRound, Users, Package, Tag, ArrowLeftRight, MessageCircle, Activity, Trophy, Coins, Medal, ImagePlus, Wrench } from "lucide-react";
+import { UserPlus, Trash2, KeyRound, Users, Package, Tag, ArrowLeftRight, MessageCircle, Activity, Trophy, Coins, Medal, ImagePlus, Wrench, ShieldCheck } from "lucide-react";
 import { formatDate, formatCurrency, type Period, PERIOD_LABEL, periodStartISO } from "@/lib/constants";
 import { Link } from "react-router-dom";
+import AccountsMonitor from "@/components/staff/AccountsMonitor";
 
 type Branch = { id: string; name: string };
 type StaffUser = {
@@ -86,6 +87,8 @@ export default function Staff() {
   const createUser = async () => {
     if (!email || !password || !fullName) { toast.error("املأ كل الحقول"); return; }
     if (password.length < MIN_PASSWORD) { toast.error(`كلمة المرور ${MIN_PASSWORD} خانات على الأقل`); return; }
+    // الحساب اللي ينشئه المدير العام يخدم على طول: بلا فرع الموظف يوقف على «حسابك قيد المراجعة».
+    if (role !== "admin" && branchId === "none") { toast.error("اختار الفرع"); return; }
     if (!/^[a-zA-Z0-9._-]+$/.test(email.trim())) {
       toast.error("اسم المستخدم: أحرف إنجليزية وأرقام فقط"); return;
     }
@@ -203,12 +206,13 @@ export default function Staff() {
                   <Select value={branchId} onValueChange={setBranchId}>
                     <SelectTrigger><SelectValue placeholder="اختر" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">— بدون —</SelectItem>
+                      <SelectItem value="none">{role === "admin" ? "— بدون —" : "— اختار الفرع —"}</SelectItem>
                       {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
               </div>
+              <p className="text-[11px] text-muted-foreground">الحساب يخدم على طول بلا تفعيل.</p>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setOpenNew(false)}>إلغاء</Button>
@@ -219,10 +223,11 @@ export default function Staff() {
       </div>
 
       <Tabs defaultValue="list" className="w-full">
-        <TabsList className="w-full grid grid-cols-3">
-          <TabsTrigger value="list"><Users className="size-4 ml-1" /> الحسابات</TabsTrigger>
-          <TabsTrigger value="leaderboard"><Trophy className="size-4 ml-1" /> المبيعات</TabsTrigger>
-          <TabsTrigger value="activity"><Activity className="size-4 ml-1" /> نشاط الموظفين</TabsTrigger>
+        <TabsList className="w-full grid grid-cols-4">
+          <TabsTrigger value="list" className="px-1"><Users className="size-4 ml-1" /> الحسابات</TabsTrigger>
+          <TabsTrigger value="leaderboard" className="px-1"><Trophy className="size-4 ml-1" /> المبيعات</TabsTrigger>
+          <TabsTrigger value="activity" className="px-1"><Activity className="size-4 ml-1" /> النشاط</TabsTrigger>
+          <TabsTrigger value="monitor" className="px-1"><ShieldCheck className="size-4 ml-1" /> الأجهزة</TabsTrigger>
         </TabsList>
 
         <TabsContent value="list" className="mt-3">
@@ -292,6 +297,10 @@ export default function Staff() {
 
         <TabsContent value="activity" className="mt-3">
           <ActivityPanel branches={branches} />
+        </TabsContent>
+
+        <TabsContent value="monitor" className="mt-3">
+          <AccountsMonitor />
         </TabsContent>
       </Tabs>
 

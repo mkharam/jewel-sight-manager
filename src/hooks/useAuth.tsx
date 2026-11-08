@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { startPresence } from "@/lib/presence";
 
 export type AppRole = "admin" | "manager" | "employee";
 
@@ -47,6 +48,10 @@ function useAuthState(): AuthState {
 
     return () => sub.subscription.unsubscribe();
   }, []);
+
+  // سجل الدخول اليومي والجهاز — للمدير العام (راجع lib/presence.ts).
+  const uid = session?.user?.id;
+  useEffect(() => (uid ? startPresence() : undefined), [uid]);
 
   async function loadUserData(userId: string) {
     try {
