@@ -320,7 +320,14 @@ function Summary({ v, prevLabel }: { v: View; prevLabel: string }) {
   );
 }
 
+const TABS = [
+  { key: "summary", label: "الخلاصة" },
+  { key: "branches", label: "مقارنة الفروع" },
+  { key: "details", label: "التفاصيل" },
+] as const;
+
 export default function AmarsoftReports() {
+  const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("summary");
   const [period, setPeriod] = useState<Mode>("month");
   // التحديد اليدوي: يبدأ من أول الشهر لليوم، والموظف يغيّره كيف يبي.
   const [custom, setCustom] = useState(() => periodDays("month"));
@@ -418,10 +425,21 @@ export default function AmarsoftReports() {
         <div className="text-xs text-muted-foreground">نقارنها بـ{PREV_LABEL[period]}: {rangeText(prev.from, prev.to)}</div>
       </div>
 
+      {/* الصفحة كانت 9 أقسام تحت بعض. توا ثلاث خانات: الخلاصة أول ما تفتح، والتفاصيل لمن يبيها. */}
+      <div className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1">
+        {TABS.map((t) => (
+          <button key={t.key} onClick={() => setTab(t.key)}
+            className={`rounded-lg py-2 text-sm font-bold ${tab === t.key ? "bg-card shadow-card text-primary" : "text-muted-foreground"}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       {isLoading || !v || !data ? (
         <div className="flex justify-center py-16"><Loader2 className="size-6 animate-spin text-primary" /></div>
       ) : (
         <>
+          {tab === "summary" && <>
           <Summary v={v} prevLabel={PREV_LABEL[period]} />
 
           {/* الملخص */}
@@ -470,7 +488,7 @@ export default function AmarsoftReports() {
               <h2 className="text-lg font-bold">الفروع</h2>
               <Link to="/branches" className="text-sm font-semibold text-primary">التفاصيل ←</Link>
             </div>
-            <Hint>مرتبة من الأكثر مبيعاً. السهم الأخضر يعني زاد عن الفترة اللي قبلها والأحمر نقص. اضغط على فرع تشوف تفاصيله، والأرقام كاملة في «مقارنة الفروع» تحت.</Hint>
+            <Hint>مرتبة من الأكثر مبيعاً. السهم الأخضر يعني زاد عن الفترة اللي قبلها والأحمر نقص. اضغط على فرع تشوف تفاصيله، والأرقام كاملة في خانة «مقارنة الفروع».</Hint>
             {v.branches.map((b) => (
               <Link key={b.branch_code} to={`/branches/${b.branch_code}`} className="block py-2.5 border-b last:border-0 active:bg-muted/40">
                 <div className="flex justify-between items-baseline gap-2">
@@ -492,10 +510,14 @@ export default function AmarsoftReports() {
               </p>
             )}
           </Card>
+          </>}
 
+          {tab === "branches" && <>
           <BranchTable branches={v.branches} />
           <BranchVsItself branches={v.branches} from={from} to={to} prev={prev} prevLabel={PREV_LABEL[period]} />
+          </>}
 
+          {tab === "details" && <>
           {/* يوم بيوم */}
           {!!data.days.length && (
             <Card className="p-3">
@@ -559,6 +581,7 @@ export default function AmarsoftReports() {
           <Link to="/reports/app" className="block text-center text-sm text-muted-foreground underline py-2">
             تقارير التطبيق القديمة (المصاريف، الأسعار، التحويلات، الصيانة)
           </Link>
+          </>}
         </>
       )}
     </div>

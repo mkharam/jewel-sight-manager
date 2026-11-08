@@ -24,8 +24,8 @@ type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean; bad
 // compact: صفحات قليلة الاستعمال — أيقوناتها في «المزيد» بلون هادي بدل الذهبي.
 type NavSection = { title: string; items: NavItem[]; compact?: boolean };
 
-// المدير العام: «المزيد» مركّز على الإدارة — الفروع والمبيعات والموردين والعملاء والموظفين أولاً،
-// ثم شغل اليوم، وكل الباقي صغير تحت «أخرى». كان فيه 18 مربع بنفس الحجم ومبيعات مكررة.
+// المدير العام: «المزيد» مقسوم حسب الموضوع — الفلوس، البضاعة، الناس — بدل «الإدارة/اليوم/أخرى»
+// اللي كانت تخلط مواضيع مختلفة في نفس القسم. «أخرى» صغيرة وفيها بس اللي يُستعمل نادراً.
 function buildAdminNav(): NavSection[] {
   return [
     {
@@ -38,41 +38,46 @@ function buildAdminNav(): NavSection[] {
       ],
     },
     {
-      title: "الإدارة",
+      title: "المبيعات والفلوس",
       items: [
-        { to: "/branches", label: "الفروع", icon: Building2 },
-        { to: "/pos-sales", label: "المبيعات", icon: Receipt },
-        { to: "/gram-price", label: "سعر الغرام", icon: Coins },
-        { to: "/accountant", label: "المحاسب", icon: Wallet },
-        { to: "/evaluations", label: "تقييم الموظفين", icon: ClipboardList },
-        { to: "/suppliers", label: "الموردون", icon: Truck },
-        { to: "/customers", label: "العملاء", icon: Users },
-        { to: "/staff", label: "الموظفون", icon: UserCog },
         { to: "/reports", label: "التقارير", icon: BarChart3 },
+        { to: "/branches", label: "الفروع", icon: Building2 },
+        { to: "/pos-sales", label: "الفواتير", icon: Receipt },
+        { to: "/accountant", label: "المحاسب", icon: Wallet },
+        { to: "/gram-price", label: "سعر بيع الغرام", icon: Coins },
+        { to: "/gold-price", label: "سعر الذهب اليوم", icon: Coins },
+        { to: "/closing", label: "إقفال اليوم", icon: Landmark },
+        { to: "/buybacks", label: "شراء الكسر", icon: Recycle },
       ],
     },
     {
-      title: "اليوم",
+      title: "البضاعة",
       items: [
-        { to: "/closing", label: "إقفال اليوم", icon: Landmark },
-        { to: "/gold-price", label: "سعر الذهب", icon: Coins },
         { to: "/transfers", label: "التحويلات", icon: ArrowLeftRight, badgeKey: "transfers" },
         { to: "/reorders", label: "إعادة الطلب", icon: PackagePlus, badgeKey: "reorders" },
+        { to: "/reservations", label: "الحجوزات", icon: BookmarkCheck },
+        { to: "/admin/repairs", label: "الصيانة", icon: Wrench },
+        { to: "/watches", label: "الساعات", icon: Watch },
+        { to: "/upload", label: "رفع قطع", icon: Upload, badgeKey: "uploads" },
+        { to: "/weights", label: "قطع بلا وزن", icon: Scale, badgeKey: "weights" },
+        { to: "/admin/products", label: "إدارة القطع", icon: ListChecks },
+      ],
+    },
+    {
+      title: "الناس",
+      items: [
+        { to: "/staff", label: "الموظفون", icon: UserCog },
+        { to: "/evaluations", label: "التقييم", icon: ClipboardList },
+        { to: "/leaderboard", label: "المتصدرون", icon: Trophy },
+        { to: "/customers", label: "العملاء", icon: Users },
+        { to: "/suppliers", label: "الموردون", icon: Truck },
       ],
     },
     {
       title: "أخرى",
       compact: true,
       items: [
-        { to: "/watches", label: "الساعات", icon: Watch },
-        { to: "/upload", label: "رفع قطع", icon: Upload, badgeKey: "uploads" },
-        { to: "/weights", label: "قطع بلا وزن", icon: Scale, badgeKey: "weights" },
-        { to: "/reservations", label: "الحجوزات", icon: BookmarkCheck },
-        { to: "/admin/repairs", label: "الصيانة", icon: Wrench },
-        { to: "/buybacks", label: "شراء الكسر", icon: Recycle },
-        { to: "/leaderboard", label: "المتصدرون", icon: Trophy },
         { to: "/daily-summary", label: "الملخّص اليومي", icon: CalendarDays },
-        { to: "/admin/products", label: "إدارة القطع", icon: ListChecks },
         { to: "/stock-take", label: "جرد التطبيق", icon: ClipboardCheck },
         { to: "/sales", label: "مبيعات التطبيق", icon: Receipt },
       ],
@@ -88,9 +93,14 @@ function buildAdminNav(): NavSection[] {
 const MONEY_PAGES = new Set(["/branches", "/pos-sales", "/gram-price", "/accountant", "/suppliers", "/staff", "/reports",
   "/closing", "/buybacks", "/daily-summary", "/sales"]);
 function buildSupervisorNav(): NavSection[] {
-  return buildAdminNav()
+  const secs = buildAdminNav()
     .map((s) => ({ ...s, items: s.items.filter((i) => !MONEY_PAGES.has(i.to)) }))
     .filter((s) => s.items.length);
+  // قسم «المبيعات والفلوس» يبقى فيه سعر الذهب بس — ما يستاهلش قسم لروحه، يمشي للبضاعة.
+  const money = secs.find((s) => s.title === "المبيعات والفلوس");
+  const goods = secs.find((s) => s.title === "البضاعة");
+  if (money && goods) goods.items.push(...money.items);
+  return secs.filter((s) => s !== money);
 }
 
 function buildNav(isAdmin: boolean, isManager: boolean, isEvalRecorder = false, isSupervisor = false): NavSection[] {
