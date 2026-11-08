@@ -1814,7 +1814,7 @@ export type Database = {
     }
     Enums: {
       ai_chat_role: "user" | "assistant"
-      app_role: "admin" | "manager" | "employee" | "kiosk"
+      app_role: "admin" | "supervisor" | "manager" | "employee" | "kiosk"
       inquiry_status: "pending" | "found" | "quoted" | "shown" | "sold" | "lost"
       product_status:
         | "available"
@@ -1965,7 +1965,7 @@ export const Constants = {
   public: {
     Enums: {
       ai_chat_role: ["user", "assistant"],
-      app_role: ["admin", "manager", "employee", "kiosk"],
+      app_role: ["admin", "supervisor", "manager", "employee", "kiosk"],
       inquiry_status: ["pending", "found", "quoted", "shown", "sold", "lost"],
       product_status: [
         "available",

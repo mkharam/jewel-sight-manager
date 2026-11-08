@@ -25,7 +25,7 @@ import { invalidateInventoryAndSales } from "@/lib/queryInvalidation";
 import { toast } from "sonner";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "@/hooks/useAuth";
+import { isLead, useAuth } from "@/hooks/useAuth";
 
 export interface ProductCardData {
   id: string;
@@ -102,7 +102,7 @@ export default function ProductCard({
   // السعر المحسوب من سعر ذهب عمره أكثر من يومين ما يتسمّاش «سعر اليوم».
   const goldOld = Array.from(goldPrices?.values() ?? []).some((r) => daysBetween(r.effective_date, businessToday()) > 2);
   const priceGap = pricesVisible ? computed.gap : null;
-  const isAdmin = roles.includes("admin");
+  const isAdmin = isLead(roles);
   const isManager = roles.includes("manager");
   // تغيير الحالة السريع تعديل — يقتصر على المدير العام أو المشرف على قطع فرعه فقط.
   const canEditStatus = isAdmin || (isManager && product.branch_id === profile?.branch_id);

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Bell, BellRing, BellOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useActivityFeed } from "@/hooks/useActivityFeed";
-import { useAuth } from "@/hooks/useAuth";
+import { isLead, useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { formatDate, getImageUrl } from "@/lib/constants";
@@ -80,9 +80,9 @@ export default function NotificationsBell() {
       <PopoverContent align="end" className="w-[92vw] max-w-sm p-0 max-h-[70vh] overflow-y-auto">
         <div className="px-3 py-2 border-b border-border bg-muted/40 sticky top-0 flex items-center justify-between gap-2">
           <div>
-            <p className="text-sm font-bold">{roles.includes("admin") ? "آخر النشاطات" : "ما يخصّك"}</p>
+            <p className="text-sm font-bold">{isLead(roles) ? "آخر النشاطات" : "ما يخصّك"}</p>
             <p className="text-[11px] text-muted-foreground">
-              {roles.includes("admin") ? "كل الفروع — مباشر" : "فرعك وما يهمّك — مباشر"}
+              {isLead(roles) ? "كل الفروع — مباشر" : "فرعك وما يهمّك — مباشر"}
             </p>
           </div>
           {pushStatus !== "unsupported" && pushStatus !== "denied" && (

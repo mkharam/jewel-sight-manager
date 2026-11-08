@@ -6,7 +6,7 @@ import { Navigate, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteProducts } from "@/lib/productImages";
-import { useAuth } from "@/hooks/useAuth";
+import { isLead, useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
 import { invalidateInventoryAndSales } from "@/lib/queryInvalidation";
@@ -43,7 +43,7 @@ interface Row {
 
 export default function AdminProducts() {
   const { roles, loading, rolesLoading } = useAuth();
-  const isAdmin = roles.includes("admin");
+  const isAdmin = isLead(roles);
   const queryClient = useQueryClient();
   const confirm = useConfirm();
 

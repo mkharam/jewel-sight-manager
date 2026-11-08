@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
+import { roleLabel as roleLabelOf, useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import NotificationsBell from "@/components/NotificationsBell";
@@ -84,8 +84,18 @@ function buildAdminNav(): NavSection[] {
 // سطح المكتب، مشتركة، مشرف، مدير، موظف) فتتكرّر العناصر وتظهر للمدير 20 رابطاً في صف واحد
 // أعلى الشاشة على الآيباد والكمبيوتر. الآن: شريط جانبي بأقسام على الشاشات الكبيرة، ونفس
 // الأقسام داخل «المزيد» على الهاتف.
-function buildNav(isAdmin: boolean, isManager: boolean, isEvalRecorder = false): NavSection[] {
+// المشرف العام: نفس قائمة الإدارة بلا صفحات الفلوس (مبيعات، فروع، محاسب، موردين، تقارير، إقفال…).
+const MONEY_PAGES = new Set(["/branches", "/pos-sales", "/gram-price", "/accountant", "/suppliers", "/staff", "/reports",
+  "/closing", "/buybacks", "/daily-summary", "/sales"]);
+function buildSupervisorNav(): NavSection[] {
+  return buildAdminNav()
+    .map((s) => ({ ...s, items: s.items.filter((i) => !MONEY_PAGES.has(i.to)) }))
+    .filter((s) => s.items.length);
+}
+
+function buildNav(isAdmin: boolean, isManager: boolean, isEvalRecorder = false, isSupervisor = false): NavSection[] {
   if (isAdmin) return buildAdminNav();
+  if (isSupervisor) return buildSupervisorNav();
   const sections: NavSection[] = [
     {
       title: "الرئيسية",
@@ -324,11 +334,12 @@ export default function AppLayout() {
 
   const [moreOpen, setMoreOpen] = useState(false);
 
-  const isStaff = !isAdmin && !isManager;
+  const isSupervisor = roles.includes("supervisor");
+  const isStaff = !isAdmin && !isManager && !isSupervisor;
   const isEvalRecorder = !!useIsEvalAdmin();
-  const sections = buildNav(isAdmin, isManager, isEvalRecorder);
+  const sections = buildNav(isAdmin, isManager, isEvalRecorder, isSupervisor);
   const allItems = sections.flatMap((sec) => sec.items);
-  const barPaths = isAdmin ? MOBILE_BAR_ADMIN : isStaff ? MOBILE_BAR_STAFF : MOBILE_BAR;
+  const barPaths = isAdmin || isSupervisor ? MOBILE_BAR_ADMIN : isStaff ? MOBILE_BAR_STAFF : MOBILE_BAR;
   const mobileBar = barPaths.map((to) => allItems.find((i) => i.to === to)!).filter(Boolean);
   // «المزيد» = كل ما ليس في الشريط السفلي، بنفس الأقسام.
   const moreSections = sections
@@ -337,7 +348,7 @@ export default function AppLayout() {
   const countOf = (i: NavItem) => (i.badgeKey ? badges[i.badgeKey] ?? 0 : 0);
   // تنبيه مجمّع على زر «المزيد» حتى لا تختفي التحويلات المعلّقة داخله دون أن يعرف بها أحد.
   const moreBadgeCount = moreSections.reduce((n, sec) => n + sec.items.reduce((m, i) => m + countOf(i), 0), 0);
-  const roleLabel = isAdmin ? "مدير عام" : isManager ? "مدير فرع" : "موظف";
+  const roleLabel = roleLabelOf(roles);
 
   const signOut = async () => {
     setIconBadge(0);

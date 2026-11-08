@@ -8,7 +8,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
+import { isLead, useAuth } from "@/hooks/useAuth";
 import { businessToday, daysBetween } from "@/lib/dates";
 import { whatsappLink } from "@/lib/whatsapp";
 import { formatCurrency } from "@/lib/constants";
@@ -41,7 +41,7 @@ export default function Reservations() {
   const { roles, profile } = useAuth();
   const qc = useQueryClient();
   const confirm = useConfirm();
-  const isAdmin = roles.includes("admin");
+  const isAdmin = isLead(roles);
   const [showExpired, setShowExpired] = useState(false);
 
   const { data = [], isLoading } = useQuery({

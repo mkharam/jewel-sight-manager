@@ -3,7 +3,7 @@ import { Link, useSearchParams, useNavigationType } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteProducts } from "@/lib/productImages";
-import { useAuth } from "@/hooks/useAuth";
+import { isLead, roleLabel as roleLabelOf, useAuth } from "@/hooks/useAuth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -121,7 +121,7 @@ export default function ProductSearch() {
   const [bulkStatus, setBulkStatus] = useState<ProductStatus | "">("");
   const [bulkBranch, setBulkBranch] = useState<string>("");
   const [bulkBusy, setBulkBusy] = useState(false);
-  const isAdmin = roles.includes("admin");
+  const isAdmin = isLead(roles);
   const isManager = roles.includes("manager");
   // التعديل الجماعي (حالة/فرع) للمدير العام والمشرف فقط — الموظف لا يعدّل شيئاً.
   const canBulkEdit = isAdmin || isManager;
@@ -219,7 +219,7 @@ export default function ProductSearch() {
     if (h < 18) return "مساء الخير";
     return "مساء النور";
   }, []);
-  const roleLabel = roles.includes("admin") ? "مدير عام" : roles.includes("manager") ? "مدير فرع" : "موظف";
+  const roleLabel = roleLabelOf(roles);
 
   // أول تشغيل بعد استعادة حالة "رجوع" لا يجب أن يصفّر pages إلى 1 — debounced وpages
   // مضبوطان مسبقاً من restoredState في التهيئة، فتصفيرهما هنا كان سيُبطل الاستعادة

@@ -9,7 +9,7 @@ import { ShieldAlert } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 
-type Allowed = "admin" | "manager";
+type Allowed = "admin" | "supervisor" | "manager";
 
 export default function RequireRole({ allow, children }: { allow: Allowed[]; children: React.ReactNode }) {
   const { roles } = useAuth();

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useAuth } from "@/hooks/useAuth";
+import { isLead, useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
@@ -54,7 +54,7 @@ const isOverdue = (t: RepairTicket) =>
 
 export default function Repairs() {
   const { roles } = useAuth();
-  const isAdmin = roles.includes("admin");
+  const isAdmin = isLead(roles);
   const [q, setQ] = useState("");
   const [branchFilter, setBranchFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("open");

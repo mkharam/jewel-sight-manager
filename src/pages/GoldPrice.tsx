@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
+import { isManagerOrAdmin, useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +25,7 @@ export default function GoldPrice() {
   const { user, roles, rolesLoading } = useAuth();
   const qc = useQueryClient();
   // سعر الذهب: المدير العام والمشرف فقط — ليس الموظف.
-  const canEdit = roles.includes("admin") || roles.includes("manager");
+  const canEdit = isManagerOrAdmin(roles);
   const [form, setForm] = useState<Record<string, { price: string; making: string }>>({});
   const [weight, setWeight] = useState("");
   const [calcKarat, setCalcKarat] = useState("21K");

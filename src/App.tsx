@@ -125,13 +125,13 @@ const App = () => (
                 <Route path="/daily-summary" element={<RequireRole allow={["admin"]}><DailySummary /></RequireRole>} />
                 <Route path="/transfers" element={<Transfers />} />
                 <Route path="/reorders" element={<Reorders />} />
-                <Route path="/gold-price" element={<RequireRole allow={["admin", "manager"]}><GoldPrice /></RequireRole>} />
-                <Route path="/stock-take" element={<RequireRole allow={["admin"]}><StockTake /></RequireRole>} />
+                <Route path="/gold-price" element={<RequireRole allow={["admin", "manager", "supervisor"]}><GoldPrice /></RequireRole>} />
+                <Route path="/stock-take" element={<RequireRole allow={["admin", "supervisor"]}><StockTake /></RequireRole>} />
                 <Route path="/sales" element={<RequireRole allow={["admin"]}><Sales /></RequireRole>} />
                 <Route path="/pos-sales" element={<RequireRole allow={["admin"]}><PosSales /></RequireRole>} />
-                <Route path="/pos-stock" element={<RequireRole allow={["admin", "manager"]}><PosStock /></RequireRole>} />
-                <Route path="/pos-count" element={<RequireRole allow={["admin", "manager"]}><PosCount /></RequireRole>} />
-                <Route path="/amarsoft" element={<RequireRole allow={["admin", "manager"]}><AmarsoftHub /></RequireRole>} />
+                <Route path="/pos-stock" element={<RequireRole allow={["admin", "manager", "supervisor"]}><PosStock /></RequireRole>} />
+                <Route path="/pos-count" element={<RequireRole allow={["admin", "manager", "supervisor"]}><PosCount /></RequireRole>} />
+                <Route path="/amarsoft" element={<RequireRole allow={["admin", "manager", "supervisor"]}><AmarsoftHub /></RequireRole>} />
                 <Route path="/branches" element={<RequireRole allow={["admin"]}><Branches /></RequireRole>} />
                 <Route path="/branches/:code" element={<RequireRole allow={["admin"]}><Branches /></RequireRole>} />
                 <Route path="/suppliers" element={<RequireRole allow={["admin"]}><AmarsoftSuppliers /></RequireRole>} />
@@ -145,9 +145,9 @@ const App = () => (
                 <Route path="/evaluations" element={<Evaluations />} />
                 <Route path="/buybacks" element={<RequireRole allow={["admin", "manager"]}><Buybacks /></RequireRole>} />
                 <Route path="/closing" element={<RequireRole allow={["admin", "manager"]}><DailyClosing /></RequireRole>} />
-                <Route path="/admin/repairs" element={<RequireRole allow={["admin", "manager"]}><Repairs /></RequireRole>} />
+                <Route path="/admin/repairs" element={<RequireRole allow={["admin", "manager", "supervisor"]}><Repairs /></RequireRole>} />
                 <Route path="/customers" element={<Customers />} />
-                <Route path="/admin/products" element={<RequireRole allow={["admin"]}><AdminProducts /></RequireRole>} />
+                <Route path="/admin/products" element={<RequireRole allow={["admin", "supervisor"]}><AdminProducts /></RequireRole>} />
               </Route>
               <Route path="*" element={<NotFound />} />
             </Routes>

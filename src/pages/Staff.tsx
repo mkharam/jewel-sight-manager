@@ -4,7 +4,7 @@ import { Navigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { attachStaffNames } from "@/lib/staffNames";
 import { describe } from "@/lib/notifications";
-import { useAuth } from "@/hooks/useAuth";
+import { ROLE_LABEL, useAuth, type AppRole } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,12 +26,13 @@ type StaffUser = {
   id: string;
   email: string;
   full_name: string;
-  role: "admin" | "manager" | "employee";
+  role: AppRole;
   branch_id: string | null;
   created_at: string;
 };
 
-const ROLE_LABEL = { admin: "مدير عام", manager: "مدير فرع", employee: "موظف" } as const;
+// الأدوار من فوق لتحت؛ المشرف العام يشوف كل الفروع بلا مبيعات ولا أرقام فلوس.
+const ROLES: AppRole[] = ["admin", "supervisor", "manager", "employee"];
 
 export default function Staff() {
   const { user, roles, loading, rolesLoading } = useAuth();
@@ -48,7 +49,7 @@ export default function Staff() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
-  const [role, setRole] = useState<"admin" | "manager" | "employee">("employee");
+  const [role, setRole] = useState<AppRole>("employee");
   const [branchId, setBranchId] = useState<string>("none");
   const [newPw, setNewPw] = useState("");
 
@@ -88,7 +89,7 @@ export default function Staff() {
     if (!email || !password || !fullName) { toast.error("املأ كل الحقول"); return; }
     if (password.length < MIN_PASSWORD) { toast.error(`كلمة المرور ${MIN_PASSWORD} خانات على الأقل`); return; }
     // الحساب اللي ينشئه المدير العام يخدم على طول: بلا فرع الموظف يوقف على «حسابك قيد المراجعة».
-    if (role !== "admin" && branchId === "none") { toast.error("اختار الفرع"); return; }
+    if ((role === "manager" || role === "employee") && branchId === "none") { toast.error("اختار الفرع"); return; }
     if (!/^[a-zA-Z0-9._-]+$/.test(email.trim())) {
       toast.error("اسم المستخدم: أحرف إنجليزية وأرقام فقط"); return;
     }
@@ -108,7 +109,7 @@ export default function Staff() {
     setOpenNew(false); resetForm(); load();
   };
 
-  const changeRole = async (u: StaffUser, newRole: "admin" | "manager" | "employee") => {
+  const changeRole = async (u: StaffUser, newRole: AppRole) => {
     if (u.id === user?.id && newRole !== "admin") {
       toast.error("لا يمكنك تخفيض صلاحياتك");
       return;
@@ -195,9 +196,7 @@ export default function Staff() {
                   <Select value={role} onValueChange={(v: any) => setRole(v)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="employee">موظف</SelectItem>
-                      <SelectItem value="manager">مدير فرع</SelectItem>
-                      <SelectItem value="admin">مدير عام</SelectItem>
+                      {ROLES.map((r) => <SelectItem key={r} value={r}>{ROLE_LABEL[r]}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -206,7 +205,7 @@ export default function Staff() {
                   <Select value={branchId} onValueChange={setBranchId}>
                     <SelectTrigger><SelectValue placeholder="اختر" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">{role === "admin" ? "— بدون —" : "— اختار الفرع —"}</SelectItem>
+                      <SelectItem value="none">{role === "admin" || role === "supervisor" ? "— كل الفروع —" : "— اختار الفرع —"}</SelectItem>
                       {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
@@ -259,9 +258,7 @@ export default function Staff() {
                       <Select value={u.role} onValueChange={(v: any) => changeRole(u, v)} disabled={u.id === user?.id}>
                         <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="employee">{ROLE_LABEL.employee}</SelectItem>
-                          <SelectItem value="manager">{ROLE_LABEL.manager}</SelectItem>
-                          <SelectItem value="admin">{ROLE_LABEL.admin}</SelectItem>
+                          {ROLES.map((r) => <SelectItem key={r} value={r}>{ROLE_LABEL[r]}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </TableCell>

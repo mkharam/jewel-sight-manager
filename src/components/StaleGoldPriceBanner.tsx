@@ -5,7 +5,7 @@
 // ينبّه التطبيق بدل الاعتماد على تذكّر أحد.
 import { Link } from "react-router-dom";
 import { AlertTriangle, ChevronLeft } from "lucide-react";
-import { useAuth } from "@/hooks/useAuth";
+import { isManagerOrAdmin, useAuth } from "@/hooks/useAuth";
 import { useGoldPrices } from "@/hooks/useGoldPrices";
 import { KARAT_OPTIONS } from "@/lib/constants";
 import { businessToday, daysBetween } from "@/lib/dates";
@@ -13,7 +13,7 @@ import { businessToday, daysBetween } from "@/lib/dates";
 export default function StaleGoldPriceBanner() {
   const { roles } = useAuth();
   const { data: prices } = useGoldPrices();
-  const canUpdate = roles.includes("admin") || roles.includes("manager");
+  const canUpdate = isManagerOrAdmin(roles);
   if (!canUpdate || !prices) return null; // قبل وصول الأسعار لا نعرف — لا إنذار كاذب
 
   const today = businessToday();

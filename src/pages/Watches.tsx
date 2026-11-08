@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, Loader2, Pencil, Plus, Search, Trash2, Watch } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
+import { isManagerOrAdmin, useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,7 +45,7 @@ const hasPromo = (w: WatchRow) => w.promo_price != null && w.price != null && Nu
 
 export default function Watches() {
   const { roles } = useAuth();
-  const canEdit = roles.includes("admin") || roles.includes("manager");
+  const canEdit = isManagerOrAdmin(roles);
   const [q, setQ] = useState("");
   const [branch, setBranch] = useState("all");
   const [gender, setGender] = useState<Gender | "all">("all");

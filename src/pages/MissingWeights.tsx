@@ -8,7 +8,7 @@ import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
+import { isLead, useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ const PAGE_SIZE = 40;
 export default function MissingWeights() {
   const qc = useQueryClient();
   const { profile, roles } = useAuth();
-  const isAdmin = roles.includes("admin");
+  const isAdmin = isLead(roles);
   const branchId = profile?.branch_id ?? null;
 
   const [values, setValues] = useState<Record<string, string>>({});

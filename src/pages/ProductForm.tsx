@@ -7,7 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { removeUnreferencedFiles, uploadProductImage } from "@/lib/productImages";
-import { useAuth } from "@/hooks/useAuth";
+import { isLead, useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -64,7 +64,7 @@ export default function ProductForm() {
   const navigate = useNavigate();
   const confirm = useConfirm();
   const { user, profile, roles } = useAuth();
-  const isAdmin = roles.includes("admin");
+  const isAdmin = isLead(roles);
   const isManager = roles.includes("manager");
   // الموظف لا يملك صلاحية التعديل/الإضافة الكاملة إطلاقاً (يضيف صوراً/وزناً فقط من صفحة
   // القطعة). المشرف يقتصر على قطع فرعه — يُتحقّق من فرع القطعة الفعلي بعد تحميلها أدناه.
@@ -534,8 +534,9 @@ export default function ProductForm() {
 
         <Card className="p-5 space-y-4">
           <h2 className="font-bold">الأسعار</h2>
-          <div className={`grid gap-3 ${isAdmin ? "grid-cols-3" : "grid-cols-2"}`}>
-            {isAdmin && (
+          {/* التكلفة للإدارة بس — المشرف العام ما يشوفش أرقام الربح. */}
+          <div className={`grid gap-3 ${roles.includes("admin") ? "grid-cols-3" : "grid-cols-2"}`}>
+            {roles.includes("admin") && (
               <Field label="التكلفة"><Input type="number" step="0.01" inputMode="decimal" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} dir="ltr" /></Field>
             )}
             <Field label="سعر البيع"><Input type="number" step="0.01" inputMode="decimal" value={form.sale_price} onChange={(e) => setForm({ ...form, sale_price: e.target.value })} dir="ltr" /></Field>

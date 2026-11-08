@@ -4,14 +4,14 @@
 import { Loader2, Bell } from "lucide-react";
 import { Link } from "react-router-dom";
 import { formatDate, getImageUrl } from "@/lib/constants";
-import { useAuth } from "@/hooks/useAuth";
+import { isLead, useAuth } from "@/hooks/useAuth";
 import { useActivityFeed } from "@/hooks/useActivityFeed";
 
 const PAGE_SIZE = 100;
 
 export default function Notifications() {
   const { roles } = useAuth();
-  const isAdmin = roles.includes("admin");
+  const isAdmin = isLead(roles);
   const { data: entries = [], isLoading } = useActivityFeed(PAGE_SIZE);
 
   return (

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
+import { isLead, useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -142,7 +142,7 @@ function LowStockAlerts({ canEdit }: { canEdit: boolean }) {
 
 export default function Reorders() {
   const { roles, profile } = useAuth();
-  const isAdmin = roles.includes("admin");
+  const isAdmin = isLead(roles);
   const canManage = isAdmin || roles.includes("manager");
   const [items, setItems] = useState<ReorderRequest[]>([]);
   const [tab, setTab] = useState<"pending" | "active" | "all">("pending");

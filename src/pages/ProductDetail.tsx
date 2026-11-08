@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteProducts, uploadProductImage } from "@/lib/productImages";
 import { attachStaffNames } from "@/lib/staffNames";
-import { useAuth } from "@/hooks/useAuth";
+import { isLead, useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -39,7 +39,7 @@ export default function ProductDetail() {
   const confirm = useConfirm();
   const { user, roles, profile } = useAuth();
   const canEdit = !!user;
-  const isAdmin = roles.includes("admin");
+  const isAdmin = isLead(roles);
   const isManager = roles.includes("manager");
   const [activeImage, setActiveImage] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -406,7 +406,7 @@ export default function ProductDetail() {
               ) : (
                 <p className="text-3xl font-extrabold text-primary">{formatCurrency(product.sale_price)}</p>
               )}
-              {isAdmin && product.cost_price != null && (
+              {roles.includes("admin") && product.cost_price != null && (
                 <p className="text-xs text-muted-foreground mt-1">التكلفة: {formatCurrency(product.cost_price)}</p>
               )}
             </div>

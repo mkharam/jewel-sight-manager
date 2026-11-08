@@ -3,7 +3,7 @@
 import { useEffect, useId } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
+import { isLead, useAuth } from "@/hooks/useAuth";
 import { describe, isRelevant, dropDuplicateSaleEvents, type ActivityItem } from "@/lib/notifications";
 
 export interface FeedEntry {
@@ -26,7 +26,7 @@ const MAX_FETCH = 400;
 export function useActivityFeed(limit: number) {
   const qc = useQueryClient();
   const { user, profile, roles } = useAuth();
-  const isAdmin = roles.includes("admin");
+  const isAdmin = isLead(roles);
   const branchId = profile?.branch_id ?? null;
 
   // اسم القناة يجب أن يكون فريداً لكل نسخة من الخطّاف: صفحة الإشعارات تُركَّب بينما
@@ -47,7 +47,7 @@ export function useActivityFeed(limit: number) {
   }, [user, qc, channelId]);
 
   const query = useQuery({
-    queryKey: ["activity-feed", user?.id, branchId, isAdmin, limit],
+    queryKey: ["activity-feed", user?.id, branchId, isAdmin, roles.includes("admin"), limit],
     enabled: !!user,
     queryFn: async (): Promise<FeedEntry[]> => {
       // الأسطر بلا فاعل (عمليات دفعة على قاعدة البيانات) تُستبعد في الاستعلام نفسه:
@@ -63,7 +63,9 @@ export function useActivityFeed(limit: number) {
 
       const list = dropDuplicateSaleEvents((data ?? []) as ActivityItem[]);
       const ctx = { userId: user?.id ?? null, branchId, isAdmin };
-      const mine = list.filter((i) => isRelevant(i, ctx));
+      // المشرف العام يشوف كل الفروع، لكن بلا أحداث البيع (فيها أسعار) — الفلوس للإدارة بس.
+      const noMoney = !roles.includes("admin") && isAdmin;
+      const mine = list.filter((i) => isRelevant(i, ctx) && !(noMoney && /^sales?$/.test(i.entity_type)));
 
       // أسماء الفاعلين تُجلب بعد التصفية لا قبلها — استعلام أصغر وأسرع.
       const ids = Array.from(new Set(mine.map((i) => i.actor_id).filter(Boolean))) as string[];

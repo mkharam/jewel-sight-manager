@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
-import { useAuth } from "@/hooks/useAuth";
+import { ROLE_LABEL, useAuth } from "@/hooks/useAuth";
 import { sb, formatGrams, formatTripoli } from "@/lib/amarsoft";
 import { deviceLabel } from "@/lib/presence";
 
@@ -25,7 +25,7 @@ type SessionRow = {
   created_at: string; last_active: string; is_current: boolean;
 };
 
-const ROLE: Record<string, string> = { admin: "مدير عام", manager: "مدير فرع", employee: "موظف" };
+const ROLE: Record<string, string> = ROLE_LABEL;
 const DAYS = 30;
 
 const daysAgo = (iso: string | null) => (iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000) : null);

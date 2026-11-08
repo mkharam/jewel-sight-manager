@@ -3,7 +3,9 @@ import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { startPresence } from "@/lib/presence";
 
-export type AppRole = "admin" | "manager" | "employee";
+// الأدوار من فوق لتحت: الإدارة (admin) ← المشرف العام (supervisor: كل الفروع بلا فلوس) ← مشرف فرع
+// (manager) ← موظف.
+export type AppRole = "admin" | "supervisor" | "manager" | "employee";
 
 export interface AuthState {
   session: Session | null;
@@ -61,7 +63,7 @@ function useAuthState(): AuthState {
       ]);
       const list = (rolesData ?? []).map((r) => r.role as AppRole);
       // sort so admin > manager > employee — first item used for display
-      const order: Record<AppRole, number> = { admin: 0, manager: 1, employee: 2 };
+      const order: Record<AppRole, number> = { admin: 0, supervisor: 1, manager: 2, employee: 3 };
       list.sort((a, b) => order[a] - order[b]);
       setRoles(list);
       setProfile(profileData ?? null);
@@ -95,4 +97,10 @@ export function useAuth(): AuthState {
 
 export const hasRole = (roles: AppRole[], role: AppRole) => roles.includes(role);
 export const isManagerOrAdmin = (roles: AppRole[]) =>
-  roles.includes("admin") || roles.includes("manager");
+  roles.includes("admin") || roles.includes("supervisor") || roles.includes("manager");
+/** الإدارة أو المشرف العام: كل الفروع في الشغل اليومي. الفلوس والمبيعات تبقى roles.includes("admin"). */
+export const isLead = (roles: AppRole[]) => roles.includes("admin") || roles.includes("supervisor");
+export const ROLE_LABEL: Record<AppRole, string> = {
+  admin: "الإدارة", supervisor: "مشرف عام", manager: "مشرف فرع", employee: "موظف",
+};
+export const roleLabel = (roles: AppRole[]) => ROLE_LABEL[roles[0] ?? "employee"] ?? "موظف";

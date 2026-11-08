@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePersistentState } from "@/lib/resume";
 import { useSearchParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
+import { isLead, useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -50,7 +50,7 @@ interface Branch { id: string; name: string }
 
 export default function Transfers() {
   const { user, profile, roles } = useAuth();
-  const isAdmin = roles.includes("admin");
+  const isAdmin = isLead(roles);
   const [params] = useSearchParams();
   const presetProductId = params.get("product");
   const presetProductName = params.get("name");
