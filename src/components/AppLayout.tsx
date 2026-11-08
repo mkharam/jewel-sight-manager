@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Building2, Truck, UserCog, Wallet, Watch, ClipboardList, Award, type LucideIcon } from "lucide-react";
+import { ArrowRight, Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Building2, Truck, UserCog, Wallet, Watch, ClipboardList, Award, BadgePercent, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -35,6 +35,7 @@ function buildAdminNav(): NavSection[] {
         { to: "/chat", label: "المحادثة", icon: MessagesSquare, badgeKey: "chat" },
         { to: "/inquiries", label: "الاستفسارات", icon: MessageCircle },
         { to: "/amarsoft", label: "أمارسوفت", icon: Boxes },
+        { to: "/discount", label: "خصم الزبون", icon: BadgePercent },
       ],
     },
     {
@@ -115,6 +116,7 @@ function buildNav(isAdmin: boolean, isManager: boolean, isEvalRecorder = false, 
         { to: "/chat", label: "المحادثة", icon: MessagesSquare, badgeKey: "chat" },
         { to: "/inquiries", label: "الاستفسارات", icon: MessageCircle },
         { to: "/upload", label: "رفع قطع", icon: Upload, badgeKey: "uploads" },
+        { to: "/discount", label: "خصم الزبون", icon: BadgePercent },
         // الإشعارات ليست هنا: الجرس في الرأس ظاهر على كل الشاشات ويفتح صفحتها الكاملة.
       ],
     },
