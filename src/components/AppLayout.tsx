@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Building2, Truck, UserCog, Wallet, Watch, ClipboardList, type LucideIcon } from "lucide-react";
+import { ArrowRight, Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Building2, Truck, UserCog, Wallet, Watch, ClipboardList, Award, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -70,6 +70,7 @@ function buildAdminNav(): NavSection[] {
         { to: "/evaluations", label: "التقييم", icon: ClipboardList },
         { to: "/leaderboard", label: "المتصدرون", icon: Trophy },
         { to: "/customers", label: "العملاء", icon: Users },
+        { to: "/loyalty", label: "الولاء", icon: Award },
         { to: "/suppliers", label: "الموردون", icon: Truck },
       ],
     },
@@ -137,6 +138,7 @@ function buildNav(isAdmin: boolean, isManager: boolean, isEvalRecorder = false, 
       items: [
         { to: "/gold-price", label: "سعر الذهب", icon: Coins },
         { to: "/closing", label: "إقفال اليوم", icon: Landmark },
+        { to: "/loyalty", label: "الولاء", icon: Award },
         { to: "/admin/repairs", label: "الصيانة", icon: Wrench },
         { to: "/buybacks", label: "شراء الكسر", icon: Recycle },
         // كل صفحات أمارسوفت (مبيعات، أرباح، سجل، مخزون، جرد) خلف زر واحد بدل خمسة.

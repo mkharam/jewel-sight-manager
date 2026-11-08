@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.amarsoft-sync]
 verify_jwt = false
+
+[functions.loyalty-wallet]
+verify_jwt = false
