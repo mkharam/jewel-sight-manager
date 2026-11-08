@@ -1,6 +1,4 @@
--- طھظ‚ظٹظٹظ… ط§ظ„ظپط±ظˆط¹: ظ†ط²ظٹط¯ طھظ‚ط³ظٹظ… ط§ظ„ظ‚ط·ط¹ ط­ط³ط¨ ظˆط²ظ† ط§ظ„ظ‚ط·ط¹ط© (ط®ظپظٹظپ ط£ظ‚ظ„ ظ…ظ† 5 ظ‚ط±ط§ظ…طŒ ظ…طھظˆط³ط· 5-20طŒ ط±ط²ظٹظ† 20 ظˆظپظˆظ‚)
--- ط¨ط§ط´ ظٹط¨ط§ظ† ظ…ظٹظ† ظٹط¨ظٹط¹ ظپظٹ ط§ظ„ط±ط²ظٹظ† ظˆظ…ظٹظ† ظپظٹ ط§ظ„ط®ظپظٹظپ. ظ†ظپط³ ط§ظ„ط¯ط§ظ„ط© ط§ظ„ظ‚ط¯ظٹظ…ط© + 4 ط£ط¹ظ…ط¯ط©.
--- تعديل: الرزين من 40 قرام (كان 20).
+-- تقييم الفروع: الرزين من 40 قرام (كان 20). خفيف أقل من 5، متوسط 5-40.
 drop function if exists public.amarsoft_branch_eval(timestamptz, timestamptz);
 
 create function public.amarsoft_branch_eval(p_start timestamptz, p_end timestamptz)
@@ -58,7 +56,7 @@ as $function$
   )
   select agg.branch_code, b.name,
          case when agg.g_sman = 1 then null else coalesce(agg.sman, '') end,
-         case when agg.g_sman = 1 then null when agg.sman is null then 'ط¨ط¯ظˆظ† ط¨ط§ط¦ط¹'
+         case when agg.g_sman = 1 then null when agg.sman is null then 'بدون بائع'
               else coalesce(nullif(pr.full_name, ''), s.name, agg.sman) end,
          agg.invoices, agg.returns, agg.deleted, agg.pieces, agg.grams, agg.net,
          agg.g18, agg.a18, agg.m18, agg.g21, agg.a21, agg.m21,

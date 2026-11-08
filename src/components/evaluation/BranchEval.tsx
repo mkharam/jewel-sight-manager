@@ -287,8 +287,8 @@ function PieceMix({ b, avgPiece }: { b: Row; avgPiece: number | null }) {
   if (!total) return null;
   const seg = [
     { k: "خفيف <5ق", v: n(b.light_pcs), c: "bg-sky-400" },
-    { k: "متوسط 5-40ق", v: n(b.mid_pcs), c: "bg-amber-400" },
-    { k: "رزين 40ق+", v: n(b.heavy_pcs), c: "bg-primary" },
+    { k: "متوسط 5-15ق", v: n(b.mid_pcs), c: "bg-amber-400" },
+    { k: "رزين 15ق+", v: n(b.heavy_pcs), c: "bg-primary" },
   ];
   return (
     <div className="mt-2">
