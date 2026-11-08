@@ -7,7 +7,7 @@
 
 -- ===== (1) تقييم الفروع =====
 create or replace function public.amarsoft_internal_customer(p_name text)
-returns boolean language sql immutable as $$
+returns boolean language sql immutable set search_path = public as $$
   select coalesce(p_name, '') ~ '(ذهب|دهب) ?مسبوك|بضاع[ةه]|^كسر|ذهب كسر|دهب كسر'
 $$;
 
