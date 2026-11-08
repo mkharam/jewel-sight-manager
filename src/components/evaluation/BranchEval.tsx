@@ -153,6 +153,18 @@ export default function BranchEval({ month }: { month: string }) {
             </span>
           </div>
         ))}
+        <details className="rounded-md bg-muted/40 p-2 text-xs">
+          <summary className="cursor-pointer font-semibold">كيف تنحسب الدرجة؟ (من 100)</summary>
+          <ul className="mt-1.5 space-y-1 leading-relaxed">
+            <li><b>الوزن المباع — 35:</b> الفرع اللي باع أكثر وزن في الشهر ياخذ 35 كاملة، والباقين على قدّ وزنهم منه (اللي باع نصه ياخذ 17).</li>
+            <li><b>سعر قرام 18 — 20:</b> مقارنة بمتوسط كل الفروع. أغلى بـ10% وفوق = 20، نفس المتوسط = 10، أرخص بـ10% وتحت = صفر.</li>
+            <li><b>مصنعية القرام — 15:</b> نفس الطريقة، لأن المصنعية هي الربح. فوق المتوسط بـ10% = 15، المتوسط = 7.5، تحته بـ10% = صفر.</li>
+            <li><b>اسم البائع على الفاتورة — 15:</b> نسبة الفواتير اللي فيها اسم الموظف. كلها = 15، نصها = 7.5.</li>
+            <li><b>اسم أو رقم الزبون — 10:</b> نسبة الفواتير اللي فيها الزبون. كلها = 10.</li>
+            <li><b>الفواتير المحذوفة — 5:</b> بلا ولا فاتورة محذوفة = 5، وكل فاتورة محذوفة تنقص درجة.</li>
+          </ul>
+          <p className="mt-1.5 text-muted-foreground">فواتير «ذهب مسبوك» والكسر مش محسوبة. الدرجة على الشهر المختار بس.</p>
+        </details>
         <div className="grid grid-cols-2 gap-1.5 pt-1">
           {(["branches", "staff"] as const).map((k) => (
             <button key={k} onClick={() => setView(k)}
