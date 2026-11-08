@@ -1,4 +1,4 @@
-// تقييم الفروع في شهر التقييم — من فواتير أمارسوفت: كم باع كل فرع (وزن وقيمة)، سعر القرام والمصنعية
+// تقييم الفروع في شهر التقييم — من فواتير أمارسوفت: كم باع كل فرع (وزن وقيمة)، سعر القرام
 // للقرام مقارنة بباقي الفروع (18 و21 كل واحد بروحه لأن سعرهم مختلف)، تسجيل البائع واسم الزبون على
 // الفواتير، الفواتير المحذوفة، خفيف/رزين، ومقارنة بالشهر اللي قبله. فوق: ترتيب الفروع بدرجة من 100،
 // وقائمة الموظفين من كل الفروع مرتّبة بنصيب كل واحد من وزن فرعه.
@@ -61,32 +61,29 @@ export default function BranchEval({ month }: { month: string }) {
     const branches = rows.filter((r) => r.sman == null && n(r.invoices) > 0);
     const sum = (k: keyof Row) => branches.reduce((s, r) => s + n(r[k]), 0);
     const avg18 = perG(sum("amount_18"), sum("grams_18"));
-    const avgMk18 = perG(sum("making_18"), sum("grams_18"));
     const avg21 = perG(sum("amount_21"), sum("grams_21"));
     const prevBy = new Map((prev.data ?? []).filter((r) => r.sman == null).map((r) => [r.branch_code, r]));
     const list = branches.map((b) => {
       const p18 = perG(b.amount_18, b.grams_18);
-      const mk18 = perG(b.making_18, b.grams_18);
       const p21 = perG(b.amount_21, b.grams_21);
       const pb = prevBy.get(b.branch_code);
       const gramsChange = pb && n(pb.grams) > 0 ? Math.round(((n(b.grams) - n(pb.grams)) / n(pb.grams)) * 100) : null;
       const staff = rows.filter((r) => r.branch_code === b.branch_code && r.sman != null && n(r.invoices) > 0)
         .sort((a, c) => n(c.grams) - n(a.grams));
-      const d18 = vsAvg(p18, avg18), dMk18 = vsAvg(mk18, avgMk18);
+      const d18 = vsAvg(p18, avg18);
       const tagPct = pct(n(b.tagged), n(b.invoices)), custPct = pct(n(b.with_customer), n(b.invoices));
       const heavyPct = pct(n(b.heavy_pcs), n(b.pieces)), lightPct = pct(n(b.light_pcs), n(b.pieces));
-      // الدرجة من 100: الوزن المباع 35 · سعر القرام 20 · المصنعية 15 · تسجيل البائع 15 · تسجيل الزبون 10 · بلا حذف 5
+      // الدرجة من 100: الوزن المباع 40 · سعر القرام 25 · تسجيل البائع 15 · تسجيل الزبون 10 · بلا حذف 10 (كل محذوفة -2)
       const parts = {
-        sales: (n(b.grams) / Math.max(1, ...branches.map((x) => n(x.grams)))) * 35,
-        price: vsScore(d18, 20),
-        making: vsScore(dMk18, 15),
+        sales: (n(b.grams) / Math.max(1, ...branches.map((x) => n(x.grams)))) * 40,
+        price: vsScore(d18, 25),
         tag: ((tagPct ?? 0) / 100) * 15,
         cust: ((custPct ?? 0) / 100) * 10,
-        clean: Math.max(0, 5 - n(b.deleted)),
+        clean: Math.max(0, 10 - 2 * n(b.deleted)),
       };
       const score = Math.round(Object.values(parts).reduce((s, x) => s + x, 0));
       return {
-        ...b, p18, mk18, p21, d18, dMk18, d21: vsAvg(p21, avg21), tagPct, custPct, gramsChange, staff,
+        ...b, p18, p21, d18, d21: vsAvg(p21, avg21), tagPct, custPct, gramsChange, staff,
         heavyPct, lightPct, avgPiece: n(b.pieces) > 0 ? n(b.grams) / n(b.pieces) : null, parts, score,
       };
     }).sort((a, c) => c.score - a.score);
@@ -121,7 +118,7 @@ export default function BranchEval({ month }: { month: string }) {
     const del = list.filter((b) => n(b.deleted) > 0);
     if (del.length) notes.push(`فواتير محذوفة: ${del.map((b) => `${b.branch_name} (${b.deleted})`).join("، ")} — راجعها.`);
     const tagAll = pct(sum("tagged"), sum("invoices"));
-    return { list, people, avg18, avgMk18, avg21, notes, tagAll };
+    return { list, people, avg18, avg21, notes, tagAll };
   }, [cur.data, prev.data]);
   const [view, setView] = useState<"branches" | "staff">("branches");
 
@@ -134,7 +131,7 @@ export default function BranchEval({ month }: { month: string }) {
       <Card className="p-3 bg-gold-soft border-primary/30 space-y-1">
         {v.notes.map((t) => <p key={t} className="text-sm">{t}</p>)}
         <p className="text-[11px] text-muted-foreground pt-1">
-          متوسط كل الفروع: قرام 18 {formatLD(v.avg18)} · مصنعية القرام {formatLD(v.avgMk18)}{v.avg21 ? ` · قرام 21 ${formatLD(v.avg21)}` : ""}.
+          متوسط كل الفروع: قرام 18 {formatLD(v.avg18)}{v.avg21 ? ` · قرام 21 ${formatLD(v.avg21)}` : ""}.
           فواتير «ذهب مسبوك» والكسر مش محسوبة.
         </p>
       </Card>
@@ -148,7 +145,7 @@ export default function BranchEval({ month }: { month: string }) {
               <span className="flex justify-between gap-2"><span className="font-semibold truncate">{b.branch_name}</span><span className="font-bold">{b.score}</span></span>
               <span className="block h-1.5 bg-muted rounded-full overflow-hidden"><span className="block h-full bg-primary" style={{ width: `${b.score}%` }} /></span>
               <span className="block text-[10px] text-muted-foreground">
-                وزن {Math.round(b.parts.sales)}/35 · سعر {Math.round(b.parts.price)}/20 · مصنعية {Math.round(b.parts.making)}/15 · بائع {Math.round(b.parts.tag)}/15 · زبون {Math.round(b.parts.cust)}/10 · حذف {Math.round(b.parts.clean)}/5
+                وزن {Math.round(b.parts.sales)}/40 · سعر {Math.round(b.parts.price)}/25 · بائع {Math.round(b.parts.tag)}/15 · زبون {Math.round(b.parts.cust)}/10 · حذف {Math.round(b.parts.clean)}/10
               </span>
             </span>
           </div>
@@ -156,12 +153,11 @@ export default function BranchEval({ month }: { month: string }) {
         <details className="rounded-md bg-muted/40 p-2 text-xs">
           <summary className="cursor-pointer font-semibold">كيف تنحسب الدرجة؟ (من 100)</summary>
           <ul className="mt-1.5 space-y-1 leading-relaxed">
-            <li><b>الوزن المباع — 35:</b> الفرع اللي باع أكثر وزن في الشهر ياخذ 35 كاملة، والباقين على قدّ وزنهم منه (اللي باع نصه ياخذ 17).</li>
-            <li><b>سعر قرام 18 — 20:</b> مقارنة بمتوسط كل الفروع. أغلى بـ10% وفوق = 20، نفس المتوسط = 10، أرخص بـ10% وتحت = صفر.</li>
-            <li><b>مصنعية القرام — 15:</b> نفس الطريقة، لأن المصنعية هي الربح. فوق المتوسط بـ10% = 15، المتوسط = 7.5، تحته بـ10% = صفر.</li>
+            <li><b>الوزن المباع — 40:</b> الفرع اللي باع أكثر وزن في الشهر ياخذ 40 كاملة، والباقين على قدّ وزنهم منه (اللي باع نصه ياخذ 20).</li>
+            <li><b>سعر قرام 18 — 25:</b> مقارنة بمتوسط كل الفروع. أغلى بـ10% وفوق = 25، نفس المتوسط = 12.5، أرخص بـ10% وتحت = صفر.</li>
             <li><b>اسم البائع على الفاتورة — 15:</b> نسبة الفواتير اللي فيها اسم الموظف. كلها = 15، نصها = 7.5.</li>
             <li><b>اسم أو رقم الزبون — 10:</b> نسبة الفواتير اللي فيها الزبون. كلها = 10.</li>
-            <li><b>الفواتير المحذوفة — 5:</b> بلا ولا فاتورة محذوفة = 5، وكل فاتورة محذوفة تنقص درجة.</li>
+            <li><b>الفواتير المحذوفة — 10:</b> بلا ولا فاتورة محذوفة = 10، وكل فاتورة محذوفة تنقص درجتين.</li>
           </ul>
           <p className="mt-1.5 text-muted-foreground">فواتير «ذهب مسبوك» والكسر مش محسوبة. الدرجة على الشهر المختار بس.</p>
         </details>
@@ -229,10 +225,8 @@ export default function BranchEval({ month }: { month: string }) {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-2.5 text-right">
               <Cell label="المبيعات" value={formatLD(b.net_dirhams)} sub={`${b.invoices} فاتورة · ${b.active_days} يوم فيه بيع`} />
               <Cell label="سعر قرام 18" value={b.p18 != null ? formatLD(b.p18) : "—"} extra={<Diff d={b.d18} />} />
-              <Cell label="مصنعية القرام 18" value={b.mk18 != null ? formatLD(b.mk18) : "—"} extra={<Diff d={b.dMk18} />} sub="هذا الربح" />
-              {b.p21 != null
-                ? <Cell label="سعر قرام 21" value={formatLD(b.p21)} extra={<Diff d={b.d21} />} />
-                : <Cell label="متوسط الفاتورة" value={formatLD(n(b.net_dirhams) / Math.max(1, n(b.invoices)))} />}
+              <Cell label="متوسط الفاتورة" value={formatLD(n(b.net_dirhams) / Math.max(1, n(b.invoices)))} />
+              <Cell label="سعر قرام 21" value={b.p21 != null ? formatLD(b.p21) : "—"} extra={<Diff d={b.d21} />} />
             </div>
 
             <PieceMix b={b} avgPiece={b.avgPiece} />
@@ -254,7 +248,6 @@ export default function BranchEval({ month }: { month: string }) {
             <div className="mt-2 border-t pt-2 space-y-1.5">
               {b.staff.map((s) => {
                 const sp = perG(s.amount_18, s.grams_18);
-                const smk = perG(s.making_18, s.grams_18);
                 return (
                   <div key={s.sman} className="flex items-center justify-between gap-2 text-sm py-1 border-b last:border-0">
                     <span className="min-w-0">
@@ -267,9 +260,7 @@ export default function BranchEval({ month }: { month: string }) {
                         <span className="block text-[11px]">
                           قرام 18 {formatLD(sp)} <Diff d={vsAvg(sp, b.p18)} />
                         </span>
-                      )}
-                      {smk != null && <span className="block text-[11px] text-muted-foreground">مصنعية {formatLD(smk)}</span>}
-                    </span>
+                      )}                    </span>
                   </div>
                 );
               })}
