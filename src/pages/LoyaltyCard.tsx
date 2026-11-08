@@ -61,7 +61,7 @@ export default function LoyaltyCard() {
         </div>
 
         <div className="rounded-2xl border p-4 space-y-2 text-center">
-          <p className="text-lg font-bold">خصم {card.discount}% على المصنعية</p>
+          <p className="text-lg font-bold">خصم {card.discount}% على الفاتورة</p>
           {next ? (
             <>
               <div className="h-2 rounded-full bg-muted overflow-hidden"><div className="h-full bg-primary" style={{ width: `${pct}%` }} /></div>

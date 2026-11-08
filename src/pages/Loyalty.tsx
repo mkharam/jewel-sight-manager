@@ -17,8 +17,8 @@ type Member = {
   spend_dirhams: number; invoices: number; last_at: string | null; points: number; tier: Tier;
 };
 type Settings = {
-  program_name: string; ld_per_point: number; window_months: number; gold_points: number; diamond_points: number;
-  silver_discount: number; gold_discount: number; diamond_discount: number;
+  program_name: string; ld_per_point: number; window_months: number; silver_points: number; gold_points: number;
+  bronze_discount: number; silver_discount: number; gold_discount: number;
 };
 
 export default function Loyalty() {
@@ -50,7 +50,7 @@ function Members() {
     },
   });
   const counts = useMemo(() => {
-    const c: Record<Tier, number> = { silver: 0, gold: 0, diamond: 0 };
+    const c: Record<Tier, number> = { bronze: 0, silver: 0, gold: 0 };
     (data ?? []).forEach((m) => { c[m.tier]++; });
     return c;
   }, [data]);
@@ -76,7 +76,7 @@ function Members() {
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-3 gap-2">
-        {(["diamond", "gold", "silver"] as Tier[]).map((t) => (
+        {(["gold", "silver", "bronze"] as Tier[]).map((t) => (
           <button key={t} onClick={() => setTier(tier === t ? "all" : t)}
             className={`rounded-xl p-3 text-center border transition ${tier === t ? "ring-2 ring-primary" : ""}`}>
             <p className="text-2xl font-black tabular-nums">{counts[t]}</p>
@@ -114,11 +114,11 @@ const FIELDS: { key: keyof Settings; label: string; hint?: string }[] = [
   { key: "program_name", label: "اسم البطاقة" },
   { key: "ld_per_point", label: "كل كم دينار = نقطة" },
   { key: "window_months", label: "النقاط من آخر كم شهر", hint: "المشتريات الأقدم ما تنحسبش، باش المستوى يعكس الزبون توا" },
+  { key: "silver_points", label: "نقاط المستوى الفضي" },
   { key: "gold_points", label: "نقاط المستوى الذهبي" },
-  { key: "diamond_points", label: "نقاط المستوى الماسي" },
-  { key: "silver_discount", label: "خصم الفضي على المصنعية %" },
-  { key: "gold_discount", label: "خصم الذهبي على المصنعية %" },
-  { key: "diamond_discount", label: "خصم الماسي على المصنعية %" },
+  { key: "bronze_discount", label: "خصم البرونزي على الفاتورة %" },
+  { key: "silver_discount", label: "خصم الفضي على الفاتورة %" },
+  { key: "gold_discount", label: "خصم الذهبي على الفاتورة %" },
 ];
 
 function Rules({ canEdit }: { canEdit: boolean }) {
@@ -152,7 +152,8 @@ function Rules({ canEdit }: { canEdit: boolean }) {
     <Card className="p-4 space-y-3">
       <p className="text-sm text-muted-foreground">
         الزبون ياخذ نقطة على كل {form.ld_per_point} دينار يشريها في آخر {form.window_months} شهر.
-        يولّي ذهبي من {form.gold_points} نقطة، وماسي من {form.diamond_points}. الخصم يطبّقه الموظف في أمارسوفت وقت الفاتورة.
+        يولّي فضي من {form.silver_points} نقطة، وذهبي من {form.gold_points}. نفس مستويات بطاقة MSTRMND، فلو بدّلتها هنا بدّلها غادي زادة.
+        الخصم على الفاتورة كاملة، ويطبّقه الموظف في أمارسوفت.
       </p>
       {FIELDS.map(({ key, label, hint }) => (
         <div key={key} className="space-y-1">

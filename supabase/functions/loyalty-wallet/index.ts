@@ -18,9 +18,9 @@ const json = (body: unknown, status = 200) =>
 const env = (k: string) => Deno.env.get(k) ?? "";
 
 const SITE = env("LOYALTY_SITE_URL").replace(/\/$/, "");
-const TIER_AR: Record<string, string> = { silver: "فضي", gold: "ذهبي", diamond: "ماسي" };
-const TIER_BG: Record<string, string> = { silver: "#C9CED6", gold: "#D4A62A", diamond: "#27306B" };
-const TIER_FG: Record<string, string> = { silver: "#1E293B", gold: "#3B2A05", diamond: "#FFFFFF" };
+const TIER_AR: Record<string, string> = { bronze: "برونزي", silver: "فضي", gold: "ذهبي" };
+const TIER_BG: Record<string, string> = { bronze: "#9A5B2B", silver: "#C9CED6", gold: "#D4A62A" };
+const TIER_FG: Record<string, string> = { bronze: "#FFF7ED", silver: "#1E293B", gold: "#3B2A05" };
 
 const appleReady = () => ["APPLE_PASS_TYPE_ID", "APPLE_TEAM_ID", "APPLE_PASS_CERT_PEM", "APPLE_PASS_KEY_PEM", "APPLE_WWDR_PEM", "LOYALTY_SITE_URL"].every((k) => env(k));
 const googleReady = () => ["GOOGLE_WALLET_ISSUER_ID", "GOOGLE_WALLET_SA_JSON", "LOYALTY_SITE_URL"].every((k) => env(k));
@@ -61,7 +61,7 @@ async function applePass(c: Card): Promise<Uint8Array> {
       primaryFields: [{ key: "tier", label: "المستوى", value: TIER_AR[c.tier] }],
       secondaryFields: [
         { key: "name", label: "الاسم", value: c.full_name },
-        { key: "discount", label: "خصم المصنعية", value: `${c.discount}%` },
+        { key: "discount", label: "الخصم", value: `${c.discount}%` },
       ],
       backFields: [
         { key: "next", label: "المستوى الجاي", value: nextLine(c) },
@@ -158,7 +158,7 @@ async function googleSaveUrl(c: Card) {
     accountId: c.code, accountName: c.full_name,
     hexBackgroundColor: TIER_BG[c.tier],
     loyaltyPoints: { label: "النقاط", balance: { int: c.points } },
-    secondaryLoyaltyPoints: { label: "خصم المصنعية", balance: { string: `${c.discount}%` } },
+    secondaryLoyaltyPoints: { label: "الخصم", balance: { string: `${c.discount}%` } },
     textModulesData: [
       { id: "tier", header: "المستوى", body: TIER_AR[c.tier] },
       { id: "next", header: "المستوى الجاي", body: nextLine(c) },
