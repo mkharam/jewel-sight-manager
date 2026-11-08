@@ -63,6 +63,7 @@ export default function BranchEval({ month }: { month: string }) {
     const avg18 = perG(sum("amount_18"), sum("grams_18"));
     const avg21 = perG(sum("amount_21"), sum("grams_21"));
     const prevBy = new Map((prev.data ?? []).filter((r) => r.sman == null).map((r) => [r.branch_code, r]));
+    const tagOn = sum("tagged") > 0;
     const list = branches.map((b) => {
       const p18 = perG(b.amount_18, b.grams_18);
       const p21 = perG(b.amount_21, b.grams_21);
@@ -81,7 +82,9 @@ export default function BranchEval({ month }: { month: string }) {
         cust: ((custPct ?? 0) / 100) * 10,
         clean: Math.max(0, 10 - 2 * n(b.deleted)),
       };
-      const score = Math.round(Object.values(parts).reduce((s, x) => s + x, 0));
+      // شهر ما فيه ولا فاتورة باسم بائع (قبل ما بدينا نسجّلوا الأسامي): بند البائع ما يتحسبش، والباقي يتكبّر لـ100.
+      const raw = Object.values(parts).reduce((s, x) => s + x, 0);
+      const score = Math.round(tagOn ? raw : (raw * 100) / 85);
       return {
         ...b, p18, p21, d18, d21: vsAvg(p21, avg21), tagPct, custPct, gramsChange, staff,
         heavyPct, lightPct, avgPiece: n(b.pieces) > 0 ? n(b.grams) / n(b.pieces) : null, parts, score,
@@ -114,11 +117,12 @@ export default function BranchEval({ month }: { month: string }) {
       notes.push(`أغلى سعر قرام 18: ${hi.branch_name} (${formatLD(hi.p18)}) — أرخص: ${lo.branch_name} (${formatLD(lo.p18)}).`);
     }
     const weak = list.filter((b) => (b.tagPct ?? 0) < 50).map((b) => b.branch_name);
-    if (weak.length) notes.push(`اسم البائع ناقص في أغلب فواتير: ${weak.join("، ")}.`);
+    if (weak.length && tagOn) notes.push(`اسم البائع ناقص في أغلب فواتير: ${weak.join("، ")}.`);
     const del = list.filter((b) => n(b.deleted) > 0);
     if (del.length) notes.push(`فواتير محذوفة: ${del.map((b) => `${b.branch_name} (${b.deleted})`).join("، ")} — راجعها.`);
     const tagAll = pct(sum("tagged"), sum("invoices"));
-    return { list, people, avg18, avg21, notes, tagAll };
+    if (!tagOn) notes.push("هذا الشهر ما فيه ولا فاتورة باسم بائع، فبند البائع مش محسوب في الدرجة.");
+    return { list, people, avg18, avg21, notes, tagAll, tagOn };
   }, [cur.data, prev.data]);
   const [view, setView] = useState<"branches" | "staff">("branches");
 
@@ -145,7 +149,7 @@ export default function BranchEval({ month }: { month: string }) {
               <span className="flex justify-between gap-2"><span className="font-semibold truncate">{b.branch_name}</span><span className="font-bold">{b.score}</span></span>
               <span className="block h-1.5 bg-muted rounded-full overflow-hidden"><span className="block h-full bg-primary" style={{ width: `${b.score}%` }} /></span>
               <span className="block text-[10px] text-muted-foreground">
-                وزن {Math.round(b.parts.sales)}/40 · سعر {Math.round(b.parts.price)}/25 · بائع {Math.round(b.parts.tag)}/15 · زبون {Math.round(b.parts.cust)}/10 · حذف {Math.round(b.parts.clean)}/10
+                وزن {Math.round(b.parts.sales)}/40 · سعر {Math.round(b.parts.price)}/25 · بائع {v.tagOn ? `${Math.round(b.parts.tag)}/15` : "مش محسوب"} ·زبون {Math.round(b.parts.cust)}/10 · حذف {Math.round(b.parts.clean)}/10
               </span>
             </span>
           </div>
@@ -155,7 +159,7 @@ export default function BranchEval({ month }: { month: string }) {
           <ul className="mt-1.5 space-y-1 leading-relaxed">
             <li><b>الوزن المباع — 40:</b> الفرع اللي باع أكثر وزن في الشهر ياخذ 40 كاملة، والباقين على قدّ وزنهم منه (اللي باع نصه ياخذ 20).</li>
             <li><b>سعر قرام 18 — 25:</b> مقارنة بمتوسط كل الفروع. أغلى بـ10% وفوق = 25، نفس المتوسط = 12.5، أرخص بـ10% وتحت = صفر.</li>
-            <li><b>اسم البائع على الفاتورة — 15:</b> نسبة الفواتير اللي فيها اسم الموظف. كلها = 15، نصها = 7.5.</li>
+            <li><b>اسم البائع على الفاتورة — 15:</b> نسبة الفواتير اللي فيها اسم الموظف. كلها = 15، نصها = 7.5. الشهور اللي قبل ما بدينا نسجّلوا الأسامي (ولا فاتورة فيها بائع) البند هذا ما يتحسبش، والدرجة تتحسب من الباقي وتتكبّر لـ100.</li>
             <li><b>اسم أو رقم الزبون — 10:</b> نسبة الفواتير اللي فيها الزبون. كلها = 10.</li>
             <li><b>الفواتير المحذوفة — 10:</b> بلا ولا فاتورة محذوفة = 10، وكل فاتورة محذوفة تنقص درجتين.</li>
           </ul>
