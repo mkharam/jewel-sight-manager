@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.loyalty-wallet]
 verify_jwt = false
+
+[functions.mstrmnd-link]
+verify_jwt = false
