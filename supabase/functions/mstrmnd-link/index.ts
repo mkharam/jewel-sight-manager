@@ -178,6 +178,8 @@ async function sync(s: Settings) {
       else if (!card) Object.assign(row, { status: "skipped", reason: p.kind === "point" ? "no_loyalty_card" : "no_stamp_card", mstrmnd_customer_id: customerId });
       else {
         const w = await write(Number(card.id), p.kind, action, amount, `أمارسوفت ${inv.branch_code}-${inv.invoice_no}`, ld);
+        // البطاقة تبدّلت: النسخة اللي تحت تقرا الأرقام الجديدة بدل اللي قبل الإرسال.
+        if (w.ok && mode === "live") cardsOf.delete(customerId);
         Object.assign(row, {
           mstrmnd_customer_id: customerId, card_id: Number(card.id), http_status: w.status,
           status: mode === "dry" ? "would_send" : w.ok ? "sent" : "error", reason: w.err,
