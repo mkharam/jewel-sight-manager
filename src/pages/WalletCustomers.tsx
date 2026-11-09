@@ -30,6 +30,14 @@ const SYNC_AR: Record<string, string> = {
 };
 const REASON_AR = SYNC_REASON_AR;
 
+// بطاقة الولاء وبطاقة الأختام بطاقتين منفصلتين: فلتر «عنده البطاقتين / ولاء بس / أختام بس».
+type CardsFilter = "all" | "both" | "loyalty" | "stamps";
+const CARDS_FILTERS: [CardsFilter, string][] = [["all", "الكل"], ["both", "البطاقتين"], ["loyalty", "ولاء بس"], ["stamps", "أختام بس"]];
+const cardsKind = (c: WCustomer): CardsFilter => {
+  const l = c.cards.some((k) => k.template_id === LOYALTY), s = c.cards.some((k) => k.template_id === STAMPS);
+  return l && s ? "both" : l ? "loyalty" : s ? "stamps" : "all";
+};
+
 const ld = (n: number | null | undefined) => (n == null ? "—" : `${Math.round(n).toLocaleString("en-US")} د.ل`);
 const day = (v: string | number | null | undefined) => {
   if (v == null) return "—";
@@ -76,6 +84,7 @@ export function LinkStatus() {
 function Customers() {
   const [q, setQ] = useState("");
   const [branch, setBranch] = useState<string>("all");
+  const [which, setWhich] = useState<CardsFilter>("all");
   const [open, setOpen] = useState<string | null>(null);
   const { data, isLoading } = useQuery({
     queryKey: ["mstrmnd-customers"],
@@ -120,11 +129,18 @@ function Customers() {
     };
   }, [data]);
 
+  const whichCount = useMemo(() => {
+    const n: Record<CardsFilter, number> = { all: 0, both: 0, loyalty: 0, stamps: 0 };
+    (data ?? []).forEach((c) => { const k = cardsKind(c); n.all++; if (k !== "all") n[k]++; });
+    return n;
+  }, [data]);
+
   const list = useMemo(() => {
     const term = q.trim(); const d = term.replace(/\D/g, "");
     return (data ?? []).filter((c) => (branch === "all" || (branchOf?.get(c.id)?.code ?? "none") === branch)
+      && (which === "all" || cardsKind(c) === which)
       && (!term || (c.full_name ?? "").includes(term) || (d.length >= 3 && (c.phone9 ?? "").includes(d))));
-  }, [data, q, branch, branchOf]);
+  }, [data, q, branch, branchOf, which]);
 
   if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="size-6 animate-spin text-primary" /></div>;
   if (!data?.length) return <Card className="p-8 text-center text-muted-foreground">ما فيش بيانات لين توا. تجي بعد ما الربط ينسخ زبائن MSTRMND أول مرة.</Card>;
@@ -140,6 +156,15 @@ function Customers() {
       <p className="text-xs text-muted-foreground">
         مستويات الولاء: {Object.entries(stats.levels).map(([l, n]) => `${l} ${n}`).join(" · ") || "—"}
       </p>
+      <div className="grid grid-cols-4 gap-1.5">
+        {CARDS_FILTERS.map(([k, label]) => (
+          <button key={k} onClick={() => setWhich(k)}
+            className={`rounded-lg border p-1.5 text-center ${which === k ? "ring-2 ring-primary" : ""}`}>
+            <p className="font-black tabular-nums">{whichCount[k]}</p>
+            <p className="text-[11px] text-muted-foreground">{label}</p>
+          </button>
+        ))}
+      </div>
       <div className="relative">
         <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ابحث بالاسم أو الهاتف" className="pr-9" />

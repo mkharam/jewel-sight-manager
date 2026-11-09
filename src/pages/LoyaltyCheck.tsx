@@ -24,12 +24,13 @@ type Inv = {
   has_card: boolean; card_level: string | null; card_installed: boolean | null; pct_due: number | null;
   stamps_now: number | null; rewards_unused: number | null; to_next: number | null;
   on_card: string | null; on_card_reason: string | null; stamp_on_card: string | null;
-  tier_if_joined: Tier | null; pct_if_joined: number | null;
+  tier_if_joined: Tier | null; pct_if_joined: number | null; has_stamp_card: boolean; stamp_installed: boolean | null;
 };
 type Person = {
   name: string | null; phone9: string; has_card: boolean; card_level: string | null; card_pct: number | null;
   card_installed: boolean | null; to_next: number | null; stamps_now: number | null; rewards_unused: number | null;
   last_at: string | null; last_branch: string | null; tier_if_joined: Tier | null; pct_if_joined: number | null;
+  has_stamp_card: boolean; stamp_installed: boolean | null;
 };
 type Settings = {
   ld_per_point: number; silver_points: number; gold_points: number;
@@ -152,42 +153,67 @@ export default function LoyaltyCheck() {
   );
 }
 
-function TierBadge({ level, pct, big }: { level: string | null; pct?: number | null; big?: boolean }) {
-  const t = tierOfLevel(level);
-  if (!level) return null;
-  return (
-    <span className={`${big ? "text-sm px-2.5 py-1" : "text-xs px-2 py-0.5"} rounded-full whitespace-nowrap ${t ? TIERS[t].badge : "bg-muted"}`}>
-      {level}{pct != null ? ` ${pct}%` : ""}
-    </span>
-  );
-}
+// البطاقات اللي عند الزبون، زي ما يشوفها في موبايله: بطاقة الولاء (المستوى والخصم) وبطاقة الأختام (5 أختام = هدية).
+// بطاقتين منفصلتين: اللي عنده وحدة بس تبان وحدها.
+type CardsView = {
+  level: string | null; pct: number | null; toNext: number | null; loyaltyInstalled: boolean | null; hasLoyalty: boolean;
+  stamps: number | null; rewards: number | null; stampsInstalled: boolean | null; hasStamps: boolean;
+};
 
-function StampDots({ n }: { n: number }) {
+function CustomerCards({ c, buying }: { c: CardsView; buying?: boolean }) {
+  if (!c.hasLoyalty && !c.hasStamps) return null;
+  const tier = tierOfLevel(c.level);
+  const n = c.stamps ?? 0, left = Math.max(0, 5 - n);
   return (
-    <span className="flex items-center gap-1" aria-label={`${n} من 5 أختام`}>
-      {[0, 1, 2, 3, 4].map((k) => <span key={k} className={`size-3 rounded-full ${k < n ? "bg-primary" : "bg-muted-foreground/25"}`} />)}
-      <span className="mr-1 text-xs text-muted-foreground">{n}/5</span>
-    </span>
-  );
-}
-
-// بطاقة الأختام (للي عنده بطاقة أختام بس): كم عنده، كم باقيله للهدية، وشن تزيده الشرية هذي.
-function StampsInfo({ n, buying }: { n: number; buying?: boolean }) {
-  const left = Math.max(0, 5 - n);
-  return (
-    <div className="space-y-0.5">
-      <div className="flex items-center justify-between">
-        <span className="text-muted-foreground">الأختام</span>
-        <StampDots n={n} />
-      </div>
-      <p className="text-xs text-muted-foreground">
-        {buying
-          ? left <= 1 ? "الشرية هذي تكمّله 5 أختام، والهدية تطلعله في بطاقته للشرية الجاية."
-            : `الشرية هذي تزيده ختم (${n + 1}/5)، ويبقاله ${left - 1} للهدية.`
-          : `باقيله ${left} ${left === 1 ? "ختم" : "أختام"} للهدية.`}
-        {" "}ختم واحد في اليوم.
-      </p>
+    <div className={`grid gap-2 ${c.hasLoyalty && c.hasStamps ? "grid-cols-2" : "grid-cols-1"}`}>
+      {c.hasLoyalty && (
+        <div className={`rounded-xl p-3 bg-gradient-to-br shadow-sm space-y-0.5 ${tier ? TIERS[tier].card : "from-slate-500 to-slate-700 text-white"}`}>
+          <p className="text-[11px] opacity-80">بطاقة الولاء</p>
+          <p className="text-base font-bold">{c.level ?? "—"}</p>
+          <p className="text-2xl font-black">خصم {c.pct ?? 0}%</p>
+          <p className="text-[11px] opacity-90">
+            {tier && NEXT[tier] && (c.toNext ?? 0) > 0 ? `باقي ${n0(c.toNext!)} د.ل لـ${NEXT[tier]}` : "في أعلى مستوى"}
+          </p>
+          {c.loyaltyInstalled === false && <p className="text-[11px] font-bold">مش مركّبة في موبايله</p>}
+        </div>
+      )}
+      {c.hasStamps && (
+        <div className="rounded-xl p-3 bg-gradient-to-br from-emerald-800 via-emerald-600 to-teal-800 text-emerald-50 shadow-sm space-y-1">
+          <p className="text-[11px] opacity-80">بطاقة الأختام</p>
+          <span className="flex items-center gap-1" aria-label={`${n} من 5 أختام`}>
+            {[0, 1, 2, 3, 4].map((k) => <span key={k} className={`size-3.5 rounded-full border border-white/70 ${k < n ? "bg-white" : ""}`} />)}
+          </span>
+          <p className="text-sm font-bold">{n}/5 · باقيله {left} للهدية</p>
+          {buying && (
+            <p className="text-[11px]">{left <= 1 ? "الشرية هذي تكمّل الـ5، والهدية للشرية الجاية" : `الشرية هذي تخليه ${n + 1}/5`}</p>
+          )}
+          {!!c.rewards && (
+            <p className="text-[11px] font-bold rounded bg-white/20 px-1.5 py-0.5 inline-flex items-center gap-1">
+              <Gift className="size-3" /> عنده {c.rewards === 1 ? "هدية" : `${c.rewards} هدايا`}
+            </p>
+          )}
+          {c.stampsInstalled === false && <p className="text-[11px] font-bold">مش مركّبة في موبايله</p>}
+        </div>
+      )}
     </div>
+  );
+}
+
+const invCards = (i: Inv): CardsView => ({
+  level: i.card_level, pct: i.pct_due, toNext: i.to_next, loyaltyInstalled: i.card_installed, hasLoyalty: i.has_card,
+  stamps: i.stamps_now, rewards: i.rewards_unused, stampsInstalled: i.stamp_installed, hasStamps: i.has_stamp_card,
+});
+const personCards = (p: Person): CardsView => ({
+  level: p.card_level, pct: p.card_pct, toNext: p.to_next, loyaltyInstalled: p.card_installed, hasLoyalty: p.has_card,
+  stamps: p.stamps_now, rewards: p.rewards_unused, stampsInstalled: p.stamp_installed, hasStamps: p.has_stamp_card,
+});
+
+function BothChip({ loyalty, stamps }: { loyalty: boolean; stamps: boolean }) {
+  if (!loyalty && !stamps) return null;
+  return (
+    <span className="text-xs rounded-full bg-primary/10 text-primary px-2 py-0.5 whitespace-nowrap">
+      {loyalty && stamps ? "عنده البطاقتين" : loyalty ? "بطاقة ولاء" : "بطاقة أختام"}
+    </span>
   );
 }
 
@@ -195,7 +221,6 @@ function LatestInvoice({ i }: { i: Inv }) {
   const a = advice(i);
   const state = cardState(i);
   const StateIcon = state?.[0];
-  const tier = tierOfLevel(i.card_level);
   return (
     <Card className="p-4 space-y-3">
       <div className="flex items-start gap-2">
@@ -205,7 +230,7 @@ function LatestInvoice({ i }: { i: Inv }) {
             فاتورة {i.branch_code}-{i.invoice_no} · {clock(i.sold_at)}{i.phone9 ? <> · <span dir="ltr">0{i.phone9}</span></> : ""}
           </p>
         </div>
-        <TierBadge level={i.card_level} big />
+        <BothChip loyalty={i.has_card} stamps={i.has_stamp_card} />
       </div>
       <p className="text-2xl font-black tabular-nums">
         {i.kind === "return" ? "مرتجع " : ""}{n0(Math.abs(Number(i.net_ld)))} د.ل
@@ -227,22 +252,18 @@ function LatestInvoice({ i }: { i: Inv }) {
         </div>
       )}
 
-      {(i.has_card || i.stamps_now != null) && (
-        <div className="space-y-1.5 text-sm">
-          {i.stamps_now != null && <StampsInfo n={i.stamps_now} />}
-          {i.to_next != null && tier && (
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">المستوى الجاي</span>
-              <span>{NEXT[tier] && i.to_next > 0 ? `باقيله ${n0(i.to_next)} د.ل لـ${NEXT[tier]}` : "في أعلى مستوى"}</span>
-            </div>
-          )}
-          {state && StateIcon && <p className={`flex items-center gap-1.5 ${state[1]}`}><StateIcon className="size-4" />{state[2]}</p>}
-          {i.card_installed === false && (
-            <p className="flex items-center gap-1.5 text-amber-700"><Smartphone className="size-4" /> البطاقة مسجّلة بس مش مركّبة في موبايله: خليه يركّبها.</p>
-          )}
-        </div>
-      )}
+      <CustomerCards c={invCards(i)} />
+      {state && StateIcon && <p className={`flex items-center gap-1.5 text-sm ${state[1]}`}><StateIcon className="size-4" />{state[2]}</p>}
+      {(i.card_installed === false || i.stamp_installed === false) && <NotInstalled />}
     </Card>
+  );
+}
+
+function NotInstalled() {
+  return (
+    <p className="flex items-center gap-1.5 text-sm text-amber-700">
+      <Smartphone className="size-4 shrink-0" /> بطاقة مسجّلة بس مش مركّبة في موبايله: خليه يفتح الرابط ويضيفها لـ Wallet.
+    </p>
   );
 }
 
@@ -323,60 +344,64 @@ function Lookup() {
 }
 
 function PersonCard({ p, value, grams, onQr }: { p: Person; value: number; grams: number; onQr: () => void }) {
-  const tier = tierOfLevel(p.card_level);
   const pct = Number(p.card_pct ?? 0);
+  const levelOff = p.has_card ? (value * pct) / 100 : 0;
+  const reward = STAMP_REWARD.invoice + STAMP_REWARD.perGram * grams;
   return (
-    <Card className="p-4 space-y-2">
+    <Card className="p-4 space-y-3">
       <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0">
           <p className="font-bold text-lg truncate">{p.name || "زبون"}</p>
           <p className="text-xs text-muted-foreground" dir="ltr" style={{ textAlign: "right" }}>0{p.phone9}</p>
         </div>
-        <TierBadge level={p.card_level} big />
+        <BothChip loyalty={p.has_card} stamps={p.has_stamp_card} />
       </div>
 
+      <CustomerCards c={personCards(p)} buying={value > 0} />
+
       {p.has_card ? (
-        <>
-          <div className={`rounded-lg border p-3 ${TONE.ok}`}>
-            {value > 0 ? (
-              <>
-                <p className="text-sm">اكتب في خانة الخصم في أمارسوفت:</p>
-                <p className="text-3xl font-black tabular-nums">{n0((value * pct) / 100)} د.ل</p>
-                <p className="text-sm">{pct}% من {n0(value)} · الصافي بعد الخصم <b className="tabular-nums">{n0(value - (value * pct) / 100)}</b> د.ل</p>
-              </>
-            ) : (
-              <>
-                <p className="text-2xl font-black">خصم {pct}% على الفاتورة</p>
-                <p className="text-sm">اكتب قيمة الفاتورة فوق ويطلعلك قداش تخصم بالضبط.</p>
-              </>
-            )}
-          </div>
-          {!!p.rewards_unused && (
-            <div className={`rounded-lg border p-3 flex gap-2 text-sm ${TONE.ok}`}>
-              <Gift className="size-5 shrink-0" />
-              <p><b>عنده هدية الأختام{p.rewards_unused > 1 ? ` (${p.rewards_unused})` : ""}:</b> {rewardText(grams)}، زيادة على خصم المستوى لو حب يستعملها. لو استعملها، سجّلها في تطبيق الماسح.</p>
-            </div>
+        <div className={`rounded-lg border p-3 ${TONE.ok}`}>
+          {value > 0 ? (
+            <>
+              <p className="text-sm">اكتب في خانة الخصم في أمارسوفت:</p>
+              <p className="text-3xl font-black tabular-nums">{n0(levelOff)} د.ل</p>
+              <p className="text-sm">{pct}% من {n0(value)} · الصافي بعد الخصم <b className="tabular-nums">{n0(value - levelOff)}</b> د.ل</p>
+            </>
+          ) : (
+            <>
+              <p className="text-2xl font-black">خصم {pct}% على الفاتورة</p>
+              <p className="text-sm">اكتب قيمة الفاتورة فوق ويطلعلك قداش تخصم بالضبط.</p>
+            </>
           )}
-          <div className="space-y-1.5 text-sm">
-            {p.stamps_now != null && <StampsInfo n={p.stamps_now} buying={value > 0} />}
-            {p.to_next != null && tier && (
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">المستوى الجاي</span>
-                <span>{NEXT[tier] && p.to_next > 0 ? `باقيله ${n0(p.to_next)} د.ل لـ${NEXT[tier]}` : "في أعلى مستوى"}</span>
-              </div>
-            )}
-            {p.card_installed === false && (
-              <p className="flex items-center gap-1.5 text-amber-700"><Smartphone className="size-4" /> البطاقة مش مركّبة في موبايله: خليه يركّبها.</p>
-            )}
-          </div>
-        </>
+        </div>
       ) : (
         <div className={`rounded-lg border p-3 text-sm space-y-2 ${TONE.info}`}>
-          <p className="font-bold">ما عندهش بطاقة ولاء، فما فيش خصم لين يركّبها.</p>
+          <p className="font-bold">
+            ما عندهش بطاقة ولاء، فما فيش خصم مستوى لين يركّبها.{p.has_stamp_card ? " بطاقة الأختام عنده وتنحسبله عادي." : ""}
+          </p>
           <p>{joinText(p.tier_if_joined, p.pct_if_joined)}</p>
           <Button size="sm" variant="outline" onClick={onQr}><QrCode className="size-4 ml-1" /> اعرض الـ QR للزبون</Button>
         </div>
       )}
+
+      {!!p.rewards_unused && (
+        <div className={`rounded-lg border p-3 flex gap-2 text-sm ${TONE.ok}`}>
+          <Gift className="size-5 shrink-0" />
+          <div className="space-y-1">
+            <p><b>عنده هدية الأختام{p.rewards_unused > 1 ? ` (${p.rewards_unused})` : ""}:</b> {rewardText(grams)}، لو حب يستعملها في الشرية هذي.</p>
+            {value > 0 && grams > 0 && (
+              <p>
+                لو استعملها: الخصم الكلي <b className="tabular-nums">{n0(levelOff + reward)}</b> د.ل
+                ({p.has_card ? `المستوى ${n0(levelOff)} + ` : ""}الهدية {n0(reward)}) · الصافي <b className="tabular-nums">{n0(value - levelOff - reward)}</b> د.ل
+              </p>
+            )}
+            {value > 0 && !grams && <p>اكتب الوزن فوق باش نحسبلك الهدية بالضبط.</p>}
+            <p>لو استعملها، سجّل استعمالها في تطبيق الماسح.</p>
+          </div>
+        </div>
+      )}
+
+      {(p.card_installed === false || p.stamp_installed === false) && <NotInstalled />}
 
       <p className="text-xs text-muted-foreground">
         {p.last_at ? `آخر شرية: ${date(p.last_at)}${p.last_branch ? ` في ${p.last_branch}` : ""}` : "ما عندهش شريات في أمارسوفت برقمه."}
