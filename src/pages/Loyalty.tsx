@@ -1,6 +1,6 @@
 // صفحة الولاء: كل حاجة تخص الولاء في مكان واحد، وكل واحد يشوف الخانات اللي تخص دوره:
 //   خصم الزبون (الكل) · الأعضاء والقواعد (المشرفين فما فوق؛ القواعد يعدّلها المدير العام بس)
-//   · بطاقات Wallet ونشاط الربط مع MSTRMND (المدير العام). النقاط تنحسب من فواتير أمارسوفت المربوطة بالزبون.
+//   · بطاقات Wallet والفروع ونشاط الربط مع MSTRMND (المدير العام). النقاط تنحسب من فواتير أمارسوفت المربوطة بالزبون.
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -15,11 +15,13 @@ import { sb, formatLD } from "@/lib/amarsoft";
 import { TIERS, Tier, cardUrl, waPhone } from "@/lib/loyalty";
 import LoyaltyCheck from "@/pages/LoyaltyCheck";
 import { WalletActivity, WalletCards } from "@/pages/WalletCustomers";
+import LoyaltyBranches from "@/components/loyalty/LoyaltyBranches";
 
 const TABS = [
   { key: "discount", label: "خصم الزبون", who: "all" },
   { key: "members", label: "الأعضاء", who: "managers" },
   { key: "wallet", label: "بطاقات Wallet", who: "admin" },
+  { key: "branches", label: "الفروع", who: "admin" },
   { key: "activity", label: "نشاط الربط", who: "admin" },
   { key: "rules", label: "القواعد", who: "managers" },
 ] as const;
@@ -60,6 +62,7 @@ export default function Loyalty() {
       {tab === "discount" && <LoyaltyCheck />}
       {tab === "members" && <Members />}
       {tab === "wallet" && <WalletCards />}
+      {tab === "branches" && <LoyaltyBranches />}
       {tab === "activity" && <WalletActivity />}
       {tab === "rules" && <Rules canEdit={isAdmin} />}
     </div>

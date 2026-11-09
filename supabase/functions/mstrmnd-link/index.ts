@@ -8,7 +8,7 @@
 //   على البطاقة (add-point، نفس الماسح لبطاقة الخصم)، والمرتجع والفاتورة المحذوفة ينقصوا (subtract-point).
 //   الوضع من mstrmnd_sync_settings.mode: dry يسجّل شن كان بيبعت بلا كتابة، live يكتب فعلاً.
 //   وبطاقة الأختام (stamp_template_id): ختم على كل فاتورة بيع (add-stamp)، وينقص لو الفاتورة انحذفت.
-//   وكل نص ساعة ينسخ زبائن MSTRMND وبطاقاتهم لجدول mstrmnd_customers (لصفحة «بطاقات الزبائن»).
+//   وكل نص ساعة ينسخ زبائن MSTRMND وبطاقاتهم (mstrmnd_customers) وعملياتهم (mstrmnd_transactions) لصفحة الولاء.
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 
 const API = "https://api.digitalwallet.cards";
@@ -221,6 +221,20 @@ async function sync(s: Settings) {
     if (rows.length) {
       await db.from("mstrmnd_customers").upsert(rows);
       await db.from("mstrmnd_customers").delete().not("id", "in", `(${rows.map((r) => `"${r.id}"`).join(",")})`);
+    }
+    // عمليات MSTRMND (المسح بالفرع، التركيب، الأختام...) لتقرير الفروع. وقت MSTRMND بتوقيت طرابلس (+02:00).
+    for (let page = 1; page <= 5; page++) {
+      const t = await api(`/transactions?itemsPerPage=1000&page=${page}`, token);
+      if (t.status !== 200) break;
+      const txs = list(t.body).map(attrs).filter((x: any) => x?.id).map((x: any) => ({
+        id: Number(x.id), customer_id: x.customerId ?? null, template_id: x.templateId != null ? Number(x.templateId) : null,
+        operation: String(x.operationName ?? "").trim(), amount: x.amount !== "" && x.amount != null ? Number(x.amount) : null,
+        purchase_sum: x.purchaseSum != null ? Number(x.purchaseSum) / 1000 : null, location: String(x.location ?? "").trim() || null,
+        manager: String(x.managerName ?? "").trim() || null, device: x.device || null, utm: x.utmSource || null,
+        reversed: Boolean(x.reversed), created_at: x.createdAt ? new Date(String(x.createdAt).replace(" ", "T") + "+02:00").toISOString() : null,
+      }));
+      if (txs.length) await db.from("mstrmnd_transactions").upsert(txs);
+      if (txs.length < 1000) break;
     }
     await db.from("mstrmnd_sync_settings").update({ mirror_at: now() }).eq("id", 1);
     mirrored = true;

@@ -80,6 +80,7 @@ function LinkStatus() {
 
 function Customers() {
   const [q, setQ] = useState("");
+  const [branch, setBranch] = useState<string>("all");
   const [open, setOpen] = useState<string | null>(null);
   const { data, isLoading } = useQuery({
     queryKey: ["mstrmnd-customers"],
@@ -89,6 +90,28 @@ function Customers() {
       return (data ?? []) as WCustomer[];
     },
   });
+  // فرع بطاقة كل زبون (محسوب في قاعدة البيانات) وأسامي الفروع.
+  const { data: branchOf } = useQuery({
+    queryKey: ["mstrmnd-customer-branches"],
+    queryFn: async () => {
+      const [b, names] = await Promise.all([
+        sb.rpc("mstrmnd_customer_branches"),
+        sb.from("amarsoft_branch_map").select("code, branches(name)"),
+      ]);
+      if (b.error) throw b.error;
+      const nm = new Map<string, string>(((names.data ?? []) as { code: string; branches: { name: string } | null }[])
+        .map((r) => [r.code, String(r.branches?.name ?? r.code).replace(/^\d+\s*-\s*/, "")]));
+      return new Map<string, { code: string | null; name: string; how: string }>(
+        ((b.data ?? []) as { customer_id: string; branch_code: string | null; how: string }[])
+          .map((r) => [r.customer_id, { code: r.branch_code, name: r.branch_code ? nm.get(r.branch_code) ?? r.branch_code : "غير معروف", how: r.how }]),
+      );
+    },
+  });
+  const branchNames = useMemo(() => {
+    const s = new Map<string, string>();
+    branchOf?.forEach((v) => s.set(v.code ?? "none", v.name));
+    return [...s.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [branchOf]);
 
   const stats = useMemo(() => {
     const all = data ?? [];
@@ -104,8 +127,9 @@ function Customers() {
 
   const list = useMemo(() => {
     const term = q.trim(); const d = term.replace(/\D/g, "");
-    return (data ?? []).filter((c) => !term || (c.full_name ?? "").includes(term) || (d.length >= 3 && (c.phone9 ?? "").includes(d)));
-  }, [data, q]);
+    return (data ?? []).filter((c) => (branch === "all" || (branchOf?.get(c.id)?.code ?? "none") === branch)
+      && (!term || (c.full_name ?? "").includes(term) || (d.length >= 3 && (c.phone9 ?? "").includes(d))));
+  }, [data, q, branch, branchOf]);
 
   if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="size-6 animate-spin text-primary" /></div>;
   if (!data?.length) return <Card className="p-8 text-center text-muted-foreground">ما فيش بيانات لين توا. تجي بعد ما الربط ينسخ زبائن MSTRMND أول مرة.</Card>;
@@ -125,7 +149,18 @@ function Customers() {
         <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ابحث بالاسم أو الهاتف" className="pr-9" />
       </div>
+      {branchNames.length > 1 && (
+        <div className="flex flex-wrap gap-1.5">
+          {[["all", "كل الفروع"] as [string, string], ...branchNames].map(([code, label]) => (
+            <button key={code} onClick={() => setBranch(code)}
+              className={`text-xs rounded-full border px-2.5 py-1 ${branch === code ? "bg-primary text-primary-foreground border-primary" : ""}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
       {list.map((c) => {
+        const br = branchOf?.get(c.id);
         const loyal = c.cards.find((k) => k.template_id === LOYALTY);
         const stamps = c.cards.find((k) => k.template_id === STAMPS);
         const gift = c.cards.find((k) => k.template_id === GIFT);
@@ -134,7 +169,9 @@ function Customers() {
             <button className="w-full text-right flex items-center gap-2" onClick={() => setOpen(open === c.id ? null : c.id)}>
               <div className="flex-1 min-w-0">
                 <p className="font-bold truncate">{c.full_name || "بلا اسم"}</p>
-                <p className="text-xs text-muted-foreground" dir="ltr">{c.phone9 ? `0${c.phone9}` : ""}</p>
+                <p className="text-xs text-muted-foreground">
+                  <span dir="ltr">{c.phone9 ? `0${c.phone9}` : ""}</span>{br ? ` · ${br.name}` : ""}
+                </p>
               </div>
               {loyal && <span className="text-xs rounded-full bg-amber-100 text-amber-900 px-2 py-0.5">{(loyal.level ?? "").trim()} {loyal.discount_pct ?? 0}%</span>}
               {stamps && <span className="text-xs rounded-full bg-emerald-100 text-emerald-900 px-2 py-0.5">{stamps.stamps_now ?? 0}/5{stamps.rewards_unused ? ` · ${stamps.rewards_unused} مكافأة` : ""}</span>}
@@ -142,6 +179,9 @@ function Customers() {
             </button>
             {open === c.id && (
               <div className="space-y-2 text-sm">
+                <p className="text-xs text-muted-foreground">
+                  فرع البطاقة: {br?.name ?? "—"}{br && br.how !== "غير معروف" ? ` (${br.how})` : ""} · طلّعها {day(c.created_at)}
+                </p>
                 {loyal && (
                   <Detail title="بطاقة الولاء" status={loyal.status} rows={[
                     ["المستوى", `${(loyal.level ?? "—").trim()} — خصم ${loyal.discount_pct ?? 0}%`],
