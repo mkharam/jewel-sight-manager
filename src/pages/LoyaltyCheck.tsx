@@ -289,7 +289,6 @@ function Lookup() {
   const [q, setQ] = useState("");
   const [term, setTerm] = useState("");
   const [value, setValue] = useState("");
-  const [grams, setGrams] = useState("");
   const [qr, setQr] = useState(false);
   useEffect(() => { const t = setTimeout(() => setTerm(q.trim()), 300); return () => clearTimeout(t); }, [q]);
   const digits = term.replace(/\D/g, "");
@@ -304,7 +303,6 @@ function Lookup() {
     },
   });
   const v = Number(normalizeDecimalInput(value)) || 0;
-  const g = Number(normalizeDecimalInput(grams)) || 0;
 
   return (
     <div className="space-y-3">
@@ -312,15 +310,9 @@ function Lookup() {
         <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="رقم موبايل الزبون أو اسمه" className="pr-9 h-12 text-lg" autoFocus />
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div className="space-y-1">
-          <Label>قيمة الفاتورة (د.ل)</Label>
-          <Input value={value} onChange={(e) => setValue(e.target.value)} inputMode="decimal" dir="ltr" placeholder="0" />
-        </div>
-        <div className="space-y-1">
-          <Label>الوزن (جم) للهدية</Label>
-          <Input value={grams} onChange={(e) => setGrams(e.target.value)} inputMode="decimal" dir="ltr" placeholder="0" />
-        </div>
+      <div className="space-y-1">
+        <Label>قيمة الفاتورة (د.ل)</Label>
+        <Input value={value} onChange={(e) => setValue(e.target.value)} inputMode="decimal" dir="ltr" placeholder="0" className="h-12 text-lg" />
       </div>
 
       {!ready ? null : isFetching && !data ? <div className="flex justify-center py-4"><Loader2 className="size-5 animate-spin text-primary" /></div>
@@ -330,7 +322,7 @@ function Lookup() {
             <p className="text-muted-foreground">لو أول مرة يشري: خليه يركّب بطاقة الولاء من الـ QR ويسجّل برقم موبايله، واكتب نفس الرقم في فاتورة أمارسوفت.</p>
             <Button size="sm" variant="outline" onClick={() => setQr(!qr)}><QrCode className="size-4 ml-1" /> {qr ? "خبّي الـ QR" : "اعرض الـ QR للزبون"}</Button>
           </Card>
-        ) : data.map((p) => <PersonCard key={p.phone9} p={p} value={v} grams={g} onQr={() => setQr(true)} />)}
+        ) : data.map((p) => <PersonCard key={p.phone9} p={p} value={v} onQr={() => setQr(true)} />)}
 
       {qr && (
         <Card className="p-4 flex flex-col items-center gap-2">
@@ -343,10 +335,9 @@ function Lookup() {
   );
 }
 
-function PersonCard({ p, value, grams, onQr }: { p: Person; value: number; grams: number; onQr: () => void }) {
+function PersonCard({ p, value, onQr }: { p: Person; value: number; onQr: () => void }) {
   const pct = Number(p.card_pct ?? 0);
   const levelOff = p.has_card ? (value * pct) / 100 : 0;
-  const reward = STAMP_REWARD.invoice + STAMP_REWARD.perGram * grams;
   return (
     <Card className="p-4 space-y-3">
       <div className="flex items-center gap-2">
@@ -387,17 +378,10 @@ function PersonCard({ p, value, grams, onQr }: { p: Person; value: number; grams
       {!!p.rewards_unused && (
         <div className={`rounded-lg border p-3 flex gap-2 text-sm ${TONE.ok}`}>
           <Gift className="size-5 shrink-0" />
-          <div className="space-y-1">
-            <p><b>عنده هدية الأختام{p.rewards_unused > 1 ? ` (${p.rewards_unused})` : ""}:</b> {rewardText(grams)}، لو حب يستعملها في الشرية هذي.</p>
-            {value > 0 && grams > 0 && (
-              <p>
-                لو استعملها: الخصم الكلي <b className="tabular-nums">{n0(levelOff + reward)}</b> د.ل
-                ({p.has_card ? `المستوى ${n0(levelOff)} + ` : ""}الهدية {n0(reward)}) · الصافي <b className="tabular-nums">{n0(value - levelOff - reward)}</b> د.ل
-              </p>
-            )}
-            {value > 0 && !grams && <p>اكتب الوزن فوق باش نحسبلك الهدية بالضبط.</p>}
-            <p>لو استعملها، سجّل استعمالها في تطبيق الماسح.</p>
-          </div>
+          <p>
+            <b>عنده هدية الأختام{p.rewards_unused > 1 ? ` (${p.rewards_unused})` : ""}:</b> {rewardText(0)}، لو حب يستعملها في الشرية هذي.
+            لو استعملها، سجّل استعمالها في تطبيق الماسح.
+          </p>
         </div>
       )}
 
