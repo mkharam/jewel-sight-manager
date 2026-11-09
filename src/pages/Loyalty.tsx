@@ -1,5 +1,5 @@
 // صفحة الولاء: كل حاجة تخص الولاء في مكان واحد، وكل واحد يشوف الخانات اللي تخص دوره:
-//   خصم الزبون (الكل) · الأعضاء والقواعد (المشرفين فما فوق؛ القواعد يعدّلها المدير العام بس)
+//   لوحة الولاء (الكل) ·الأعضاء والقواعد (المشرفين فما فوق؛ القواعد يعدّلها المدير العام بس)
 //   · بطاقات Wallet والفروع وفواتير الولاء (شن وصل للبطاقة والخصم) مع MSTRMND (المدير العام). النقاط تنحسب من فواتير أمارسوفت المربوطة بالزبون.
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -20,7 +20,7 @@ import LoyaltyInvoices from "@/components/loyalty/LoyaltyInvoices";
 import LoyaltyOutreach from "@/components/loyalty/LoyaltyOutreach";
 
 const TABS = [
-  { key: "discount", label: "خصم الزبون", who: "all" },
+  { key: "discount", label: "لوحة الولاء", who: "all" },
   { key: "members", label: "الأعضاء", who: "managers" },
   { key: "wallet", label: "بطاقات Wallet", who: "admin" },
   { key: "outreach", label: "التواصل", who: "admin" },
@@ -51,7 +51,7 @@ export default function Loyalty() {
   const setTab = (k: TabKey) => setParams({ tab: k }, { replace: true });
 
   return (
-    <div className="max-w-3xl mx-auto space-y-4">
+    <div className={`${tab === "discount" ? "max-w-6xl" : "max-w-3xl"} mx-auto space-y-4`}>
       <h1 className="text-xl font-bold flex items-center gap-2"><Award className="size-5 text-primary" /> الولاء</h1>
       {tabs.length > 1 && (
         <div className="flex flex-wrap gap-1.5">
