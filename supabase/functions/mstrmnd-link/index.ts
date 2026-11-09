@@ -30,8 +30,19 @@ function jwtExp(token: string): Date | null {
 
 type Auth = { refresh_token: string | null; access_token: string | null; access_expires_at: string | null; seed_hash: string | null };
 
+// السر ممكن يكون refresh_token بروحه، أو قيمة «tokens» كاملة من المتصفح ({"refresh_token": …, "token": …}).
+function seedToken(raw: string) {
+  const s = raw.trim().replace(/^['"]|['"]$/g, "");
+  if (!s.startsWith("{")) return s;
+  try {
+    return String(JSON.parse(s).refresh_token ?? "");
+  } catch {
+    return "";
+  }
+}
+
 async function accessToken(): Promise<{ token: string; refreshed: boolean }> {
-  const seed = Deno.env.get("MSTRMND_REFRESH_TOKEN") ?? "";
+  const seed = seedToken(Deno.env.get("MSTRMND_REFRESH_TOKEN") ?? "");
   const seedHash = seed ? await sha256(seed) : null;
   const { data } = await db.from("mstrmnd_auth").select("*").eq("id", 1).maybeSingle();
   let row = (data ?? { refresh_token: null, access_token: null, access_expires_at: null, seed_hash: null }) as Auth;
