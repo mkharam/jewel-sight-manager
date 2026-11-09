@@ -9,6 +9,8 @@
 //   الوضع من mstrmnd_sync_settings.mode: dry يسجّل شن كان بيبعت بلا كتابة، live يكتب فعلاً.
 //   وبطاقة الأختام (stamp_template_id): ختم على كل فاتورة بيع (add-stamp)، وينقص لو الفاتورة انحذفت.
 //   وكل نص ساعة ينسخ زبائن MSTRMND وبطاقاتهم (mstrmnd_customers) وعملياتهم (mstrmnd_transactions) لصفحة الولاء.
+//   الفاتورة اللي توصل من أمارسوفت تشغّله فوراً (mstrmnd_kick من قاعدة البيانات)، والـ cron كل 10 دقايق احتياط.
+//   قفل (mstrmnd_link_acquire) يمنع تشغيلتين مع بعض، باش ما تتزادش نفس الفاتورة مرتين.
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 
 const API = "https://api.digitalwallet.cards";
@@ -111,6 +113,10 @@ function cardSummary(k: any, stampsPerReward: number) {
     stamps_now: stampsPerReward ? Math.max(0, stamps - rewards * stampsPerReward) : null,
     rewards_unused: num(k.countRewardsTotalUnused), rewards_received: num(k.countRewardsTotalReceived),
     balance: k.balance != null ? Number(k.balance) : null, last_money_at: k.lastMoneySpentDate > 86400 ? k.lastMoneySpentDate : null,
+    // مجموع شرياته على البطاقة (المستوى منه)، ووقت ما طلّع البطاقة: صفحة الفواتير تعرف منهم مستواه وقت كل فاتورة.
+    // (discountAmount في بطاقة الخصم = مجموع الشريات؛ pointsEarned يجي ديما 0.)
+    purchases: k.discountAmount != null ? num(k.discountAmount) : null,
+    card_created: k.createdAt > 86400 ? Number(k.createdAt) : null,
   };
 }
 
@@ -156,7 +162,9 @@ async function sync(s: Settings) {
   const counts: Record<string, number> = {};
   const bump = (k: string) => (counts[k] = (counts[k] ?? 0) + 1);
   const now = () => new Date().toISOString();
-  let wrote = false; // لو بعتنا حاجة، ننسخو الزبائن في نفس التشغيل باش الصفحة تتحدّث طول.
+  // اللي بعتنالهم حاجة ننسخو بطاقاتهم في نفس التشغيل باش الصفحة تتحدّث طول؛ الحذف والتعديل (نادرين) ينسخو الكل.
+  const touched = new Set<string>();
+  let wroteAll = false;
 
   // 1) الفواتير الجديدة، لكل بطاقة على حدة.
   const programs: { templateId: number; kind: "point" | "stamp" }[] = [{ templateId: s.template_id, kind: "point" }];
@@ -180,7 +188,7 @@ async function sync(s: Settings) {
       else {
         const w = await write(Number(card.id), p.kind, action, amount, `أمارسوفت ${inv.branch_code}-${inv.invoice_no}`, ld);
         // البطاقة تبدّلت: النسخة اللي تحت تقرا الأرقام الجديدة بدل اللي قبل الإرسال.
-        if (w.ok && mode === "live") { cardsOf.delete(customerId); wrote = true; }
+        if (w.ok && mode === "live") { cardsOf.delete(customerId); touched.add(customerId); }
         Object.assign(row, {
           mstrmnd_customer_id: customerId, card_id: Number(card.id), http_status: w.status,
           status: mode === "dry" ? "would_send" : w.ok ? "sent" : "error", reason: w.err,
@@ -196,28 +204,49 @@ async function sync(s: Settings) {
   for (const r of (rev ?? []) as { invoice_id: number; template_id: number; amount_ld: number; card_id: number; branch_code: string; invoice_no: string }[]) {
     const kind = r.template_id === s.stamp_template_id ? "stamp" : "point";
     const w = await write(r.card_id, kind, "subtract", r.amount_ld, `حذف فاتورة أمارسوفت ${r.branch_code}-${r.invoice_no}`, null);
-    if (w.ok && mode === "live") { cardsOf.clear(); wrote = true; }
+    if (w.ok && mode === "live") { cardsOf.clear(); wroteAll = true; }
     const status = mode === "dry" ? "would_reverse" : w.ok ? "reversed" : "sent";
     await db.from("mstrmnd_sync").update({ status, reason: w.err, http_status: w.status, updated_at: now() })
       .eq("invoice_id", r.invoice_id).eq("mode", mode).eq("template_id", r.template_id);
     bump(mode === "dry" || w.ok ? `${kind}_${status}` : `${kind}_reverse_error`);
   }
 
-  // 3) نسخة زبائن MSTRMND وبطاقاتهم للصفحة، كل نص ساعة.
-  let mirrored = false;
-  if (wrote || !s.mirror_at || Date.now() - new Date(s.mirror_at).getTime() > 30 * 60_000) {
-    const tpl = await api(`/user_templates/${s.stamp_template_id ?? s.template_id}`, token);
-    const stampsPerReward = Number(tpl.body?.stampsNumber ?? 0) || 0;
-    const rows = [];
-    for (const c of people) {
-      rows.push({
-        id: c._id, full_name: String(c.fullName ?? [c.firstName, c.surname].filter(Boolean).join(" ")).trim() || null,
-        phone9: phone9(c.phone) || null,
-        created_at: c.createdAt ? new Date(Number.isFinite(Number(c.createdAt)) ? Number(c.createdAt) * 1000 : c.createdAt).toISOString() : null,
-        cards: (await cards(c._id)).map((k: any) => cardSummary(k, Number(k.userTemplateId) === s.stamp_template_id ? stampsPerReward : 0)),
-        synced_at: now(),
-      });
+  // 2ب) فاتورة تبعتت وبعدها الموظف عدّل قيمتها → الفرق بس يتزاد ولا ينقص (المرتجع بالعكس).
+  //     لو الكتابة فشلت، amount_ld يبقى قديم وتتعاود في التشغيلة الجاية.
+  const { data: adj } = await db.rpc("mstrmnd_sync_adjustments_t", { p_mode: mode });
+  for (const r of (adj ?? []) as { invoice_id: number; template_id: number; card_id: number; action: string; amount_ld: number; ld_now: number; branch_code: string; invoice_no: string }[]) {
+    if (mode !== "live") break;
+    const delta = (r.ld_now - r.amount_ld) * (r.action === "subtract" ? -1 : 1);
+    const w = await write(r.card_id, "point", delta > 0 ? "add" : "subtract", Math.abs(delta),
+      `تعديل فاتورة أمارسوفت ${r.branch_code}-${r.invoice_no}`, delta > 0 ? Math.abs(delta) : null);
+    if (w.ok) {
+      cardsOf.clear(); wroteAll = true;
+      await db.from("mstrmnd_sync").update({ amount_ld: r.ld_now, reason: `تعدّلت: كانت ${r.amount_ld}`, http_status: w.status, updated_at: now() })
+        .eq("invoice_id", r.invoice_id).eq("mode", mode).eq("template_id", r.template_id);
     }
+    bump(w.ok ? "point_adjusted" : "point_adjust_error");
+  }
+
+  // 3) نسخة زبائن MSTRMND وبطاقاتهم للصفحة: الكل كل نص ساعة، واللي تبدّلت بطاقاتهم توا في نفس اللحظة.
+  const tplStamps = async () => Number((await api(`/user_templates/${s.stamp_template_id ?? s.template_id}`, token)).body?.stampsNumber ?? 0) || 0;
+  const mirrorRow = async (c: any, stampsPerReward: number) => ({
+    id: c._id, full_name: String(c.fullName ?? [c.firstName, c.surname].filter(Boolean).join(" ")).trim() || null,
+    phone9: phone9(c.phone) || null,
+    created_at: c.createdAt ? new Date(Number.isFinite(Number(c.createdAt)) ? Number(c.createdAt) * 1000 : c.createdAt).toISOString() : null,
+    cards: (await cards(c._id)).map((k: any) => cardSummary(k, Number(k.userTemplateId) === s.stamp_template_id ? stampsPerReward : 0)),
+    synced_at: now(),
+  });
+  let mirrored: boolean | "touched" = false;
+  if (!wroteAll && touched.size && !(!s.mirror_at || Date.now() - new Date(s.mirror_at).getTime() > 30 * 60_000)) {
+    const spr = await tplStamps();
+    const rows = [];
+    for (const c of people) if (touched.has(c._id)) rows.push(await mirrorRow(c, spr));
+    if (rows.length) await db.from("mstrmnd_customers").upsert(rows);
+    mirrored = "touched";
+  } else if (wroteAll || touched.size || !s.mirror_at || Date.now() - new Date(s.mirror_at).getTime() > 30 * 60_000) {
+    const spr = await tplStamps();
+    const rows = [];
+    for (const c of people) rows.push(await mirrorRow(c, spr));
     if (rows.length) {
       await db.from("mstrmnd_customers").upsert(rows);
       await db.from("mstrmnd_customers").delete().not("id", "in", `(${rows.map((r) => `"${r.id}"`).join(",")})`);
@@ -259,8 +288,23 @@ Deno.serve(async (req) => {
       const { data: s } = await db.from("mstrmnd_sync_settings").select("*").eq("id", 1).single();
       if (!s || req.headers.get("x-cron-key") !== s.cron_key) return json({ error: "forbidden" }, 403);
       if (s.mode === "off") return json({ mode: "off" });
-      const result = await sync(s as Settings);
-      await db.from("mstrmnd_sync_settings").update({ last_run_at: new Date().toISOString(), last_result: result }).eq("id", 1);
+      // الربط شغال توا: طلبنا منه دورة زيادة بعد ما يكمّل، وهي اللي تاخذ الفاتورة الجديدة.
+      const { data: got, error: lockErr } = await db.rpc("mstrmnd_link_acquire", { p_seconds: 150 });
+      if (lockErr) throw new Error(`lock: ${lockErr.message}`);
+      if (!got) return json({ queued: true });
+      let result: Record<string, unknown> = {};
+      try {
+        for (let round = 1; ; round++) {
+          const { data: cur } = await db.from("mstrmnd_sync_settings").select("*").eq("id", 1).single();
+          result = { ...(await sync(cur as Settings)), round };
+          await db.from("mstrmnd_sync_settings").update({ last_run_at: new Date().toISOString(), last_result: result }).eq("id", 1);
+          const { data: again } = await db.rpc("mstrmnd_link_release", { p_keep: round < 5 });
+          if (!again) break;
+        }
+      } catch (e) {
+        await db.rpc("mstrmnd_link_release", { p_keep: false });
+        throw e;
+      }
       return json(result);
     }
     return json({ error: "unknown action" }, 400);

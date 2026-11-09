@@ -1,7 +1,8 @@
 // «خصم الزبون» (كل الموظفين): شاشة الكاونتر.
-//   فوق: آخر فاتورة في الفرع، وقداش لازم يكون الخصم عليها، وأختامه وهديته، وهل وصلت لبطاقته.
-//   في النص: زبون قبل الفاتورة — برقمه ولا اسمه وقيمة الفاتورة، يطلعلك قداش تخصم.
-//   تحت: فواتير الفرع الأخيرة، وكيف يشتغل الولاء.
+//   1) قبل الفاتورة: رقم الزبون ولا اسمه وقيمة الفاتورة → قداش يكتب في خانة الخصم في أمارسوفت، والصافي، وكم ختم باقيله للهدية.
+//   2) بعد ما يحفظ الفاتورة: آخر فاتورة في الفرع — الخصم تسجّل؟ وصلت لبطاقته؟
+//   تحت: فواتير الفرع اللي قبلها، وكيف يشتغل الولاء.
+// بطاقة الولاء وبطاقة الأختام بطاقتين منفصلتين: الأختام تبان بس للي عنده بطاقة أختام.
 // المستوى والخصم من بطاقة MSTRMND اللي في موبايل الزبون. الخصم يدوي: الموظف يحطه في خانة الخصم في أمارسوفت.
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -123,18 +124,20 @@ export default function LoyaltyCheck() {
       )}
 
       <section className="space-y-2">
-        <h2 className="font-bold">آخر فاتورة{branch !== "all" && branches ? ` في ${branches.find((b) => b.code === branch)?.name ?? ""}` : ""}</h2>
+        <h2 className="font-bold">1. قبل ما تدير الفاتورة في أمارسوفت</h2>
+        <Lookup />
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="font-bold">
+          2. بعد ما تحفظها: آخر فاتورة{branch !== "all" && branches ? ` في ${branches.find((b) => b.code === branch)?.name ?? ""}` : ""}
+        </h2>
         {isLoading || !branches ? <div className="flex justify-center py-8"><Loader2 className="size-6 animate-spin text-primary" /></div>
           : !latest ? (
             <Card className="p-6 text-center text-muted-foreground">
               {branches.length ? "ما فيش فواتير في آخر 3 أيام." : "حسابك مش مربوط بفرع. كلّم المدير العام."}
             </Card>
           ) : <LatestInvoice i={latest} />}
-      </section>
-
-      <section className="space-y-2">
-        <h2 className="font-bold">زبون قبل الفاتورة</h2>
-        <Lookup />
       </section>
 
       {rest.length > 0 && (
@@ -165,6 +168,26 @@ function StampDots({ n }: { n: number }) {
       {[0, 1, 2, 3, 4].map((k) => <span key={k} className={`size-3 rounded-full ${k < n ? "bg-primary" : "bg-muted-foreground/25"}`} />)}
       <span className="mr-1 text-xs text-muted-foreground">{n}/5</span>
     </span>
+  );
+}
+
+// بطاقة الأختام (للي عنده بطاقة أختام بس): كم عنده، كم باقيله للهدية، وشن تزيده الشرية هذي.
+function StampsInfo({ n, buying }: { n: number; buying?: boolean }) {
+  const left = Math.max(0, 5 - n);
+  return (
+    <div className="space-y-0.5">
+      <div className="flex items-center justify-between">
+        <span className="text-muted-foreground">الأختام</span>
+        <StampDots n={n} />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {buying
+          ? left <= 1 ? "الشرية هذي تكمّله 5 أختام، والهدية تطلعله في بطاقته للشرية الجاية."
+            : `الشرية هذي تزيده ختم (${n + 1}/5)، ويبقاله ${left - 1} للهدية.`
+          : `باقيله ${left} ${left === 1 ? "ختم" : "أختام"} للهدية.`}
+        {" "}ختم واحد في اليوم.
+      </p>
+    </div>
   );
 }
 
@@ -206,7 +229,7 @@ function LatestInvoice({ i }: { i: Inv }) {
 
       {(i.has_card || i.stamps_now != null) && (
         <div className="space-y-1.5 text-sm">
-          {i.stamps_now != null && <div className="flex items-center justify-between"><span className="text-muted-foreground">الأختام</span><StampDots n={i.stamps_now} /></div>}
+          {i.stamps_now != null && <StampsInfo n={i.stamps_now} />}
           {i.to_next != null && tier && (
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">المستوى الجاي</span>
@@ -266,7 +289,7 @@ function Lookup() {
     <div className="space-y-3">
       <div className="relative">
         <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="رقم موبايل الزبون أو اسمه" className="pr-9 h-12 text-lg" />
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="رقم موبايل الزبون أو اسمه" className="pr-9 h-12 text-lg" autoFocus />
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1">
@@ -315,17 +338,27 @@ function PersonCard({ p, value, grams, onQr }: { p: Person; value: number; grams
       {p.has_card ? (
         <>
           <div className={`rounded-lg border p-3 ${TONE.ok}`}>
-            <p className="text-2xl font-black">خصم {pct}% على الفاتورة</p>
-            {value > 0 && <p className="text-lg">اخصم <b className="tabular-nums">{n0((value * pct) / 100)}</b> د.ل من {n0(value)}</p>}
+            {value > 0 ? (
+              <>
+                <p className="text-sm">اكتب في خانة الخصم في أمارسوفت:</p>
+                <p className="text-3xl font-black tabular-nums">{n0((value * pct) / 100)} د.ل</p>
+                <p className="text-sm">{pct}% من {n0(value)} · الصافي بعد الخصم <b className="tabular-nums">{n0(value - (value * pct) / 100)}</b> د.ل</p>
+              </>
+            ) : (
+              <>
+                <p className="text-2xl font-black">خصم {pct}% على الفاتورة</p>
+                <p className="text-sm">اكتب قيمة الفاتورة فوق ويطلعلك قداش تخصم بالضبط.</p>
+              </>
+            )}
           </div>
           {!!p.rewards_unused && (
             <div className={`rounded-lg border p-3 flex gap-2 text-sm ${TONE.ok}`}>
               <Gift className="size-5 shrink-0" />
-              <p><b>عنده هدية الأختام{p.rewards_unused > 1 ? ` (${p.rewards_unused})` : ""}:</b> {rewardText(grams)}. لو استعملها، سجّلها في تطبيق الماسح.</p>
+              <p><b>عنده هدية الأختام{p.rewards_unused > 1 ? ` (${p.rewards_unused})` : ""}:</b> {rewardText(grams)}، زيادة على خصم المستوى لو حب يستعملها. لو استعملها، سجّلها في تطبيق الماسح.</p>
             </div>
           )}
           <div className="space-y-1.5 text-sm">
-            {p.stamps_now != null && <div className="flex items-center justify-between"><span className="text-muted-foreground">الأختام</span><StampDots n={p.stamps_now} /></div>}
+            {p.stamps_now != null && <StampsInfo n={p.stamps_now} buying={value > 0} />}
             {p.to_next != null && tier && (
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">المستوى الجاي</span>

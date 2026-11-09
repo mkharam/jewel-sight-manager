@@ -8,7 +8,7 @@ returns numeric language sql stable security definer set search_path = public as
   ls as (select (silver_points * ld_per_point)::numeric silver_ld, (gold_points * ld_per_point)::numeric gold_ld,
                 bronze_discount, silver_discount, gold_discount from loyalty_settings where id = 1),
   cum as (
-    select coalesce((p_card->>'points')::numeric,
+    select coalesce((p_card->>'purchases')::numeric,
              case (p_card->>'discount_pct')::numeric
                when ls.bronze_discount then ls.silver_ld - coalesce((p_card->>'to_next')::numeric, 0)
                when ls.silver_discount then ls.gold_ld - coalesce((p_card->>'to_next')::numeric, 0)
