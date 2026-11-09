@@ -8,6 +8,13 @@ export const TIERS: Record<Tier, { label: string; card: string; badge: string }>
   gold: { label: "ذهبي", card: "from-amber-500 via-yellow-300 to-amber-600 text-amber-950", badge: "bg-amber-200 text-amber-900" },
 };
 
+// اسم المستوى مثل ما يجي من بطاقة MSTRMND («برونزي»، «فضي»، «ذهبي») → المستوى.
+export const tierOfLevel = (name: string | null | undefined) =>
+  (Object.keys(TIERS) as Tier[]).find((t) => TIERS[t].label === name?.trim()) ?? null;
+
+// هدية بطاقة الأختام (5 أختام): خصم على الفاتورة + خصم على كل قرام، على الشراء مش كاش.
+export const STAMP_REWARD = { invoice: 1250, perGram: 50 };
+
 export function cardUrl(code: string) {
   return `${window.location.origin}${import.meta.env.BASE_URL}card/${code}`;
 }
