@@ -156,6 +156,7 @@ async function sync(s: Settings) {
   const counts: Record<string, number> = {};
   const bump = (k: string) => (counts[k] = (counts[k] ?? 0) + 1);
   const now = () => new Date().toISOString();
+  let wrote = false; // لو بعتنا حاجة، ننسخو الزبائن في نفس التشغيل باش الصفحة تتحدّث طول.
 
   // 1) الفواتير الجديدة، لكل بطاقة على حدة.
   const programs: { templateId: number; kind: "point" | "stamp" }[] = [{ templateId: s.template_id, kind: "point" }];
@@ -179,7 +180,7 @@ async function sync(s: Settings) {
       else {
         const w = await write(Number(card.id), p.kind, action, amount, `أمارسوفت ${inv.branch_code}-${inv.invoice_no}`, ld);
         // البطاقة تبدّلت: النسخة اللي تحت تقرا الأرقام الجديدة بدل اللي قبل الإرسال.
-        if (w.ok && mode === "live") cardsOf.delete(customerId);
+        if (w.ok && mode === "live") { cardsOf.delete(customerId); wrote = true; }
         Object.assign(row, {
           mstrmnd_customer_id: customerId, card_id: Number(card.id), http_status: w.status,
           status: mode === "dry" ? "would_send" : w.ok ? "sent" : "error", reason: w.err,
@@ -195,6 +196,7 @@ async function sync(s: Settings) {
   for (const r of (rev ?? []) as { invoice_id: number; template_id: number; amount_ld: number; card_id: number; branch_code: string; invoice_no: string }[]) {
     const kind = r.template_id === s.stamp_template_id ? "stamp" : "point";
     const w = await write(r.card_id, kind, "subtract", r.amount_ld, `حذف فاتورة أمارسوفت ${r.branch_code}-${r.invoice_no}`, null);
+    if (w.ok && mode === "live") { cardsOf.clear(); wrote = true; }
     const status = mode === "dry" ? "would_reverse" : w.ok ? "reversed" : "sent";
     await db.from("mstrmnd_sync").update({ status, reason: w.err, http_status: w.status, updated_at: now() })
       .eq("invoice_id", r.invoice_id).eq("mode", mode).eq("template_id", r.template_id);
@@ -203,7 +205,7 @@ async function sync(s: Settings) {
 
   // 3) نسخة زبائن MSTRMND وبطاقاتهم للصفحة، كل نص ساعة.
   let mirrored = false;
-  if (!s.mirror_at || Date.now() - new Date(s.mirror_at).getTime() > 30 * 60_000) {
+  if (wrote || !s.mirror_at || Date.now() - new Date(s.mirror_at).getTime() > 30 * 60_000) {
     const tpl = await api(`/user_templates/${s.stamp_template_id ?? s.template_id}`, token);
     const stampsPerReward = Number(tpl.body?.stampsNumber ?? 0) || 0;
     const rows = [];

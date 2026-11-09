@@ -57,8 +57,6 @@ const Evaluations = lazy(() => import("@/pages/Evaluations"));
 const EvaluatePublic = lazy(() => import("@/pages/EvaluatePublic"));
 const Loyalty = lazy(() => import("@/pages/Loyalty"));
 const LoyaltyCard = lazy(() => import("@/pages/LoyaltyCard"));
-const LoyaltyCheck = lazy(() => import("@/pages/LoyaltyCheck"));
-const WalletCustomers = lazy(() => import("@/pages/WalletCustomers"));
 
 function PageLoader() {
   return (
@@ -153,9 +151,10 @@ const App = () => (
                 <Route path="/closing" element={<RequireRole allow={["admin", "manager"]}><DailyClosing /></RequireRole>} />
                 <Route path="/admin/repairs" element={<RequireRole allow={["admin", "manager", "supervisor"]}><Repairs /></RequireRole>} />
                 <Route path="/customers" element={<Customers />} />
-                <Route path="/discount" element={<LoyaltyCheck />} />
-                <Route path="/wallet-customers" element={<RequireRole allow={["admin"]}><WalletCustomers /></RequireRole>} />
-                <Route path="/loyalty" element={<RequireRole allow={["admin", "manager", "supervisor"]}><Loyalty /></RequireRole>} />
+                {/* كل الولاء في صفحة وحدة؛ الخانات حسب الدور. الروابط القديمة تفتح على خانتها. */}
+                <Route path="/loyalty" element={<Loyalty />} />
+                <Route path="/discount" element={<Navigate to="/loyalty?tab=discount" replace />} />
+                <Route path="/wallet-customers" element={<Navigate to="/loyalty?tab=wallet" replace />} />
                 <Route path="/admin/products" element={<RequireRole allow={["admin", "supervisor"]}><AdminProducts /></RequireRole>} />
               </Route>
               <Route path="*" element={<NotFound />} />

@@ -1,6 +1,8 @@
-// برنامج الولاء: كل زبون في العملاء عضو تلقائياً. الخانة الأولى الأعضاء (بحث، المستوى، النقاط، إرسال البطاقة)،
-// والثانية القواعد (المدير العام بس يعدّلها). النقاط تنحسب من فواتير أمارسوفت المربوطة بالزبون.
+// صفحة الولاء: كل حاجة تخص الولاء في مكان واحد، وكل واحد يشوف الخانات اللي تخص دوره:
+//   خصم الزبون (الكل) · الأعضاء والقواعد (المشرفين فما فوق؛ القواعد يعدّلها المدير العام بس)
+//   · بطاقات Wallet ونشاط الربط مع MSTRMND (المدير العام). النقاط تنحسب من فواتير أمارسوفت المربوطة بالزبون.
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Award, Copy, Loader2, MessageCircle, Search, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
@@ -11,6 +13,17 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { sb, formatLD } from "@/lib/amarsoft";
 import { TIERS, Tier, cardUrl, waPhone } from "@/lib/loyalty";
+import LoyaltyCheck from "@/pages/LoyaltyCheck";
+import { WalletActivity, WalletCards } from "@/pages/WalletCustomers";
+
+const TABS = [
+  { key: "discount", label: "خصم الزبون", who: "all" },
+  { key: "members", label: "الأعضاء", who: "managers" },
+  { key: "wallet", label: "بطاقات Wallet", who: "admin" },
+  { key: "activity", label: "نشاط الربط", who: "admin" },
+  { key: "rules", label: "القواعد", who: "managers" },
+] as const;
+type TabKey = (typeof TABS)[number]["key"];
 
 type Member = {
   customer_id: string; full_name: string; phone: string | null; loyalty_code: string;
@@ -24,16 +37,31 @@ type Settings = {
 export default function Loyalty() {
   const { roles } = useAuth();
   const isAdmin = roles.includes("admin");
-  const [tab, setTab] = useState<"members" | "rules">("members");
+  const isManager = isAdmin || roles.includes("manager") || roles.includes("supervisor");
+  const tabs = TABS.filter((t) => t.who === "all" || (t.who === "managers" && isManager) || (t.who === "admin" && isAdmin));
+  // الخانة في الرابط (?tab=wallet) باش الروابط القديمة (/discount و /wallet-customers) تفتح على خانتها.
+  const [params, setParams] = useSearchParams();
+  const asked = params.get("tab") as TabKey | null;
+  const tab: TabKey = tabs.some((t) => t.key === asked) ? asked! : tabs[0].key;
+  const setTab = (k: TabKey) => setParams({ tab: k }, { replace: true });
 
   return (
     <div className="max-w-3xl mx-auto space-y-4">
       <h1 className="text-xl font-bold flex items-center gap-2"><Award className="size-5 text-primary" /> الولاء</h1>
-      <div className="grid grid-cols-2 gap-1.5">
-        <Button size="lg" variant={tab === "members" ? "default" : "outline"} onClick={() => setTab("members")} className="text-base">الأعضاء</Button>
-        <Button size="lg" variant={tab === "rules" ? "default" : "outline"} onClick={() => setTab("rules")} className="text-base">القواعد</Button>
-      </div>
-      {tab === "members" ? <Members /> : <Rules canEdit={isAdmin} />}
+      {tabs.length > 1 && (
+        <div className="flex flex-wrap gap-1.5">
+          {tabs.map((t) => (
+            <Button key={t.key} variant={tab === t.key ? "default" : "outline"} onClick={() => setTab(t.key)} className="flex-1 min-w-[6.5rem]">
+              {t.label}
+            </Button>
+          ))}
+        </div>
+      )}
+      {tab === "discount" && <LoyaltyCheck />}
+      {tab === "members" && <Members />}
+      {tab === "wallet" && <WalletCards />}
+      {tab === "activity" && <WalletActivity />}
+      {tab === "rules" && <Rules canEdit={isAdmin} />}
     </div>
   );
 }

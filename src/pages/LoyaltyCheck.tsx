@@ -2,7 +2,7 @@
 // ويكتب قيمة الفاتورة يطلعله قداش يخصم بالضبط ويحطه في أمارسوفت. أمارسوفت ما فيهوش خصم على الزبون، فالخصم يدوي.
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BadgePercent, Loader2, Search } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,7 @@ type Settings = { bronze_discount: number; silver_discount: number; gold_discoun
 
 const digits = (s: string) => s.replace(/\D/g, "");
 
+// خانة «خصم الزبون» داخل صفحة الولاء (كل الموظفين يشوفوها).
 export default function LoyaltyCheck() {
   const [q, setQ] = useState("");
   const [making, setMaking] = useState("");
@@ -49,7 +50,6 @@ export default function LoyaltyCheck() {
 
   return (
     <div className="max-w-lg mx-auto space-y-4">
-      <h1 className="text-xl font-bold flex items-center gap-2"><BadgePercent className="size-5 text-primary" /> خصم الزبون</h1>
       <div className="relative">
         <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="رقم الزبون أو اسمه" className="pr-9 h-12 text-lg" autoFocus />

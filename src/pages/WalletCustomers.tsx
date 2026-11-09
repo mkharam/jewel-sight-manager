@@ -1,11 +1,10 @@
-// «بطاقات الزبائن»: كل زبون عنده بطاقة في MSTRMND (الـ Wallet) وبطاقاته — الولاء، الأختام، الهدايا —
-// وشن بعتله الربط من فواتير أمارسوفت. البيانات نسخة يحدّثها mstrmnd-link كل نص ساعة، فالصفحة ما تكلّمش MSTRMND.
+// بطاقات الـ Wallet (MSTRMND): كل زبون عنده بطاقة وبطاقاته — الولاء، الأختام، الهدايا — وشن بعتله الربط
+// من فواتير أمارسوفت. البيانات نسخة يحدّثها mstrmnd-link، فالخانات هذي ما تكلّمش MSTRMND.
 import { Fragment, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CreditCard, Loader2, Search, AlertTriangle, ChevronDown } from "lucide-react";
+import { Loader2, Search, AlertTriangle, ChevronDown } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { sb } from "@/lib/amarsoft";
 
 const LOYALTY = 908119, STAMPS = 908120, GIFT = 908118;
@@ -41,9 +40,16 @@ const day = (v: string | number | null | undefined) => {
 };
 const time = (v: string | null) => (v ? new Date(v).toLocaleString("en-GB", { timeZone: "Africa/Tripoli", dateStyle: "short", timeStyle: "short" }) : "—");
 
-export default function WalletCustomers() {
-  const [tab, setTab] = useState<"customers" | "activity">("customers");
-  const { data: status } = useQuery({
+// خانتين في صفحة الولاء (المدير العام بس): «بطاقات Wallet» و«نشاط الربط»، وفوق كل وحدة حالة الربط.
+export function WalletCards() {
+  return (<div className="space-y-3"><LinkStatus /><Customers /></div>);
+}
+export function WalletActivity() {
+  return (<div className="space-y-3"><LinkStatus /><Activity /></div>);
+}
+
+function LinkStatus() {
+  const { data: s } = useQuery({
     queryKey: ["mstrmnd-status"],
     queryFn: async () => {
       const { data, error } = await sb.rpc("mstrmnd_link_status");
@@ -51,21 +57,6 @@ export default function WalletCustomers() {
       return (data?.[0] ?? null) as Status | null;
     },
   });
-
-  return (
-    <div className="max-w-3xl mx-auto space-y-4">
-      <h1 className="text-xl font-bold flex items-center gap-2"><CreditCard className="size-5 text-primary" /> بطاقات الزبائن</h1>
-      <LinkStatus s={status ?? null} />
-      <div className="grid grid-cols-2 gap-1.5">
-        <Button size="lg" variant={tab === "customers" ? "default" : "outline"} onClick={() => setTab("customers")} className="text-base">الزبائن</Button>
-        <Button size="lg" variant={tab === "activity" ? "default" : "outline"} onClick={() => setTab("activity")} className="text-base">نشاط الربط</Button>
-      </div>
-      {tab === "customers" ? <Customers /> : <Activity />}
-    </div>
-  );
-}
-
-function LinkStatus({ s }: { s: Status | null }) {
   if (!s) return null;
   const stale = s.last_run_at && Date.now() - new Date(s.last_run_at).getTime() > 30 * 60_000;
   return (
