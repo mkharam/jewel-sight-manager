@@ -16,11 +16,13 @@ import { TIERS, Tier, cardUrl, waPhone } from "@/lib/loyalty";
 import LoyaltyCheck from "@/pages/LoyaltyCheck";
 import { WalletActivity, WalletCards } from "@/pages/WalletCustomers";
 import LoyaltyBranches from "@/components/loyalty/LoyaltyBranches";
+import LoyaltyOutreach from "@/components/loyalty/LoyaltyOutreach";
 
 const TABS = [
   { key: "discount", label: "خصم الزبون", who: "all" },
   { key: "members", label: "الأعضاء", who: "managers" },
   { key: "wallet", label: "بطاقات Wallet", who: "admin" },
+  { key: "outreach", label: "التواصل", who: "admin" },
   { key: "branches", label: "الفروع", who: "admin" },
   { key: "activity", label: "نشاط الربط", who: "admin" },
   { key: "rules", label: "القواعد", who: "managers" },
@@ -62,6 +64,7 @@ export default function Loyalty() {
       {tab === "discount" && <LoyaltyCheck />}
       {tab === "members" && <Members />}
       {tab === "wallet" && <WalletCards />}
+      {tab === "outreach" && <LoyaltyOutreach />}
       {tab === "branches" && <LoyaltyBranches />}
       {tab === "activity" && <WalletActivity />}
       {tab === "rules" && <Rules canEdit={isAdmin} />}
