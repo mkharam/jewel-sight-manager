@@ -58,6 +58,7 @@ const EvaluatePublic = lazy(() => import("@/pages/EvaluatePublic"));
 const Loyalty = lazy(() => import("@/pages/Loyalty"));
 const LoyaltyCard = lazy(() => import("@/pages/LoyaltyCard"));
 const LoyaltyCheck = lazy(() => import("@/pages/LoyaltyCheck"));
+const WalletCustomers = lazy(() => import("@/pages/WalletCustomers"));
 
 function PageLoader() {
   return (
@@ -153,6 +154,7 @@ const App = () => (
                 <Route path="/admin/repairs" element={<RequireRole allow={["admin", "manager", "supervisor"]}><Repairs /></RequireRole>} />
                 <Route path="/customers" element={<Customers />} />
                 <Route path="/discount" element={<LoyaltyCheck />} />
+                <Route path="/wallet-customers" element={<RequireRole allow={["admin"]}><WalletCustomers /></RequireRole>} />
                 <Route path="/loyalty" element={<RequireRole allow={["admin", "manager", "supervisor"]}><Loyalty /></RequireRole>} />
                 <Route path="/admin/products" element={<RequireRole allow={["admin", "supervisor"]}><AdminProducts /></RequireRole>} />
               </Route>

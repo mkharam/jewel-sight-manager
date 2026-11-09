@@ -7,6 +7,8 @@
 // ?action=sync (يطلب x-cron-key) → فواتير أمارسوفت الجديدة اللي فيها رقم زبون عنده بطاقة ولاء: البيع يتزاد
 //   على البطاقة (add-point، نفس الماسح لبطاقة الخصم)، والمرتجع والفاتورة المحذوفة ينقصوا (subtract-point).
 //   الوضع من mstrmnd_sync_settings.mode: dry يسجّل شن كان بيبعت بلا كتابة، live يكتب فعلاً.
+//   وبطاقة الأختام (stamp_template_id): ختم على كل فاتورة بيع (add-stamp)، وينقص لو الفاتورة انحذفت.
+//   وكل نص ساعة ينسخ زبائن MSTRMND وبطاقاتهم لجدول mstrmnd_customers (لصفحة «بطاقات الزبائن»).
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 
 const API = "https://api.digitalwallet.cards";
@@ -92,37 +94,61 @@ const attrs = (x: any) => x?.attributes ?? x;
 const phone9 = (p: unknown) => String(p ?? "").replace(/\D/g, "").slice(-9);
 
 type Candidate = { id: number; branch_code: string; kind: string; invoice_no: string; net_dirhams: number; sold_at: string; phone9: string };
+type Settings = { mode: "dry" | "live"; template_id: number; stamp_template_id: number | null; mirror_at: string | null };
 
-async function sync(mode: "dry" | "live", templateId: number) {
+// عدّادات MSTRMND تجي أحياناً {prev, current}.
+const num = (v: any) => Number(v && typeof v === "object" ? v.current : v ?? 0) || 0;
+
+// ملخص البطاقة اللي تحتاجه صفحة «بطاقات الزبائن».
+function cardSummary(k: any, stampsPerReward: number) {
+  const stamps = num(k.countStampsTotal), rewards = num(k.countRewardsTotal);
+  return {
+    template_id: Number(k.userTemplateId), card_id: Number(k.id), status: k.status ?? null,
+    expires: k.cardExpiryDate > 86400 ? k.cardExpiryDate : null,
+    level: k.discountCardLevelName ?? null, discount_pct: k.discountPercentage != null ? Number(k.discountPercentage) : null,
+    to_next: k.toNextLevelOfDiscountCard != null ? Number(k.toNextLevelOfDiscountCard) : null,
+    visits: num(k.countVisits), stamps_total: stamps,
+    stamps_now: stampsPerReward ? Math.max(0, stamps - rewards * stampsPerReward) : null,
+    rewards_unused: num(k.countRewardsTotalUnused), rewards_received: num(k.countRewardsTotalReceived),
+    balance: k.balance != null ? Number(k.balance) : null, last_money_at: k.lastMoneySpentDate > 86400 ? k.lastMoneySpentDate : null,
+  };
+}
+
+async function sync(s: Settings) {
+  const { mode } = s;
   const { token } = await accessToken();
 
-  // زبائن MSTRMND برقم الهاتف (آخر 9 أرقام)، وبطاقة الولاء لكل زبون نجيبوها وقت نحتاجوها بس.
+  // زبائن MSTRMND برقم الهاتف (آخر 9 أرقام)، وبطاقاتهم نجيبوها وقت نحتاجوها بس.
+  const people: any[] = [];
   const customers = new Map<string, string>();
   for (let page = 1; page < 20; page++) {
     const r = await api(`/customers?itemsPerPage=500&page=${page}`, token);
     // لو القائمة ما جاتش، نوقفو هنا بدل ما نسجّلو كل الفواتير «بلا زبون» ونخسروها.
     if (r.status !== 200) throw new Error(`customers ${r.status}`);
-    const rows = list(r.body).map((c: any) => ({ ...attrs(c), _id: c.id }));
-    for (const c of rows) if (phone9(c.phone).length === 9) customers.set(phone9(c.phone), String(c._id ?? c.id));
+    const rows = list(r.body).map((c: any) => ({ ...attrs(c), _id: String(c.id ?? attrs(c).id) }));
+    people.push(...rows);
+    for (const c of rows) if (phone9(c.phone).length === 9) customers.set(phone9(c.phone), c._id);
     if (rows.length < 500) break;
   }
-  const cardOf = new Map<string, number | null>();
-  async function loyaltyCard(customerId: string) {
-    if (!cardOf.has(customerId)) {
+  const cardsOf = new Map<string, any[]>();
+  async function cards(customerId: string) {
+    if (!cardsOf.has(customerId)) {
       const r = await api(`/customers/${customerId}/cards`, token);
       if (r.status !== 200) throw new Error(`cards ${r.status}`);
-      const card = list(r.body).map(attrs).find((k: any) => Number(k.userTemplateId) === templateId);
-      cardOf.set(customerId, card ? Number(card.id) : null);
+      cardsOf.set(customerId, list(r.body).map(attrs));
     }
-    return cardOf.get(customerId)!;
+    return cardsOf.get(customerId)!;
   }
+  const cardFor = async (customerId: string, templateId: number) =>
+    (await cards(customerId)).find((k: any) => Number(k.userTemplateId) === templateId) ?? null;
 
-  async function write(cardId: number, action: "add" | "subtract", amount: number, comment: string) {
+  // كتابة في MSTRMND: نقاط بطاقة الخصم (قيمة الفاتورة) أو ختم بطاقة الأختام.
+  async function write(cardId: number, kind: "point" | "stamp", action: "add" | "subtract", amount: number, comment: string, purchase: number | null) {
     if (mode === "dry") return { status: null, ok: true, err: null };
-    const r = await api(`/cards/${cardId}/${action === "add" ? "add-point" : "subtract-point"}`, token, {
-      method: "POST",
-      body: JSON.stringify({ sourceType: 1, points: amount, comment, purchaseSum: action === "add" ? amount : null }),
-    });
+    const body = kind === "point"
+      ? { sourceType: 1, points: amount, comment, purchaseSum: action === "add" ? purchase : null }
+      : { sourceType: 1, stamps: amount, comment, purchaseSum: action === "add" ? purchase : null };
+    const r = await api(`/cards/${cardId}/${action}-${kind}`, token, { method: "POST", body: JSON.stringify(body) });
     const ok = r.status >= 200 && r.status < 300;
     return { status: r.status, ok, err: ok ? null : String(r.body?.detail ?? r.body?.message ?? r.status).slice(0, 200) };
   }
@@ -131,39 +157,71 @@ async function sync(mode: "dry" | "live", templateId: number) {
   const bump = (k: string) => (counts[k] = (counts[k] ?? 0) + 1);
   const now = () => new Date().toISOString();
 
-  // 1) الفواتير الجديدة.
-  const { data: cand, error } = await db.rpc("mstrmnd_sync_candidates", { p_mode: mode, p_limit: 50 });
-  if (error) throw new Error(`candidates: ${error.message}`);
-  for (const inv of (cand ?? []) as Candidate[]) {
-    const action = inv.kind === "return" || inv.net_dirhams < 0 ? "subtract" : "add";
-    const amount = Math.round(Math.abs(inv.net_dirhams) / 1000);
-    const row: Record<string, unknown> = { invoice_id: inv.id, mode, action, amount_ld: amount, updated_at: now() };
-    const customerId = customers.get(inv.phone9);
-    const cardId = customerId ? await loyaltyCard(customerId) : null;
-    if (!amount) Object.assign(row, { status: "skipped", reason: "zero_amount" });
-    else if (!customerId) Object.assign(row, { status: "skipped", reason: "no_mstrmnd_customer" });
-    else if (!cardId) Object.assign(row, { status: "skipped", reason: "no_loyalty_card", mstrmnd_customer_id: customerId });
-    else {
-      const w = await write(cardId, action, amount, `أمارسوفت ${inv.branch_code}-${inv.invoice_no}`);
-      Object.assign(row, {
-        mstrmnd_customer_id: customerId, card_id: cardId, http_status: w.status,
-        status: mode === "dry" ? "would_send" : w.ok ? "sent" : "error", reason: w.err,
-      });
+  // 1) الفواتير الجديدة، لكل بطاقة على حدة.
+  const programs: { templateId: number; kind: "point" | "stamp" }[] = [{ templateId: s.template_id, kind: "point" }];
+  if (s.stamp_template_id) programs.push({ templateId: s.stamp_template_id, kind: "stamp" });
+  for (const p of programs) {
+    const { data: cand, error } = await db.rpc("mstrmnd_sync_candidates_t", { p_mode: mode, p_template: p.templateId, p_limit: 50 });
+    if (error) throw new Error(`candidates: ${error.message}`);
+    for (const inv of (cand ?? []) as Candidate[]) {
+      const isReturn = inv.kind === "return" || inv.net_dirhams < 0;
+      const ld = Math.round(Math.abs(inv.net_dirhams) / 1000);
+      // الختم على البيع بس؛ المرتجع ما ينقصش ختم (الختم ينقص بس لو الفاتورة نفسها انحذفت).
+      const action = isReturn ? "subtract" : "add";
+      const amount = p.kind === "point" ? ld : 1;
+      const row: Record<string, unknown> = { invoice_id: inv.id, mode, template_id: p.templateId, action, amount_ld: p.kind === "point" ? ld : 1, updated_at: now() };
+      const customerId = customers.get(inv.phone9);
+      const card = customerId ? await cardFor(customerId, p.templateId) : null;
+      if (!ld) Object.assign(row, { status: "skipped", reason: "zero_amount" });
+      else if (p.kind === "stamp" && isReturn) Object.assign(row, { status: "skipped", reason: "return_no_stamp" });
+      else if (!customerId) Object.assign(row, { status: "skipped", reason: "no_mstrmnd_customer" });
+      else if (!card) Object.assign(row, { status: "skipped", reason: p.kind === "point" ? "no_loyalty_card" : "no_stamp_card", mstrmnd_customer_id: customerId });
+      else {
+        const w = await write(Number(card.id), p.kind, action, amount, `أمارسوفت ${inv.branch_code}-${inv.invoice_no}`, ld);
+        Object.assign(row, {
+          mstrmnd_customer_id: customerId, card_id: Number(card.id), http_status: w.status,
+          status: mode === "dry" ? "would_send" : w.ok ? "sent" : "error", reason: w.err,
+        });
+      }
+      await db.from("mstrmnd_sync").upsert(row);
+      bump(`${p.kind}_${row.status}`);
     }
-    await db.from("mstrmnd_sync").upsert(row);
-    bump(String(row.status));
   }
 
-  // 2) فواتير تبعتت وبعدها انحذفت في أمارسوفت → ننقصوها.
-  const { data: rev } = await db.rpc("mstrmnd_sync_reversals", { p_mode: mode });
-  for (const r of (rev ?? []) as { invoice_id: number; amount_ld: number; card_id: number; branch_code: string; invoice_no: string }[]) {
-    const w = await write(r.card_id, "subtract", r.amount_ld, `حذف فاتورة أمارسوفت ${r.branch_code}-${r.invoice_no}`);
+  // 2) فواتير تبعتت وبعدها انحذفت في أمارسوفت → ننقصوها من نفس البطاقة.
+  const { data: rev } = await db.rpc("mstrmnd_sync_reversals_t", { p_mode: mode });
+  for (const r of (rev ?? []) as { invoice_id: number; template_id: number; amount_ld: number; card_id: number; branch_code: string; invoice_no: string }[]) {
+    const kind = r.template_id === s.stamp_template_id ? "stamp" : "point";
+    const w = await write(r.card_id, kind, "subtract", r.amount_ld, `حذف فاتورة أمارسوفت ${r.branch_code}-${r.invoice_no}`, null);
     const status = mode === "dry" ? "would_reverse" : w.ok ? "reversed" : "sent";
     await db.from("mstrmnd_sync").update({ status, reason: w.err, http_status: w.status, updated_at: now() })
-      .eq("invoice_id", r.invoice_id).eq("mode", mode);
-    bump(mode === "dry" || w.ok ? status : "reverse_error");
+      .eq("invoice_id", r.invoice_id).eq("mode", mode).eq("template_id", r.template_id);
+    bump(mode === "dry" || w.ok ? `${kind}_${status}` : `${kind}_reverse_error`);
   }
-  return { mode, customers: customers.size, ...counts };
+
+  // 3) نسخة زبائن MSTRMND وبطاقاتهم للصفحة، كل نص ساعة.
+  let mirrored = false;
+  if (!s.mirror_at || Date.now() - new Date(s.mirror_at).getTime() > 30 * 60_000) {
+    const tpl = await api(`/user_templates/${s.stamp_template_id ?? s.template_id}`, token);
+    const stampsPerReward = Number(tpl.body?.stampsNumber ?? 0) || 0;
+    const rows = [];
+    for (const c of people) {
+      rows.push({
+        id: c._id, full_name: String(c.fullName ?? [c.firstName, c.surname].filter(Boolean).join(" ")).trim() || null,
+        phone9: phone9(c.phone) || null,
+        created_at: c.createdAt ? new Date(Number.isFinite(Number(c.createdAt)) ? Number(c.createdAt) * 1000 : c.createdAt).toISOString() : null,
+        cards: (await cards(c._id)).map((k: any) => cardSummary(k, Number(k.userTemplateId) === s.stamp_template_id ? stampsPerReward : 0)),
+        synced_at: now(),
+      });
+    }
+    if (rows.length) {
+      await db.from("mstrmnd_customers").upsert(rows);
+      await db.from("mstrmnd_customers").delete().not("id", "in", `(${rows.map((r) => `"${r.id}"`).join(",")})`);
+    }
+    await db.from("mstrmnd_sync_settings").update({ mirror_at: now() }).eq("id", 1);
+    mirrored = true;
+  }
+  return { mode, customers: customers.size, mirrored, ...counts };
 }
 
 Deno.serve(async (req) => {
@@ -183,7 +241,7 @@ Deno.serve(async (req) => {
       const { data: s } = await db.from("mstrmnd_sync_settings").select("*").eq("id", 1).single();
       if (!s || req.headers.get("x-cron-key") !== s.cron_key) return json({ error: "forbidden" }, 403);
       if (s.mode === "off") return json({ mode: "off" });
-      const result = await sync(s.mode, s.template_id);
+      const result = await sync(s as Settings);
       await db.from("mstrmnd_sync_settings").update({ last_run_at: new Date().toISOString(), last_result: result }).eq("id", 1);
       return json(result);
     }
