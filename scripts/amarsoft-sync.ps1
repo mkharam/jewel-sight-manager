@@ -14,12 +14,15 @@
   -Full sends everything (first-time backfill). -DryRun writes the payloads to disk only.
 
   Runs every 5 minutes from the "Amarsoft Sales Sync" scheduled task.
+  -Watch stays running (the "Amarsoft Live Sales" task) and sends a branch's new invoice seconds after
+  Amarsoft saves it, so the customer's Wallet card changes while he is still at the counter.
 #>
 param(
     [string]$Root = 'M:\AMARSOFT',
     [int]$Days = 40,
     [switch]$Full,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$Watch
 )
 
 $ErrorActionPreference = 'Stop'
@@ -211,7 +214,7 @@ function Read-Branch($branch, [string]$fromKey) {
                 $deletedHeads["$($h.TRNNO)|$($h.NETAMT)|$($h.SMAN)|$($h.CUSTOMER)"] = $h
             }
             foreach ($h in $deletedHeads.Values) {
-                $items = if ($oldLines.ContainsKey($h.TRNNO)) { @($oldLines[$h.TRNNO].Values) } else { @() }
+                $items = @(if ($oldLines.ContainsKey($h.TRNNO)) { $oldLines[$h.TRNNO].Values })
                 $history.Add(@{
                     branch = $branch.Name; year = $year.Name; kind = $src.Kind; no = $h.TRNNO
                     source = if ($live.ContainsKey($h.TRNNO)) { 'old_version' } else { 'deleted' }
@@ -344,9 +347,70 @@ function Send([hashtable]$payload, [string]$name) {
         -Body ([Text.Encoding]::UTF8.GetBytes($json))
 }
 
-# Only one run at a time (a slow full backfill must not overlap the 5-minute task).
+# Record count and size of a .dbf, read through an open handle (the directory entry lags while Amarsoft has it open).
+function Dbf-Count([string]$Path) {
+    if (-not (Test-Path $Path)) { return '-' }
+    $fs = [IO.File]::Open($Path, 'Open', 'Read', 'ReadWrite')
+    try { $h = New-Object byte[] 8; [void]$fs.Read($h, 0, 8); '{0}/{1}' -f [BitConverter]::ToUInt32($h, 4), $fs.Length } finally { $fs.Close() }
+}
+
+# Changes when a branch saves, edits or returns an invoice: an edit writes new detail lines, so the counts move too.
+# Deletions only flip a flag inside the file; the 5-minute run picks those up.
+function Branch-Signature($branch) {
+    $year = Get-ChildItem $branch.FullName -Directory | Where-Object Name -match '^\d{4}$' | Sort-Object Name | Select-Object -Last 1
+    if (-not $year) { return '' }
+    $parts = @($year.Name) + @('trn_rtsal.dbf', 'trn_rtsaldet.dbf', 'trn_rtsrt.dbf', 'trn_rtsrtdet.dbf' | ForEach-Object { Dbf-Count (Join-Path $year.FullName $_) })
+    $parts -join ','
+}
+
+# Only one run at a time (a slow full backfill must not overlap the 5-minute task). The live watcher takes the same
+# lock for its quick sends: a run that read the files just before a new invoice was saved, and posted after the
+# watcher, would otherwise mark that invoice deleted.
 $mutex = New-Object Threading.Mutex($false, 'Global\AmarsoftSalesSync')
-if (-not $mutex.WaitOne(0)) { Log 'Previous run still going; skipping.'; return }
+function Take-Lock([int]$ms) { try { $mutex.WaitOne($ms) } catch [Threading.AbandonedMutexException] { $true } }
+
+if ($Watch) {
+    $key = (Get-Content (Join-Path $Home_ 'sync.key') -Raw).Trim()
+    $seen = @{}; $pending = @{}
+    Log 'Live watch started.'
+    while ($true) {
+        foreach ($branch in Get-ChildItem $Root -Directory | Where-Object Name -match '^\d{2}$') {
+            try { $sig = Branch-Signature $branch } catch { continue }
+            if ($seen.ContainsKey($branch.Name) -and $seen[$branch.Name] -ne $sig) { $pending[$branch.Name] = $branch }
+            $seen[$branch.Name] = $sig
+        }
+        if ($pending.Count) {
+            Start-Sleep -Seconds 2   # let Amarsoft finish writing the invoice lines
+            if (Take-Lock 60000) {
+                try {
+                    $from = (Get-Date).Date.AddDays(-1)
+                    foreach ($name in @($pending.Keys)) {
+                        try {
+                            $t = [Diagnostics.Stopwatch]::StartNew()
+                            $data = Read-Branch $pending[$name] $from.ToString('yyyyMMdd')
+                            $res = Send @{
+                                window_from      = $from.ToString('yyyy-MM-dd')
+                                branches_scanned = @($name)
+                                salesmen         = $data.salesmen
+                                invoices         = $data.invoices
+                                history          = $data.history
+                            } $name
+                            Log ("Live {0}: sent {1}, changed {2}, marked deleted {3} ({4:n1}s)" -f `
+                                $name, $res.invoices, $res.upserted, $res.marked_deleted, $t.Elapsed.TotalSeconds)
+                            $pending.Remove($name)
+                        } catch {
+                            Log "Live ${name}: FAILED - $($_.Exception.Message)"
+                        }
+                    }
+                } finally { $mutex.ReleaseMutex() }
+            }
+            if ($pending.Count) { Start-Sleep -Seconds 10 }   # failed or locked: try again shortly
+        }
+        Start-Sleep -Seconds 3
+    }
+}
+
+if (-not (Take-Lock 30000)) { Log 'Previous run still going; skipping.'; return }
 try {
     if ((Test-Path $LogFile) -and (Get-Item $LogFile).Length -gt 2MB) { Move-Item $LogFile "$LogFile.old" -Force }
 

@@ -6,6 +6,7 @@ import { Loader2, Search, AlertTriangle, ChevronDown } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { sb } from "@/lib/amarsoft";
+import { SYNC_REASON_AR } from "@/lib/loyalty";
 
 const LOYALTY = 908119, STAMPS = 908120, GIFT = 908118;
 
@@ -27,10 +28,7 @@ const MODE_AR: Record<string, string> = { live: "حقيقي", dry: "تجربة",
 const SYNC_AR: Record<string, string> = {
   sent: "تبعتت", reversed: "تنقصت (حذف)", error: "خطأ", skipped: "تخطّاها", would_send: "تجربة", would_reverse: "تجربة حذف",
 };
-const REASON_AR: Record<string, string> = {
-  no_mstrmnd_customer: "الزبون مش في MSTRMND", no_loyalty_card: "ما عندهش بطاقة ولاء", no_stamp_card: "ما عندهش بطاقة أختام",
-  zero_amount: "مبلغ صفر", return_no_stamp: "مرتجع (ما ينقصش ختم)",
-};
+const REASON_AR = SYNC_REASON_AR;
 
 const ld = (n: number | null | undefined) => (n == null ? "—" : `${Math.round(n).toLocaleString("en-US")} د.ل`);
 const day = (v: string | number | null | undefined) => {
@@ -40,15 +38,12 @@ const day = (v: string | number | null | undefined) => {
 };
 const time = (v: string | null) => (v ? new Date(v).toLocaleString("en-GB", { timeZone: "Africa/Tripoli", dateStyle: "short", timeStyle: "short" }) : "—");
 
-// خانتين في صفحة الولاء (المدير العام بس): «بطاقات Wallet» و«نشاط الربط»، وفوق كل وحدة حالة الربط.
+// خانة «بطاقات Wallet» في صفحة الولاء (المدير العام بس)، وفوقها حالة الربط (نفسها فوق خانة «الفواتير»).
 export function WalletCards() {
   return (<div className="space-y-3"><LinkStatus /><Customers /></div>);
 }
-export function WalletActivity() {
-  return (<div className="space-y-3"><LinkStatus /><Activity /></div>);
-}
 
-function LinkStatus() {
+export function LinkStatus() {
   const { data: s } = useQuery({
     queryKey: ["mstrmnd-status"],
     queryFn: async () => {
@@ -244,21 +239,6 @@ function CustomerActivity({ id }: { id: string }) {
   });
   if (!data?.length) return <p className="text-xs text-muted-foreground">الربط ما بعتش لهذا الزبون حتى فاتورة لين توا.</p>;
   return <SyncList rows={data} />;
-}
-
-function Activity() {
-  const { data, isLoading } = useQuery({
-    queryKey: ["mstrmnd-sync-live"],
-    queryFn: async () => {
-      const { data, error } = await sb.from("mstrmnd_sync").select(SYNC_SELECT).eq("mode", "live")
-        .order("updated_at", { ascending: false }).limit(100);
-      if (error) throw error;
-      return (data ?? []) as SyncRow[];
-    },
-  });
-  if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="size-6 animate-spin text-primary" /></div>;
-  if (!data?.length) return <Card className="p-8 text-center text-muted-foreground">ما فيش فواتير جديدة فيها رقم زبون من وقت ما اشتغل الربط.</Card>;
-  return <Card className="p-3"><SyncList rows={data} showCustomer /></Card>;
 }
 
 function SyncList({ rows, showCustomer }: { rows: SyncRow[]; showCustomer?: boolean }) {

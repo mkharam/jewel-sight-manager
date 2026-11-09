@@ -26,3 +26,9 @@ export const INSTALL_URL = "https://take.cards/gOwTN";
 export const CONTACT_LABELS: Record<string, string> = {
   gold_no_card: "ذهبي بلا بطاقة", five: "5 شريات", gold_card: "ذهبي عنده بطاقة", silver_no_card: "فضي بلا بطاقة",
 };
+
+// ليش الربط ما بعتش فاتورة لبطاقة الزبون في MSTRMND (mstrmnd_sync.reason).
+export const SYNC_REASON_AR: Record<string, string> = {
+  no_mstrmnd_customer: "الزبون مش في MSTRMND", no_loyalty_card: "ما عندهش بطاقة ولاء", no_stamp_card: "ما عندهش بطاقة أختام",
+  zero_amount: "مبلغ صفر", return_no_stamp: "مرتجع (ما ينقصش ختم)",
+};
