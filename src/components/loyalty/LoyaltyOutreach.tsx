@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { sb } from "@/lib/amarsoft";
-import { waPhone } from "@/lib/loyalty";
+import { CONTACT_LABELS, INSTALL_URL as INSTALL, waPhone } from "@/lib/loyalty";
 
 type Row = {
   phone9: string; phone: string; full_name: string; branch_code: string; branch_name: string; purchase_days: number; total_ld: number;
@@ -15,27 +15,26 @@ type Row = {
   contacted: string[];
 };
 
-const INSTALL = "https://take.cards/gOwTN";
 const first = (n: string) => (n === "بلا اسم" ? "" : ` ${n.trim().split(/\s+/)[0]}`);
 
 const GROUPS = [
   {
-    key: "gold_no_card", label: "ذهبي بلا بطاقة", hint: "أهم ناس: شرياتهم 100,000 د.ل فما فوق وما عندهمش بطاقة.",
+    key: "gold_no_card", label: CONTACT_LABELS.gold_no_card, hint: "أهم ناس: شرياتهم 100,000 د.ل فما فوق وما عندهمش بطاقة.",
     pick: (r: Row) => r.gold && !r.has_card,
     text: (r: Row) => `مرحبا${first(r.full_name)} 💚\nمن مجوهرات مخرّم: لأنك من أغلى زبائننا، عندك بطاقة ولاء ذهبية بخصم 5% على كل شرية.\nركّبها على موبايلك من هنا وسجّل بنفس رقمك، وشرياتك القديمة تنحسبلك وحدها:\n${INSTALL}`,
   },
   {
-    key: "five", label: "5 شريات", hint: "شروا في 5 أيام مختلفة أو أكثر: هدية 1,250 على الفاتورة + 50 على القرام.",
+    key: "five", label: CONTACT_LABELS.five, hint: "شروا في 5 أيام مختلفة أو أكثر: هدية 1,250 على الفاتورة + 50 على القرام.",
     pick: (r: Row) => r.five,
     text: (r: Row) => `مرحبا${first(r.full_name)} 💚\nمن مجوهرات مخرّم: كمّلت معانا 5 شريات، وعندك هدية في شريتك الجاية:\nخصم 1,250 د.ل على قيمة الفاتورة + خصم 50 د.ل على كل قرام.\n(الخصم على الشراء، مش كاش). نستنوك في أقرب فرع.`,
   },
   {
-    key: "gold_card", label: "ذهبي عنده بطاقة", hint: "عندهم بطاقة MSTRMND وشرياتهم توصل ذهبي.",
+    key: "gold_card", label: CONTACT_LABELS.gold_card, hint: "عندهم بطاقة MSTRMND وشرياتهم توصل ذهبي.",
     pick: (r: Row) => r.gold && r.has_card,
     text: (r: Row) => `مرحبا${first(r.full_name)} 💚\nبطاقتك في مجوهرات مخرّم ذهبية: خصم 5% على كل شرية. ورّي بطاقتك للموظف وقت الشراء. نستنوك.`,
   },
   {
-    key: "silver_no_card", label: "فضي بلا بطاقة", hint: "شرياتهم بين 70,000 و100,000 وما عندهمش بطاقة.",
+    key: "silver_no_card", label: CONTACT_LABELS.silver_no_card, hint: "شرياتهم بين 70,000 و100,000 وما عندهمش بطاقة.",
     pick: (r: Row) => r.silver && !r.has_card,
     text: (r: Row) => `مرحبا${first(r.full_name)} 💚\nمن مجوهرات مخرّم: عندك بطاقة ولاء فضية بخصم 3% على كل شرية، وقريب توصل الذهبية (5%).\nركّبها على موبايلك من هنا وسجّل بنفس رقمك:\n${INSTALL}`,
   },

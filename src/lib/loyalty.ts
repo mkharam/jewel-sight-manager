@@ -20,3 +20,9 @@ export function waPhone(phone: string | null | undefined) {
 }
 
 export const WALLET_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/loyalty-wallet`;
+
+// رابط تركيب بطاقة MSTRMND، وأسماء قوائم التواصل (loyalty_contacts.category).
+export const INSTALL_URL = "https://take.cards/gOwTN";
+export const CONTACT_LABELS: Record<string, string> = {
+  gold_no_card: "ذهبي بلا بطاقة", five: "5 شريات", gold_card: "ذهبي عنده بطاقة", silver_no_card: "فضي بلا بطاقة",
+};

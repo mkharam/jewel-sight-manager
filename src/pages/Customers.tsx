@@ -1,7 +1,7 @@
 // صفحة العملاء: بحث/إضافة عميل، وتاريخ شراء/حجز/طلبات كل عميل في مكان واحد. الربط
 // الفعلي بالمبيعات يتم عبر customer_id (راجع SellDialog/ReserveDialog — resolveCustomerId)
-// بدل الاكتفاء بالاسم كنص حر كما كان سابقاً.
-import { useEffect, useMemo, useRef, useState } from "react";
+// بدل الاكتفاء بالاسم كنص حر كما كان سابقاً. المدير العام يشوف القائمة المرتّبة (آخر زيارة، سعر القرام، البطاقة).
+import { useMemo, useState } from "react";
 import { usePersistentState } from "@/lib/resume";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -14,13 +14,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Users, Search, UserPlus, Phone, Receipt, Bookmark, Heart, Package, Loader2 } from "lucide-react";
+import { Users, Search, UserPlus, Phone, Receipt, Bookmark, Heart, Package, Loader2, type LucideIcon } from "lucide-react";
 import { formatCurrency, formatDate, normalizeDecimalInput } from "@/lib/constants";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { sb, formatLD } from "@/lib/amarsoft";
 import CustomerDashboard from "@/components/amarsoft/CustomerDashboard";
+import CustomerBook from "@/components/customers/CustomerBook";
+import CustomerProfile from "@/components/customers/CustomerProfile";
+import { sinceText, tripoliDate } from "@/lib/customers";
 
 type Customer = { id: string; full_name: string; phone: string | null; notes: string | null; branch_id: string | null; created_at: string };
 
@@ -28,12 +31,7 @@ export default function Customers() {
   const { user, roles } = useAuth();
   const isAdmin = roles.includes("admin");
   const qc = useQueryClient();
-  const [view, setView] = useState<"dashboard" | "list">(isAdmin ? "dashboard" : "list");
-  // الأدوار تُحمَّل بعد فتح الصفحة أحياناً: المدير العام يبدأ باللوحة.
-  const shownDashboard = useRef(false);
-  useEffect(() => {
-    if (isAdmin && !shownDashboard.current) { shownDashboard.current = true; setView("dashboard"); }
-  }, [isAdmin]);
+  const [view, setView] = useState<"book" | "dashboard">("book");
   const [q, setQ] = useState("");
   const [openNew, setOpenNew] = usePersistentState(`customer:new:openNew`, false);
   const [activeCustomer, setActiveCustomer] = useState<Customer | null>(null);
@@ -76,6 +74,7 @@ export default function Customers() {
     setOpenNew(false);
     resetForm();
     qc.invalidateQueries({ queryKey: ["customers"] });
+    qc.invalidateQueries({ queryKey: ["customers-overview"] });
   };
 
   return (
@@ -107,12 +106,14 @@ export default function Customers() {
 
       {isAdmin && (
         <div className="grid grid-cols-2 gap-1.5">
+          <Button size="lg" variant={view === "book" ? "default" : "outline"} onClick={() => setView("book")} className="text-base">العملاء</Button>
           <Button size="lg" variant={view === "dashboard" ? "default" : "outline"} onClick={() => setView("dashboard")} className="text-base">اللوحة</Button>
-          <Button size="lg" variant={view === "list" ? "default" : "outline"} onClick={() => setView("list")} className="text-base">القائمة</Button>
         </div>
       )}
 
-      {view === "dashboard" && isAdmin ? <CustomerDashboard onOpen={openById} /> : (<>
+      {isAdmin ? (view === "dashboard" ? <CustomerDashboard onOpen={openById} /> : (
+        <CustomerBook onOpen={(r) => setActiveCustomer({ id: r.customer_id, full_name: r.full_name, phone: r.phone, notes: r.notes, branch_id: null, created_at: "" })} />
+      )) : (<>
       <div className="relative">
         <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ابحث بالاسم أو الهاتف" className="pr-9" />
@@ -155,7 +156,8 @@ export default function Customers() {
 }
 
 function CustomerDetailSheet({ customer, onClose }: { customer: Customer | null; onClose: () => void }) {
-  const { user } = useAuth();
+  const { user, roles } = useAuth();
+  const isAdmin = roles.includes("admin");
   const qc = useQueryClient();
   const [wanted, setWanted] = useState("");
   const [budget, setBudget] = useState("");
@@ -220,6 +222,7 @@ function CustomerDetailSheet({ customer, onClose }: { customer: Customer | null;
                 </div>
               ) : (
                 <>
+                  {isAdmin && <CustomerProfile customerId={customer.id} />}
                   <AmarsoftSection customerId={customer.id} />
 
                   {totalSpent > 0 && (
@@ -292,34 +295,36 @@ type AmarsoftItem = { desc?: string; grams?: number; code?: string; tag?: string
 type AmarsoftInvoice = {
   id: number; branch_code: string; invoice_no: string; invoice_date: string; kind: string; net_dirhams: number;
   items: AmarsoftItem[] | null;
+  price18?: number | null; price21?: number | null; salesman?: string | null; sent_to_card?: boolean;
 };
 
 const karatOf = (p?: number) => (!p ? null : p >= 0.99 ? "24" : p >= 0.91 ? "22" : p >= 0.86 ? "21" : p >= 0.74 ? "18" : null);
 const daysBetween = (a: string, b: string) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86_400_000);
 const gramsOf = (inv: AmarsoftInvoice) => (inv.items ?? []).reduce((s, i) => s + Number(i.grams ?? 0), 0);
-function sinceText(d: number) {
-  return d <= 0 ? "اليوم" : d === 1 ? "أمس" : d < 30 ? `من ${d} يوم` : d < 365 ? `من ${Math.round(d / 30)} شهر` : `من ${Math.round(d / 365)} سنة`;
-}
 
 // ملف الزبون من أمارسوفت: كم مرة جا، شن يحب، وهل مشترياته تكبر ولا تصغر، وفواتيره.
-// رمز الزبون في أمارسوفت خاص بكل فرع، فالزبون اللي زار أكثر من فرع عنده رمز في كل واحد — نجمعهم.
+// المدير العام ياخذ كل فواتيره (برقم هاتفه على الفاتورة ولا برمزه) من customer_invoices، مع سعر القرام وهل وصلت لبطاقته.
+// غيره: برمز الزبون بس — الرمز خاص بكل فرع، فالزبون اللي زار أكثر من فرع عنده رمز في كل واحد — نجمعهم.
 function AmarsoftSection({ customerId }: { customerId: string }) {
   const [shown, setShown] = useState(10);
   const { data } = useQuery({
     queryKey: ["customer-amarsoft", customerId],
     queryFn: async () => {
-      const [{ data: links }, { data: map }] = await Promise.all([
+      const [{ data: links }, { data: map }, { data: own }] = await Promise.all([
         sb.from("amarsoft_customer_links").select("branch_code, guest_code, data").eq("customer_id", customerId),
         sb.from("amarsoft_branch_map").select("code, branches(name)"),
+        sb.rpc("customer_invoices", { p_customer: customerId }),
       ]);
       const list = (links ?? []) as AmarsoftLink[];
       const names = new Map<string, string>(((map ?? []) as { code: string; branches: { name: string } | null }[]).map((m) => [m.code, m.branches?.name ?? m.code]));
       const types = new Map<string, string>();
-      if (!list.length) return { links: list, invoices: [] as AmarsoftInvoice[], names, types };
-      const or = list.map((l) => `and(branch_code.eq.${l.branch_code},details->>guest_code.eq.${l.guest_code})`).join(",");
-      const { data: invoices } = await sb.from("amarsoft_invoices").select("id, branch_code, invoice_no, invoice_date, kind, net_dirhams, items")
-        .eq("is_deleted", false).or(or).order("sold_at", { ascending: false }).limit(500);
-      const invs = (invoices ?? []) as AmarsoftInvoice[];
+      let invs: AmarsoftInvoice[] = ((own ?? []) as (AmarsoftInvoice & { sold_at: string })[]).map((i) => ({ ...i, invoice_date: tripoliDate(i.sold_at) }));
+      if (!invs.length && list.length) {
+        const or = list.map((l) => `and(branch_code.eq.${l.branch_code},details->>guest_code.eq.${l.guest_code})`).join(",");
+        const { data: invoices } = await sb.from("amarsoft_invoices").select("id, branch_code, invoice_no, invoice_date, kind, net_dirhams, items")
+          .eq("is_deleted", false).or(or).order("sold_at", { ascending: false }).limit(500);
+        invs = (invoices ?? []) as AmarsoftInvoice[];
+      }
       // نوع كل قطعة (خاتم، طقم...) من مخزون أمارسوفت برقم التاق.
       const tags = [...new Set(invs.flatMap((i) => (i.items ?? []).map((it) => it.tag).filter((t): t is string => !!t && /^\d+$/.test(t))))];
       if (tags.length) {
@@ -374,10 +379,10 @@ function AmarsoftSection({ customerId }: { customerId: string }) {
     };
   }, [data]);
 
-  if (!data?.links.length) return null;
+  if (!data || (!data.links.length && !data.invoices.length)) return null;
   const branchName = (c: string) => data.names.get(c) ?? `فرع ${c}`;
   const phones = [...new Set(data.links.flatMap((l) => l.data.phones ?? []))];
-  const info = data.links[0].data;
+  const info = data.links[0]?.data ?? {};
   const sinceLast = v ? daysBetween(v.last, new Date().toISOString().slice(0, 10)) : null;
 
   return (
@@ -455,7 +460,7 @@ function AmarsoftSection({ customerId }: { customerId: string }) {
         </>
       )}
 
-      <Section title="بياناته في أمارسوفت" icon={Package} empty="">
+      {data.links.length > 0 && <Section title="بياناته في أمارسوفت" icon={Package} empty="">
         <div className="space-y-1 text-sm py-1">
           {phones.length > 1 && <div className="flex justify-between"><span className="text-muted-foreground">الهواتف</span><span dir="ltr">{phones.join(" · ")}</span></div>}
           {(info.city || info.area || info.address) && (
@@ -464,7 +469,7 @@ function AmarsoftSection({ customerId }: { customerId: string }) {
           {info.dob && <div className="flex justify-between"><span className="text-muted-foreground">تاريخ الميلاد</span><span>{info.dob}</span></div>}
           <div className="text-[11px] text-muted-foreground">رمز الزبون: {data.links.map((l) => `${l.guest_code} (${branchName(l.branch_code)})`).join("، ")}</div>
         </div>
-      </Section>
+      </Section>}
 
       {data.invoices.length > 0 && (
         <Section title={`فواتيره (${data.invoices.length})`} icon={Receipt} empty="">
@@ -476,6 +481,13 @@ function AmarsoftSection({ customerId }: { customerId: string }) {
                 {!!inv.items?.length && (
                   <p className="text-[11px] text-muted-foreground truncate">
                     {inv.items.map((i) => `${(i.tag && data.types.get(i.tag)) || i.desc || i.code || "قطعة"}${i.grams ? ` ${Number(i.grams)}جم` : ""}`).join(" · ")}
+                  </p>
+                )}
+                {(inv.price18 || inv.price21 || inv.salesman || inv.sent_to_card) && (
+                  <p className="text-[11px] text-muted-foreground">
+                    {[inv.price18 && `قرام 18 بـ ${inv.price18.toLocaleString("en-US")}`, inv.price21 && `قرام 21 بـ ${inv.price21.toLocaleString("en-US")}`,
+                      inv.salesman && `البائع ${inv.salesman}`].filter(Boolean).join(" · ")}
+                    {inv.sent_to_card && <span className="text-status-available"> ✓ على البطاقة</span>}
                   </p>
                 )}
               </div>
@@ -491,7 +503,7 @@ function AmarsoftSection({ customerId }: { customerId: string }) {
   );
 }
 
-function Section({ title, icon: Icon, empty, children }: { title: string; icon: any; empty: string; children: React.ReactNode }) {
+function Section({ title, icon: Icon, empty, children }: { title: string; icon: LucideIcon; empty: string; children: React.ReactNode }) {
   const hasChildren = Array.isArray(children) ? children.length > 0 : !!children;
   return (
     <div>
