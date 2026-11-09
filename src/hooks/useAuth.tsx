@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { startPresence } from "@/lib/presence";
@@ -24,14 +24,25 @@ function useAuthState(): AuthState {
   const [rolesLoading, setRolesLoading] = useState(true);
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [profile, setProfile] = useState<AuthState["profile"]>(null);
+  // المستخدم اللي حمّلنا أدواره. تجديد الجلسة (كل ساعة، وكل ما يرجع للتطبيق من برنامج ثاني) يجي بنفس
+  // المستخدم: ما نعاودوش التحميل، لأن rolesLoading يخلي ProtectedRoute يبدّل الصفحة بشاشة التحميل،
+  // فالصفحة تتبنى من جديد وترجع لفوق وسط البحث.
+  const loadedFor = useRef<string | null>(null);
 
   useEffect(() => {
+    const load = (userId: string) => {
+      if (loadedFor.current === userId) return;
+      loadedFor.current = userId;
+      setRolesLoading(true);
+      setTimeout(() => loadUserData(userId), 0);
+    };
+
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
       if (s?.user) {
-        setRolesLoading(true);
-        setTimeout(() => loadUserData(s.user.id), 0);
+        load(s.user.id);
       } else {
+        loadedFor.current = null;
         setRoles([]);
         setProfile(null);
         setRolesLoading(false);
@@ -41,7 +52,7 @@ function useAuthState(): AuthState {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
       if (s?.user) {
-        loadUserData(s.user.id);
+        load(s.user.id);
       } else {
         setRolesLoading(false);
       }
