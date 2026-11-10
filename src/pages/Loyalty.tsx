@@ -17,6 +17,7 @@ import LoyaltyCheck from "@/pages/LoyaltyCheck";
 import { WalletCards } from "@/pages/WalletCustomers";
 import LoyaltyBranches from "@/components/loyalty/LoyaltyBranches";
 import LoyaltyInvoices from "@/components/loyalty/LoyaltyInvoices";
+import LoyaltyCardReview from "@/components/loyalty/LoyaltyCardReview";
 import LoyaltyOutreach from "@/components/loyalty/LoyaltyOutreach";
 
 const TABS = [
@@ -26,6 +27,7 @@ const TABS = [
   { key: "outreach", label: "التواصل", who: "admin" },
   { key: "branches", label: "الفروع", who: "admin" },
   { key: "activity", label: "الفواتير", who: "admin" },
+  { key: "review", label: "مراجعة البطاقات", who: "admin" },
   { key: "rules", label: "القواعد", who: "managers" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
@@ -68,6 +70,7 @@ export default function Loyalty() {
       {tab === "outreach" && <LoyaltyOutreach />}
       {tab === "branches" && <LoyaltyBranches />}
       {tab === "activity" && <LoyaltyInvoices />}
+      {tab === "review" && <LoyaltyCardReview />}
       {tab === "rules" && <Rules canEdit={isAdmin} />}
     </div>
   );
