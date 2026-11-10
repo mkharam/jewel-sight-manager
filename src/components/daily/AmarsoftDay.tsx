@@ -73,7 +73,7 @@ function discount(i: Inv): [Tone, string] | null {
 // الفاتورة وصلت لبطاقة الولاء والأختام ولا لا. اللي ما عندهش بطاقة مش غلطة: فرصة يدخل.
 function onCard(i: Inv, today: boolean): [Tone, string][] {
   if (i.internal) return [];
-  if (!i.has_phone) return i.kind === "sale" && !i.deleted ? [["warn", "بلا رقم زبون"]] : [];
+  if (!i.has_phone) return i.kind !== "sale" || i.deleted ? [] : i.customer ? [["warn", "بلا رقم زبون"]] : [["bad", "بلا اسم ولا رقم"]];
   const out: [Tone, string][] = [];
   if (i.member) {
     if (i.on_card === "sent") out.push(["ok", "وصلت لبطاقة الولاء"]);
@@ -127,6 +127,11 @@ export default function AmarsoftDay() {
       net: bs.reduce((s, b) => s + Number(b.net_ld), 0), sales: inv.length, grams: bs.reduce((s, b) => s + Number(b.grams), 0),
       returns: bs.reduce((s, b) => s + b.returns, 0), pay,
       idle: bs.filter((b) => !b.sales), noPhone: inv.filter((i) => !i.has_phone && !i.internal).length,
+      noName: inv.filter((i) => !i.has_phone && !i.internal && !i.customer).length,
+      // مين نسى الرقم: لكل بائع قداش فاتورة بلا رقم.
+      noPhoneBy: Object.entries(inv.filter((i) => !i.has_phone && !i.internal)
+        .reduce<Record<string, number>>((m, i) => ({ ...m, [i.sman ?? "بلا بائع"]: (m[i.sman ?? "بلا بائع"] ?? 0) + 1 }), {}))
+        .sort((a, b) => b[1] - a[1]).map(([s, n]) => `${s} ${n}`).join("، "),
       canJoin: inv.filter((i) => i.has_phone && !i.internal && !isMember(i)).length,
       members: inv.filter(isMember).length,
       byBranch: inv.reduce<Record<string, number>>((m, i) => (isMember(i) ? { ...m, [i.code]: (m[i.code] ?? 0) + 1 } : m), {}),
@@ -200,7 +205,8 @@ export default function AmarsoftDay() {
 }
 
 type Totals = {
-  idle: Branch[]; noPhone: number; canJoin: number; missing: Inv[]; missingLd: number; notOnCard: Inv[]; sales: number;
+  idle: Branch[]; noPhone: number; noName: number; noPhoneBy: string; canJoin: number; missing: Inv[]; missingLd: number;
+  notOnCard: Inv[]; sales: number;
 };
 
 function Alerts({ t, events, isToday }: { t: Totals; events: Ev[]; isToday: boolean }) {
@@ -211,7 +217,8 @@ function Alerts({ t, events, isToday }: { t: Totals; events: Ev[]; isToday: bool
   if (edited) items.push(["warn", `${invs(edited)} تعدّلت بعد ما تسجّلت`]);
   if (t.missing.length) items.push(["bad", `${invs(t.missing.length)} لأعضاء الولاء بلا الخصم اللي يستاهلوه (${n0(t.missingLd)} د.ل)`]);
   if (t.notOnCard.length) items.push(["bad", `${invs(t.notOnCard.length)} ما وصلتش لبطاقة الزبون`]);
-  if (t.noPhone) items.push(["warn", `${t.noPhone} من ${t.sales} ${t.sales >= 3 && t.sales <= 10 ? "فواتير" : "فاتورة"} بلا رقم زبون`]);
+  if (t.noPhone) items.push([t.noName ? "bad" : "warn", `${t.noPhone} من ${t.sales} ${t.sales >= 3 && t.sales <= 10 ? "فواتير" : "فاتورة"} بلا رقم زبون`
+    + `${t.noName ? `، ${t.noName} منهم بلا اسم حتى` : ""} (${t.noPhoneBy})`]);
   if (t.canJoin) items.push(["info", t.canJoin === 1 ? "زبون واحد عنده رقم وما عندهش بطاقة ولاء: فرصة يدخل"
     : `${people(t.canJoin)} عندهم أرقام وما عندهمش بطاقة ولاء: فرصة يدخلو`]);
   if (!items.length) return null;

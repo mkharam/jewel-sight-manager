@@ -3,6 +3,7 @@
 //   الزبون: رقمه ولا اسمه وقيمة الفاتورة — ولا الضغط على فاتورة من «فواتير الفرع الآن» — يطلّع بطاقاته زي ما في
 //   موبايله، الخصم اللي يتكتب في أمارسوفت، شريط مستواه وشن تديرله الشرية هذي، وأختامه وهديته.
 //   «فواتير الفرع الآن» تتحدّث كل 10 ثواني: الخصم تسجّل؟ وصلت لبطاقته؟ فيها رقم الزبون؟
+//   والفاتورة اللي تسجّلت بلا رقم الزبون تقعد في مربع أحمر فوق لين تتعدّل في أمارسوفت (MissingCustomerAlert).
 // المستوى والخصم من بطاقة MSTRMND، والخصم يدوي في أمارسوفت. بطاقة الولاء وبطاقة الأختام بطاقتين منفصلتين.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -19,6 +20,7 @@ import { sb } from "@/lib/amarsoft";
 import { normalizeDecimalInput } from "@/lib/constants";
 import { daysSince, sinceText, tripoliDate } from "@/lib/customers";
 import { INSTALL_URL, STAMP_REWARD, SYNC_REASON_AR, TIERS, Tier, tierOfLevel } from "@/lib/loyalty";
+import MissingCustomerAlert from "@/components/loyalty/MissingCustomerAlert";
 
 type Branch = { code: string; name: string; mine: boolean };
 type Inv = {
@@ -73,7 +75,9 @@ function advice(i: Inv): { tone: Tone; title: string; text?: string; short: stri
   const given = Number(i.discount_ld), net = Number(i.net_ld);
   if (i.is_deleted) return { tone: "muted", short: "انحذفت", title: "الفاتورة انحذفت من أمارسوفت", text: "لو كانت على بطاقته، تنقص وحدها." };
   if (i.kind === "return") return { tone: "muted", short: "مرتجع", title: "مرتجع", text: "قيمته تنقص من بطاقته وحدها." };
-  if (!i.phone9) return { tone: "warn", short: "بلا رقم زبون", title: "الفاتورة بلا رقم موبايل الزبون", text: "عدّل الفاتورة في أمارسوفت وزيد رقمه، وإلا ما تنحسبلهش على بطاقته." };
+  if (!i.phone9) return i.customer_name
+    ? { tone: "warn", short: "بلا رقم زبون", title: "الفاتورة بلا رقم موبايل الزبون", text: "عدّل الفاتورة في أمارسوفت وزيد رقمه، وإلا ما تنحسبلهش على بطاقته." }
+    : { tone: "bad", short: "بلا اسم ولا رقم", title: "الفاتورة بلا اسم الزبون ولا رقمه", text: "عدّل الفاتورة في أمارسوفت واختار الزبون (ولا سجّله باسمه ورقم موبايله)." };
   if (!i.has_card) return { tone: "info", short: "بلا بطاقة", title: "ما عندهش بطاقة ولاء", text: joinText(i.tier_if_joined, i.pct_if_joined) };
   const pct = Number(i.pct_due ?? 0);
   if (pct === 0) return { tone: "muted", short: "ركّب بعدها", title: "ركّب البطاقة بعد الفاتورة هذي", text: "الشرية تنحسبله على البطاقة، والخصم من الشرية الجاية." };
@@ -172,6 +176,7 @@ export default function LoyaltyCheck() {
         )}
       </div>
 
+      {branches && <MissingCustomerAlert branch={branch === "all" ? null : branch} />}
       <TodayStats invoices={invoices} />
       <RulesStrip s={s} />
 
@@ -202,7 +207,8 @@ export default function LoyaltyCheck() {
           <CustomerArea q={q} value={Number(normalizeDecimalInput(value)) || 0} picked={picked} s={s} onChoose={(p) => setQ(`0${p.phone9}`)} />
         </div>
 
-        <LiveFeed invoices={invoices} loading={isLoading || !branches} noBranch={branches?.length === 0} pickedId={pickedId} onPick={pick} />
+        <LiveFeed invoices={invoices} loading={isLoading || !branches} noBranch={branches?.length === 0} allBranches={branch === "all"}
+          pickedId={pickedId} onPick={pick} />
       </div>
 
       <HowItWorks s={s} />
@@ -498,7 +504,7 @@ function InvoiceVerdict({ i }: { i: Inv }) {
     <div className="rounded-xl border p-3 space-y-2">
       <div className="flex items-center gap-2 text-sm">
         <Receipt className="size-4 text-primary shrink-0" />
-        <span className="truncate">فاتورة {i.branch_code}-{i.invoice_no} · {when(i.sold_at)}{!i.phone9 && i.customer_name ? ` · ${i.customer_name}` : ""}</span>
+        <span className="truncate">فاتورة {i.branch_name} #{i.invoice_no} · {when(i.sold_at)}{!i.phone9 && i.customer_name ? ` · ${i.customer_name}` : ""}</span>
         <span className="mr-auto font-bold tabular-nums whitespace-nowrap">{i.kind === "return" ? "مرتجع " : ""}{n0(Math.abs(Number(i.net_ld)))} د.ل</span>
       </div>
       {a.tone !== "info" && (
@@ -512,14 +518,15 @@ function InvoiceVerdict({ i }: { i: Inv }) {
   );
 }
 
-function LiveFeed({ invoices, loading, noBranch, pickedId, onPick }: {
-  invoices?: Inv[]; loading: boolean; noBranch: boolean; pickedId: number | null; onPick: (i: Inv) => void;
+// كل فاتورة باسم فرعها ورقمها، باش لو فيها مشكلة (بلا رقم زبون، خصم ما تسجّلش…) يبان وين صارت.
+function LiveFeed({ invoices, loading, noBranch, allBranches, pickedId, onPick }: {
+  invoices?: Inv[]; loading: boolean; noBranch: boolean; allBranches: boolean; pickedId: number | null; onPick: (i: Inv) => void;
 }) {
   return (
     <Card className="overflow-hidden lg:sticky lg:top-4">
       <div className="px-3 py-2.5 border-b flex items-center gap-2">
         <span className="size-2 rounded-full bg-status-available animate-pulse" />
-        <p className="font-bold text-sm flex-1">فواتير الفرع الآن</p>
+        <p className="font-bold text-sm flex-1">{allBranches ? "فواتير كل الفروع الآن" : "فواتير الفرع الآن"}</p>
         <span className="text-[11px] text-muted-foreground">آخر 3 أيام</span>
       </div>
       {loading ? <div className="flex justify-center py-8"><Loader2 className="size-5 animate-spin text-primary" /></div>
@@ -538,7 +545,8 @@ function LiveFeed({ invoices, loading, noBranch, pickedId, onPick }: {
                     {k === 0 && <span className="text-[10px] rounded bg-primary text-primary-foreground px-1.5 py-0.5">آخر فاتورة</span>}
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    {when(i.sold_at)} · {i.branch_code}-{i.invoice_no} · {i.kind === "return" ? "مرتجع " : ""}{n0(Math.abs(Number(i.net_ld)))} د.ل
+                    <span className="font-semibold text-foreground">{i.branch_name}</span> #{i.invoice_no} · {when(i.sold_at)}
+                    {" · "}{i.kind === "return" ? "مرتجع " : ""}{n0(Math.abs(Number(i.net_ld)))} د.ل
                   </p>
                   <div className="flex flex-wrap items-center gap-1">
                     <span className={`text-[11px] rounded-full px-2 py-0.5 ${CHIP[a.tone]}`}>{a.short}</span>
