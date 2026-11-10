@@ -37,7 +37,10 @@ function loyaltyLine(r: Row): [Tone, string] {
     const edited = r.loyalty_reason?.startsWith("تعدّلت") ? ` (${r.loyalty_reason})` : "";
     return ["ok", `${sign}${n0(r.loyalty_amount ?? 0)} على بطاقة الولاء${edited} · ${clock(r.loyalty_at!)}، ${after(mins(r.first_seen_at, r.loyalty_at!))}`];
   }
-  if (r.loyalty_status === "error") return ["bad", `ما تزادتش: خطأ من MSTRMND (${r.loyalty_reason ?? ""})، تتعاود وحدها`];
+  // الربط ما يعاودش الفاتورة اللي MSTRMND رفضها (mstrmnd_sync_candidates_t يعاود «ما لقيناش البطاقة» بس).
+  if (r.loyalty_status === "error") return ["bad", `ما تزادتش: MSTRMND رجّع خطأ (${r.loyalty_reason ?? ""}). ما تتعاودش وحدها: زيدها من تطبيق الماسح`];
+  // بطاقة أختام بس: مش غلطة، الختم في سطره.
+  if (r.loyalty_status === "skipped" && r.loyalty_reason === "no_loyalty_card") return ["muted", "ما عندهش بطاقة ولاء (بطاقة أختام بس)"];
   if (r.loyalty_status === "skipped") return ["bad", `ما تزادتش: ${REASON_AR[r.loyalty_reason ?? ""] ?? r.loyalty_reason}`];
   return mins(r.first_seen_at, new Date().toISOString()) < 15 ? ["wait", "في الطريق للبطاقة…"] : ["bad", "لين توا ما تبعتتش للبطاقة"];
 }
@@ -46,7 +49,7 @@ function stampLine(r: Row): [Tone, string] | null {
   if (r.kind === "return") return null;
   if (r.stamp_status === "sent") return ["ok", `ختم على بطاقة الأختام${r.stamps_now != null ? ` · عنده توا ${r.stamps_now} من 5` : ""}${r.rewards_unused ? ` · ${r.rewards_unused} هدية ما استعملهاش` : ""}`];
   if (r.stamp_status === "reversed") return ["muted", "الختم تنقص (الفاتورة انحذفت)"];
-  if (r.stamp_status === "error") return ["bad", "الختم ما تزادش: خطأ من MSTRMND، يتعاود وحده"];
+  if (r.stamp_status === "error") return ["bad", "الختم ما تزادش: MSTRMND رجّع خطأ. ما يتعاودش وحده: زيده من تطبيق الماسح"];
   if (r.stamp_status === "skipped") return ["muted", `ما فيش ختم: ${REASON_AR[r.stamp_reason ?? ""] ?? r.stamp_reason}`];
   return r.loyalty_status ? ["wait", "الختم في الطريق…"] : null;
 }
@@ -98,7 +101,8 @@ export default function LoyaltyInvoices() {
   const rows = useMemo(() => (data ?? []).map((r) => ({ r, card: loyaltyLine(r), disc: discountLine(r) })), [data]);
   const stats = useMemo(() => ({
     all: rows.length,
-    onCard: rows.filter((x) => x.card[0] === "ok").length,
+    // «وصلت»: اللي على البطاقة توا، مش المحذوفة اللي تنقصت.
+    onCard: rows.filter((x) => x.r.loyalty_status === "sent" && !x.r.is_deleted).length,
     notOnCard: rows.filter((x) => x.card[0] === "bad").length,
     noDiscount: rows.filter((x) => x.disc?.[0] === "bad").length,
   }), [rows]);

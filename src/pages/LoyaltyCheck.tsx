@@ -43,6 +43,12 @@ type Tone = "ok" | "bad" | "warn" | "info" | "muted";
 
 const n0 = (n: number) => Math.round(n).toLocaleString("en-US");
 const clock = (iso: string) => new Date(iso).toLocaleTimeString("ar-LY", { timeZone: "Africa/Tripoli", hour: "numeric", minute: "2-digit" });
+// الفواتير من آخر 3 أيام: الساعة بس لو اليوم، وإلا «أمس» ولا التاريخ قبلها.
+const when = (iso: string) => {
+  const d = tripoliDate(iso), today = tripoliDate(new Date().toISOString());
+  const day = d === today ? "" : d === tripoliDate(new Date(Date.now() - 86_400_000).toISOString()) ? "أمس " : `${d.slice(8)}/${d.slice(5, 7)} `;
+  return day + clock(iso);
+};
 const NEXT: Record<Tier, string | null> = { bronze: "للفضي", silver: "للذهبي", gold: null };
 const visitsText = (n: number) => (n === 1 ? "زيارة وحدة" : n === 2 ? "زيارتين" : n <= 10 ? `${n} زيارات` : `${n} زيارة`);
 const TONE: Record<Tone, string> = {
@@ -77,9 +83,15 @@ function advice(i: Inv): { tone: Tone; title: string; text?: string; short: stri
   return { tone: "bad", short: `لازم خصم ${n0(due)}`, title: `لازم تخصم ${n0(due)} د.ل`, text: `${pct}% من ${n0(net)} د.ل. الخصم مش مسجّل في أمارسوفت: عدّل الفاتورة وحطه في خانة الخصم.` };
 }
 
-// وصلت الشرية لبطاقته في MSTRMND؟
+// وصلت الشرية لبطاقته في MSTRMND؟ (اللي عنده بطاقة أختام بس: وصل الختم؟)
 function cardState(i: Inv): { icon: LucideIcon; cls: string; text: string; short: string } | null {
-  if (!i.has_card || !i.phone9 || i.is_deleted) return null;
+  if (!i.phone9 || i.is_deleted) return null;
+  if (!i.has_card) {
+    if (!i.has_stamp_card || i.kind === "return" || i.stamp_on_card === "skipped") return null;
+    if (i.stamp_on_card === "sent") return { icon: CircleCheck, cls: "text-status-available", short: "الختم وصل", text: "الختم وصل لبطاقة الأختام" };
+    if (i.stamp_on_card === "error") return { icon: CircleX, cls: "text-destructive", short: "الختم ما وصلش", text: "الختم ما وصلش لبطاقة الأختام" };
+    return { icon: Clock, cls: "text-amber-600", short: "في الطريق", text: "الختم قاعد يوصل لبطاقته…" };
+  }
   if (i.on_card === "sent")
     return { icon: CircleCheck, cls: "text-status-available", short: "على البطاقة", text: i.kind === "return" ? "تنقص من بطاقته" : "الشرية وصلت لبطاقته" };
   if (i.on_card === "skipped" || i.on_card === "error")
@@ -250,9 +262,11 @@ function CustomerArea({ q, value, picked, s, onChoose }: {
 }) {
   const [term, setTerm] = useState(q.trim());
   useEffect(() => { const t = setTimeout(() => setTerm(q.trim()), 300); return () => clearTimeout(t); }, [q]);
-  const digits = term.replace(/\D/g, "");
-  const ready = digits.length >= 4 || (!digits && term.length >= 2);
-  const { data, isFetching } = useQuery({
+  // نفس قاعدة loyalty_lookup: الرقم يتحسب من غير 0 ولا 218 في أوله (4 أرقام على الأقل)، وغيره بحث بالاسم.
+  // («0912» = 3 أرقام بس: لو بعتناها كانت تطلع «ما لقيناش الزبون» وهو موجود.)
+  const phoneQuery = /^[\d\s+()-]+$/.test(term);
+  const ready = phoneQuery ? term.replace(/\D/g, "").replace(/^(00218|218|0)/, "").length >= 4 : term.length >= 2;
+  const { data, isFetching, isPlaceholderData } = useQuery({
     queryKey: ["loyalty-lookup", term],
     enabled: ready,
     queryFn: async () => {
@@ -270,17 +284,28 @@ function CustomerArea({ q, value, picked, s, onChoose }: {
   const person = picked
     ? people.find((p) => p.phone9 === picked.phone9) ?? personOf(picked)
     : people.length === 1 ? people[0] : null;
-  if (person) return <CustomerDashboard p={person} value={value} inv={picked} s={s} />;
-  if (isFetching && !data) return <div className="flex justify-center py-10"><Loader2 className="size-6 animate-spin text-primary" /></div>;
-  if (!people.length) {
-    return (
-      <Card className="p-4 space-y-2 text-sm">
-        <p className="font-bold">ما لقيناش الزبون.</p>
-        <p className="text-muted-foreground">لو أول مرة يشري: خليه يركّب بطاقة الولاء من الـ QR ويسجّل برقم موبايله، واكتب نفس الرقم في فاتورة أمارسوفت.</p>
-        <InstallQr />
-      </Card>
-    );
-  }
+  if (!person && isFetching && !data) return <div className="flex justify-center py-10"><Loader2 className="size-6 animate-spin text-primary" /></div>;
+  // نتيجة البحث اللي قبل (لين توصل الجديدة) تبان باهتة: الموظف ما يقراش خصم زبون على زبون ثاني.
+  const stale = !picked && (isPlaceholderData || term !== q.trim());
+  return (
+    <div className={`transition-opacity ${stale ? "opacity-40 pointer-events-none" : ""}`}>
+      {person ? <CustomerDashboard p={person} value={value} inv={picked} s={s} />
+        : !people.length ? <NotFound /> : <PickPerson people={people} onChoose={onChoose} />}
+    </div>
+  );
+}
+
+function NotFound() {
+  return (
+    <Card className="p-4 space-y-2 text-sm">
+      <p className="font-bold">ما لقيناش الزبون.</p>
+      <p className="text-muted-foreground">لو أول مرة يشري: خليه يركّب بطاقة الولاء من الـ QR ويسجّل برقم موبايله، واكتب نفس الرقم في فاتورة أمارسوفت.</p>
+      <InstallQr />
+    </Card>
+  );
+}
+
+function PickPerson({ people, onChoose }: { people: Person[]; onChoose: (p: Person) => void }) {
   return (
     <Card className="divide-y">
       <p className="p-3 text-xs text-muted-foreground">لقينا {people.length} زبائن، اختار واحد:</p>
@@ -473,7 +498,7 @@ function InvoiceVerdict({ i }: { i: Inv }) {
     <div className="rounded-xl border p-3 space-y-2">
       <div className="flex items-center gap-2 text-sm">
         <Receipt className="size-4 text-primary shrink-0" />
-        <span className="truncate">فاتورة {i.branch_code}-{i.invoice_no} · {clock(i.sold_at)}{!i.phone9 && i.customer_name ? ` · ${i.customer_name}` : ""}</span>
+        <span className="truncate">فاتورة {i.branch_code}-{i.invoice_no} · {when(i.sold_at)}{!i.phone9 && i.customer_name ? ` · ${i.customer_name}` : ""}</span>
         <span className="mr-auto font-bold tabular-nums whitespace-nowrap">{i.kind === "return" ? "مرتجع " : ""}{n0(Math.abs(Number(i.net_ld)))} د.ل</span>
       </div>
       {a.tone !== "info" && (
@@ -513,7 +538,7 @@ function LiveFeed({ invoices, loading, noBranch, pickedId, onPick }: {
                     {k === 0 && <span className="text-[10px] rounded bg-primary text-primary-foreground px-1.5 py-0.5">آخر فاتورة</span>}
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    {clock(i.sold_at)} · {i.branch_code}-{i.invoice_no} · {i.kind === "return" ? "مرتجع " : ""}{n0(Math.abs(Number(i.net_ld)))} د.ل
+                    {when(i.sold_at)} · {i.branch_code}-{i.invoice_no} · {i.kind === "return" ? "مرتجع " : ""}{n0(Math.abs(Number(i.net_ld)))} د.ل
                   </p>
                   <div className="flex flex-wrap items-center gap-1">
                     <span className={`text-[11px] rounded-full px-2 py-0.5 ${CHIP[a.tone]}`}>{a.short}</span>

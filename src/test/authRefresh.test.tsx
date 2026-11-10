@@ -19,7 +19,7 @@ vi.mock("@/integrations/supabase/client", () => ({
     from: (table: string) => ({
       select: () => ({
         eq: (_c: string, id: string) => {
-          if (table === "user_roles") { rolesQuery(id); return Promise.resolve({ data: [{ role: "admin" }] }); }
+          if (table === "user_roles") return Promise.resolve(rolesQuery(id) ?? { data: [{ role: "admin" }] });
           return { maybeSingle: () => Promise.resolve({ data: { full_name: "x", branch_id: "b1" } }) };
         },
       }),
@@ -65,6 +65,23 @@ describe("session refresh", () => {
     expect(screen.getByText("PAGE")).toBeInTheDocument();
     expect(mounts).toBe(1);
     expect(rolesQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries loading roles when the first load fails", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      rolesQuery.mockReturnValueOnce({ data: null, error: { message: "network down" } });
+      renderApp();
+      await screen.findByText("PAGE");
+      expect(rolesQuery).toHaveBeenCalledTimes(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(2100); });
+      await waitFor(() => expect(rolesQuery).toHaveBeenCalledTimes(2));
+      // نجحت المرة الثانية: ما فيش محاولة ثالثة.
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+      expect(rolesQuery).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("reloads roles when a different user signs in", async () => {

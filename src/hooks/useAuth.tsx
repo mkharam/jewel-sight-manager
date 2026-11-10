@@ -66,21 +66,30 @@ function useAuthState(): AuthState {
   const uid = session?.user?.id;
   useEffect(() => (uid ? startPresence() : undefined), [uid]);
 
-  async function loadUserData(userId: string) {
+  async function loadUserData(userId: string, attempt = 1) {
+    let failed = false;
     try {
-      const [{ data: rolesData }, { data: profileData }] = await Promise.all([
+      const [{ data: rolesData, error: rolesError }, { data: profileData, error: profileError }] = await Promise.all([
         supabase.from("user_roles").select("role").eq("user_id", userId),
         supabase.from("profiles").select("full_name, branch_id").eq("id", userId).maybeSingle(),
       ]);
+      failed = !!(rolesError || profileError);
       const list = (rolesData ?? []).map((r) => r.role as AppRole);
       // sort so admin > manager > employee — first item used for display
       const order: Record<AppRole, number> = { admin: 0, supervisor: 1, manager: 2, employee: 3 };
       list.sort((a, b) => order[a] - order[b]);
       setRoles(list);
       setProfile(profileData ?? null);
+    } catch {
+      failed = true;
     } finally {
       setRolesLoading(false);
     }
+    // ما جاتش (الشبكة طاحت…): تجديد الجلسة لنفس المستخدم ما يعاودش التحميل (loadedFor)، فنعاودو هنا،
+    // وإلا يقعد بلا صلاحياته لين يسكّر البرنامج ويفتحه. بعد 3 محاولات، أول حدث جلسة جاي يعاود.
+    if (!failed || loadedFor.current !== userId) return;
+    if (attempt < 3) setTimeout(() => { if (loadedFor.current === userId) loadUserData(userId, attempt + 1); }, 2000 * attempt);
+    else loadedFor.current = null;
   }
 
   return {
