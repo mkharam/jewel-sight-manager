@@ -1,7 +1,8 @@
 // الملخّص اليومي — صفحة واحدة يفتحها المالك أول شي، بدل أن يجمع الصورة من خمس صفحات
-// (المبيعات، الجرد، الاستفسارات، إعادة الطلب، نشاط الموظفين). كل الأرقام "منذ منتصف
+// (المبيعات، الجرد، الاستفسارات، إعادة الطلب، نشاط الموظفين). نشاط البرنامج "منذ منتصف
 // الليل المحلي حتى الآن"، وتُحسب في قاعدة البيانات على كل الصفوف — لا عيّنة محدودة
 // تُجلب للعرض (نفس درس staff_activity_counts وsales_totals). راجع daily_summary.
+// فوقها «أمارسوفت والولاء» (AmarsoftDay): مبيعات الفروع وكل فاتورة والولاء، لليوم ولا أمس ولا أي يوم.
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import { formatCurrency } from "@/lib/constants";
 import { businessToday } from "@/lib/dates";
+import AmarsoftDay from "@/components/daily/AmarsoftDay";
 
 function todayStartISO() {
   const d = new Date();
@@ -117,24 +119,22 @@ export default function DailySummary() {
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <CalendarDays className="size-6 text-primary" /> الملخّص اليومي
         </h1>
-        <p className="text-sm text-muted-foreground mt-1">{dateLabel} — منذ منتصف الليل حتى الآن</p>
+        <p className="text-sm text-muted-foreground mt-1">{dateLabel}</p>
       </div>
 
-      {/* المبيعات أولاً وبمظهر مختلف — هي الرقم الذي يريده المالك أولاً كل صباح */}
-      <Card className="p-5 bg-gold-gradient text-primary-foreground shadow-gold">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm opacity-90 flex items-center gap-1.5"><TrendingUp className="size-4" /> مبيعات اليوم</p>
-            <p className="text-3xl font-extrabold mt-1">{formatCurrency(summary?.sales_revenue ?? 0)}</p>
-          </div>
-          <div className="text-left">
-            <p className="text-2xl font-bold">{summary?.sales_count ?? 0}</p>
-            <p className="text-xs opacity-90">قطعة مباعة</p>
-          </div>
-        </div>
-      </Card>
+      {/* المبيعات أولاً — من أمارسوفت (الكاشير الحقيقي في الفروع)، ومعاها الولاء وكل فاتورة */}
+      <AmarsoftDay />
+
+      <h2 className="font-bold text-lg pt-2">نشاط البرنامج اليوم <span className="text-xs font-normal text-muted-foreground">منذ منتصف الليل حتى الآن</span></h2>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+        {!!summary?.sales_count && (
+          <Card className="p-3 h-full">
+            <TrendingUp className="size-4 text-primary mb-1.5" />
+            <p className="text-xl font-bold leading-none">{summary.sales_count}</p>
+            <p className="text-[11px] text-muted-foreground mt-1">مبيعات من البرنامج ({formatCurrency(summary.sales_revenue ?? 0)})</p>
+          </Card>
+        )}
         {stats.map((s) => (
           <Link key={s.label} to={s.href}>
             <Card className="p-3 hover:bg-muted/40 transition-colors h-full">
