@@ -1,8 +1,9 @@
-// فواتير الفرع اللي تسجّلت في أمارسوفت بلا رقم الزبون (ولا حتى اسمه). أمارسوفت ما يفرضش الزبون، فهنا تقعد قدام
-// الموظف لين يفتحها في أمارسوفت ويختار الزبون: تختفي وحدها أول ما يوصل الرقم (amarsoft_missing_customer_open).
-// الإشعار يوصل لموظفين الفرع وللمدير العام في نفس اللحظة اللي تتسجّل فيها الفاتورة.
-import { useQuery } from "@tanstack/react-query";
+// فواتير اليوم اللي تسجّلت في أمارسوفت بلا رقم الزبون (ولا حتى اسمه). أمارسوفت ما يفرضش الزبون، فهنا تقعد قدام
+// الموظف: لو الزبون مازال قدامه، يفتحها في أمارسوفت ويختاره وتختفي وحدها أول ما يوصل الرقم؛ ولو مشى ولا ما بغاش
+// يعطي رقمه، يسكّرها بالسبب (يتسجّل مين سكّرها). الإشعار يوصل للفرع وللمدير العام في نفس اللحظة.
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
+import { toast } from "sonner";
 import { sb } from "@/lib/amarsoft";
 import { tripoliDate } from "@/lib/customers";
 
@@ -29,6 +30,15 @@ export default function MissingCustomerAlert({ branch }: { branch: string | null
     },
     refetchInterval: 10_000,
   });
+  const qc = useQueryClient();
+  const close = useMutation({
+    mutationFn: async ({ id, reason }: { id: number; reason: "left" | "refused" }) => {
+      const { error } = await sb.rpc("amarsoft_missing_customer_close", { p_invoice: id, p_reason: reason });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["missing-customer"] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
   if (!data?.length) return null;
   return (
     <div className="rounded-xl border border-red-300 bg-red-50 text-red-950 dark:bg-red-950/40 dark:text-red-100 p-3 space-y-2">
@@ -36,7 +46,8 @@ export default function MissingCustomerAlert({ branch }: { branch: string | null
         <AlertTriangle className="size-5 shrink-0" /> {invs(data.length)} لازم {data.length === 1 ? "تتعدّل" : "يتعدّلو"} في أمارسوفت: بلا رقم الزبون
       </p>
       <p className="text-xs opacity-90">
-        افتح الفاتورة في أمارسوفت، اختار الزبون من القائمة (ولا سجّله باسمه ورقم موبايله) واحفظ. تختفي من هنا وحدها في ثواني.
+        الزبون مازال قدامك؟ افتح الفاتورة في أمارسوفت، اختاره من القائمة (ولا سجّله باسمه ورقم موبايله) واحفظ: تختفي من هنا وحدها في ثواني.
+        مشى ولا ما بغاش يعطي رقمه؟ اضغط الزر اللي يناسب، ويتسجّل باسمك.
       </p>
       <div className="divide-y divide-red-200 dark:divide-red-900/60">
         {data.map((x) => (
@@ -45,6 +56,14 @@ export default function MissingCustomerAlert({ branch }: { branch: string | null
             <span className="text-xs opacity-80">{when(x.sold_at)} · {n0(x.net_ld)} د.ل{x.sman ? ` · ${x.sman}` : ""}</span>
             <span className={`text-[11px] rounded-full px-2 py-0.5 ${x.missing === "phone_name" ? "bg-red-600 text-white" : "bg-amber-100 text-amber-900"}`}>
               {x.missing === "phone_name" ? "بلا اسم ولا رقم" : `بلا رقم${x.customer ? ` · ${x.customer}` : ""}`}
+            </span>
+            <span className="flex gap-1.5 ms-auto">
+              {([["left", "الزبون مشى"], ["refused", "ما عطاش رقمه"]] as const).map(([reason, label]) => (
+                <button key={reason} disabled={close.isPending} onClick={() => close.mutate({ id: x.invoice_id, reason })}
+                  className="text-[11px] rounded-full border border-red-300 dark:border-red-800 px-2 py-0.5 hover:bg-red-100 dark:hover:bg-red-900/40">
+                  {label}
+                </button>
+              ))}
             </span>
           </div>
         ))}
