@@ -18,10 +18,12 @@ import { WalletCards } from "@/pages/WalletCustomers";
 import LoyaltyBranches from "@/components/loyalty/LoyaltyBranches";
 import LoyaltyInvoices from "@/components/loyalty/LoyaltyInvoices";
 import LoyaltyCardReview from "@/components/loyalty/LoyaltyCardReview";
+import LoyaltyNewCard from "@/components/loyalty/LoyaltyNewCard";
 import LoyaltyOutreach from "@/components/loyalty/LoyaltyOutreach";
 
 const TABS = [
   { key: "discount", label: "لوحة الولاء", who: "all" },
+  { key: "newcard", label: "بطاقة جديدة", who: "all" },
   { key: "members", label: "الأعضاء", who: "managers" },
   { key: "wallet", label: "بطاقات Wallet", who: "admin" },
   { key: "outreach", label: "التواصل", who: "admin" },
@@ -65,6 +67,7 @@ export default function Loyalty() {
         </div>
       )}
       {tab === "discount" && <LoyaltyCheck />}
+      {tab === "newcard" && <LoyaltyNewCard />}
       {tab === "members" && <Members />}
       {tab === "wallet" && <WalletCards />}
       {tab === "outreach" && <LoyaltyOutreach />}

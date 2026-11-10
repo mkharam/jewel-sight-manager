@@ -30,6 +30,16 @@ export const WALLET_FN = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/loya
 
 // رابط تركيب بطاقة MSTRMND، وأسماء قوائم التواصل (loyalty_contacts.category).
 export const INSTALL_URL = "https://take.cards/gOwTN";
+
+// بطاقات MSTRMND الثلاثة. رابط التركيب يحمل الفرع (utm_source=b05): MSTRMND يسجّله في عملية «Card installed»،
+// ومنه نعرفو الزبون دخل من أنهي فرع (mstrmnd_customer_branches).
+export const WALLET_CARDS = [
+  { key: "loyalty", template: 908119, hash: "LeWLkS", label: "بطاقة الولاء", desc: "كل شرية تنحسبله، ويطلع برونزي ثم فضي ثم ذهبي بخصم أكبر." },
+  { key: "stamps", template: 908120, hash: "ovhcrF", label: "بطاقة الأختام", desc: "ختم على كل شرية، و5 أختام = هدية على الشرية الجاية." },
+  { key: "gift", template: 908118, hash: "XZSiKu", label: "بطاقة الهدايا", desc: "بطاقة هدية من مخرّم." },
+] as const;
+export const cardInstallUrl = (hash: string, branchCode?: string | null) =>
+  `https://app.mstrmnd.agency/getpass/${hash}?utm_source=${branchCode ? `b${branchCode}` : "qr"}`;
 export const CONTACT_LABELS: Record<string, string> = {
   gold_no_card: "ذهبي بلا بطاقة", five: "5 شريات", gold_card: "ذهبي عنده بطاقة", silver_no_card: "فضي بلا بطاقة",
 };
