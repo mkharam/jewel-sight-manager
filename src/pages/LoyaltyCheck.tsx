@@ -7,7 +7,6 @@
 // المستوى والخصم من بطاقة MSTRMND، والخصم يدوي في أمارسوفت. بطاقة الولاء وبطاقة الأختام بطاقتين منفصلتين.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { QRCodeSVG } from "qrcode.react";
 import {
   CircleCheck, CircleX, Clock, Gift, Info, Loader2, QrCode, Receipt, Search, Smartphone, Sparkles, TrendingUp, UserRound, X,
 } from "lucide-react";
@@ -19,7 +18,8 @@ import { Button } from "@/components/ui/button";
 import { sb } from "@/lib/amarsoft";
 import { normalizeDecimalInput } from "@/lib/constants";
 import { daysSince, sinceText, tripoliDate } from "@/lib/customers";
-import { INSTALL_URL, STAMP_REWARD, SYNC_REASON_AR, TIERS, Tier, tierOfLevel } from "@/lib/loyalty";
+import { useSearchParams } from "react-router-dom";
+import { STAMP_REWARD, SYNC_REASON_AR, TIERS, Tier, tierOfLevel } from "@/lib/loyalty";
 import MissingCustomerAlert from "@/components/loyalty/MissingCustomerAlert";
 
 type Branch = { code: string; name: string; mine: boolean };
@@ -337,7 +337,7 @@ function EmptyState() {
       </div>
       <p className="font-bold">اكتب رقم الزبون أو اسمه</p>
       <p className="text-sm text-muted-foreground">ولا اضغط على فاتورة من «فواتير الفرع الآن»، ويطلعلك مستواه وبطاقاته وقداش تخصمله.</p>
-      <div className="flex justify-center"><InstallQr label="زبون جديد؟ اعرضله الـ QR" /></div>
+      <div className="flex justify-center"><InstallQr /></div>
     </Card>
   );
 }
@@ -581,20 +581,13 @@ function BothChip({ loyalty, stamps }: { loyalty: boolean; stamps: boolean }) {
   );
 }
 
-function InstallQr({ label = "اعرض الـ QR للزبون" }: { label?: string }) {
-  const [open, setOpen] = useState(false);
+// الـ QR في خانة «بطاقة جديدة» بس: هناك فيه الفرع، والزبون يختار أي بطاقة من الثلاثة.
+function InstallQr({ label = "زبون جديد؟ خانة «بطاقة جديدة»" }: { label?: string }) {
+  const [, setParams] = useSearchParams();
   return (
-    <div className="space-y-2">
-      <Button size="sm" variant="outline" onClick={() => setOpen(!open)}>
-        <QrCode className="size-4 ml-1" /> {open ? "خبّي الـ QR" : label}
-      </Button>
-      {open && (
-        <div className="flex flex-col items-center gap-2">
-          <div className="bg-white p-3 rounded-lg"><QRCodeSVG value={INSTALL_URL} size={180} /></div>
-          <p className="text-sm text-center">الزبون يمسحه بكاميرا موبايله، يضيف البطاقة لـ Wallet، ويسجّل بنفس رقمه.</p>
-        </div>
-      )}
-    </div>
+    <Button size="sm" variant="outline" onClick={() => setParams({ tab: "newcard" }, { replace: true })}>
+      <QrCode className="size-4 ml-1" /> {label}
+    </Button>
   );
 }
 
