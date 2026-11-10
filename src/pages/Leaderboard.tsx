@@ -146,6 +146,7 @@ export default function Leaderboard() {
                       </div>
                       <div className="text-xs text-muted-foreground">{r.branch_name ?? r.branch_code}</div>
                       {note && <div className="text-sm mt-0.5">{note}</div>}
+                      {isAdmin && <Numbers r={r} />}
                     </div>
                   </Card>
                 </button>
@@ -175,18 +176,32 @@ export default function Leaderboard() {
   );
 }
 
-// ترتيب موظف واحد داخل فرعه في كل الفترات — كلام بدل أرقام.
+// الأرقام للمدير العام بس؛ الموظفين يشوفو الترتيب والكلام.
+function Numbers({ r }: { r: Row }) {
+  const n = (v: number | null | undefined, d = 0) => Number(v ?? 0).toLocaleString("en-US", { maximumFractionDigits: d });
+  return (
+    <div className="text-xs mt-1 flex flex-wrap gap-x-3 gap-y-0.5 tabular-nums">
+      <span><b>{n(r.grams, 1)}</b> جم</span>
+      <span><b>{n(r.invoices)}</b> فاتورة</span>
+      <span><b>{n(r.pieces)}</b> قطعة</span>
+      {r.net_dirhams != null && <span><b>{n(Number(r.net_dirhams) / 1000)}</b> د.ل</span>}
+      {Number(r.returns) > 0 && <span className="text-amber-600">{n(r.returns)} مرتجع</span>}
+    </div>
+  );
+}
+
+// ترتيب موظف واحد داخل فرعه في كل الفترات — كلام بدل أرقام (والمدير العام يشوف الأرقام زادة).
 function EmployeeStats({ row, isAdmin }: { row: Row; isAdmin: boolean }) {
   const { data, isLoading } = useQuery({
     queryKey: ["amarsoft-employee-stats", row.branch_code, row.sman],
     queryFn: async () => {
-      const out: { period: Period; label: string; place: number | null; of: number; note: string }[] = [];
+      const out: { period: Period; label: string; place: number | null; of: number; note: string; row: Row | null }[] = [];
       for (const p of PERIODS) {
         const list = rank(await fetchBoard(p.key, row.branch_code));
         const me = list.find((x) => sameAs(x.row, row));
         out.push({
           period: p.key, label: p.label, place: me ? me.weightRank + 1 : null, of: list.length,
-          note: me ? describe(me.weightRank, me.invoiceRank, list.length) : "",
+          note: me ? describe(me.weightRank, me.invoiceRank, list.length) : "", row: me?.row ?? null,
         });
       }
       return out;
@@ -212,6 +227,7 @@ function EmployeeStats({ row, isAdmin }: { row: Row; isAdmin: boolean }) {
                   : <span className="text-xs text-muted-foreground">ما باعش في الفترة هذي</span>}
               </div>
               {d.note && <p className="text-sm text-muted-foreground mt-1">{d.note}</p>}
+              {isAdmin && d.row && <Numbers r={d.row} />}
             </Card>
           ))}
           {isAdmin && (
