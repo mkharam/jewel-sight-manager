@@ -30,14 +30,21 @@ const after = (m: number) => (m < 1 ? "في أقل من دقيقة" : `بعد ${
 
 // بطاقة الولاء: تزادت؟ ولا ليش لا؟
 function loyaltyLine(r: Row): [Tone, string] {
-  if (r.is_deleted) return r.loyalty_status === "reversed" ? ["ok", "الفاتورة انحذفت، وتنقصت من البطاقة"]
-    : r.loyalty_status === "sent" ? ["wait", "الفاتورة انحذفت، وقاعدة تنقص من البطاقة"] : ["muted", "الفاتورة انحذفت"];
+  if (r.is_deleted) {
+    const ret = r.loyalty_action === "subtract";   // مرتجع انحذف: اللي تنقص يرجع للبطاقة
+    return r.loyalty_status === "reversed" ? ["ok", ret ? "المرتجع انحذف، ورجع للبطاقة" : "الفاتورة انحذفت، وتنقصت من البطاقة"]
+      : r.loyalty_status === "sent" ? ["wait", ret ? "المرتجع انحذف، وقاعد يرجع للبطاقة" : "الفاتورة انحذفت، وقاعدة تنقص من البطاقة"]
+      : r.loyalty_status === "error" ? ["bad", `الفاتورة انحذفت، وما تأكدناش إنها ${ret ? "رجعت للبطاقة" : "تنقصت من البطاقة"}: شوف البطاقة`]
+      : ["muted", "الفاتورة انحذفت"];
+  }
   if (r.loyalty_status === "sent") {
     const sign = r.loyalty_action === "subtract" ? "−" : "+";
     const edited = r.loyalty_reason?.startsWith("تعدّلت") ? ` (${r.loyalty_reason})` : "";
     return ["ok", `${sign}${n0(r.loyalty_amount ?? 0)} على بطاقة الولاء${edited} · ${clock(r.loyalty_at!)}، ${after(mins(r.first_seen_at, r.loyalty_at!))}`];
   }
-  // الربط ما يعاودش الفاتورة اللي MSTRMND رفضها (mstrmnd_sync_candidates_t يعاود «ما لقيناش البطاقة» بس).
+  // الربط ما يعاودش الفاتورة اللي MSTRMND رفضها (اللي ما ردّش عليها تقعد «في الطريق» وتتعاود)، ولا اللي الاتصال
+  // طاح وسطها وما تأكدش (ممكن وصلت): السبب يقول يشوفو البطاقة.
+  if (r.loyalty_status === "error" && r.loyalty_reason?.startsWith("انقطع الاتصال")) return ["bad", `ما ندروش وصلت ولا لا: ${r.loyalty_reason}`];
   if (r.loyalty_status === "error") return ["bad", `ما تزادتش: MSTRMND رجّع خطأ (${r.loyalty_reason ?? ""}). ما تتعاودش وحدها: زيدها من تطبيق الماسح`];
   // بطاقة أختام بس: مش غلطة، الختم في سطره.
   if (r.loyalty_status === "skipped" && r.loyalty_reason === "no_loyalty_card") return ["muted", "ما عندهش بطاقة ولاء (بطاقة أختام بس)"];

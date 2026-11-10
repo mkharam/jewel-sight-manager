@@ -5,7 +5,8 @@
 //
 // ?action=ping → يجدد الدخول لو يلزم ويقرا عدد البطاقات بس. ما يكتب شي في MSTRMND.
 // ?action=sync (يطلب x-cron-key) → فواتير أمارسوفت الجديدة اللي فيها رقم زبون عنده بطاقة ولاء: البيع يتزاد
-//   على البطاقة (add-point، نفس الماسح لبطاقة الخصم)، والمرتجع والفاتورة المحذوفة ينقصوا (subtract-point).
+//   على البطاقة (add-point، نفس الماسح لبطاقة الخصم)، والمرتجع والفاتورة المحذوفة ينقصوا (subtract-point)،
+//   والمرتجع اللي ينحذف يرجع. MSTRMND ما ردّش (5xx) → تتعاود؛ الاتصال طاح وسط الكتابة → نقراو البطاقة قبل ما نعاودو.
 //   الوضع من mstrmnd_sync_settings.mode: dry يسجّل شن كان بيبعت بلا كتابة، live يكتب فعلاً.
 //   وبطاقة الأختام (stamp_template_id): ختم على كل فاتورة بيع (add-stamp)، وينقص لو الفاتورة انحذفت.
 //   وكل نص ساعة ينسخ زبائن MSTRMND وبطاقاتهم (mstrmnd_customers) وعملياتهم (mstrmnd_transactions) لصفحة الولاء.
@@ -149,14 +150,42 @@ async function sync(s: Settings) {
     (await cards(customerId)).find((k: any) => Number(k.userTemplateId) === templateId) ?? null;
 
   // كتابة في MSTRMND: نقاط بطاقة الخصم (قيمة الفاتورة) أو ختم بطاقة الأختام.
-  async function write(cardId: number, kind: "point" | "stamp", action: "add" | "subtract", amount: number, comment: string, purchase: number | null) {
+  //   transient: MSTRMND ما ردّش (5xx/429)، ولا الاتصال طاح وتأكدنا من البطاقة إنها ما وصلتش → تتعاود في الدورة الجاية.
+  //   unsure: الاتصال طاح وما قدرناش نتأكدو → ما نعاودوهاش (ممكن وصلت وتتزاد مرتين)، وتبان في الصفحة باش يتأكدو.
+  type Wrote = { status: number | null; ok: boolean; err: string | null; transient?: boolean; unsure?: boolean };
+  async function write(customerId: string | null, cardId: number, kind: "point" | "stamp", action: "add" | "subtract",
+                       amount: number, comment: string, purchase: number | null): Promise<Wrote> {
     if (mode === "dry") return { status: null, ok: true, err: null };
     const body = kind === "point"
       ? { sourceType: 1, points: amount, comment, purchaseSum: action === "add" ? purchase : null }
       : { sourceType: 1, stamps: amount, comment, purchaseSum: action === "add" ? purchase : null };
-    const r = await api(`/cards/${cardId}/${action}-${kind}`, token, { method: "POST", body: JSON.stringify(body) });
-    const ok = r.status >= 200 && r.status < 300;
-    return { status: r.status, ok, err: ok ? null : String(r.body?.detail ?? r.body?.message ?? r.status).slice(0, 200) };
+    // أرقام البطاقة قبل الكتابة: لو الاتصال طاح وسطها، نقارنوها بعدها ونعرفو هل MSTRMND خداها.
+    const mark = async () => {
+      const k = customerId ? (await cards(customerId)).find((x: any) => Number(x.id) === cardId) : null;
+      // add-point/subtract-point يبدّلو discountAmount (مجموع الشريات)؛ أي رقم تبدّل = وصلت.
+      return k ? (kind === "point"
+        ? `${num(k.discountAmount)}/${num(k.countVisits)}/${k.lastMoneySpentDate ?? ""}`
+        : `${num(k.countStampsTotal)}/${num(k.countRewardsTotal)}/${num(k.countRewardsTotalUnused)}`) : null;
+    };
+    const before = await mark().catch(() => null);
+    try {
+      const r = await api(`/cards/${cardId}/${action}-${kind}`, token, { method: "POST", body: JSON.stringify(body) });
+      const ok = r.status >= 200 && r.status < 300;
+      return {
+        status: r.status, ok, err: ok ? null : String(r.body?.detail ?? r.body?.message ?? r.status).slice(0, 200),
+        transient: r.status >= 500 || r.status === 429,
+      };
+    } catch (e) {
+      const msg = String((e as Error).message).slice(0, 120);
+      if (before != null) {
+        try {
+          cardsOf.delete(customerId!);
+          const after = await mark();
+          if (after != null) return after !== before ? { status: null, ok: true, err: null } : { status: null, ok: false, err: msg, transient: true };
+        } catch { /* ما قدرناش نقراو البطاقة */ }
+      }
+      return { status: null, ok: false, err: `انقطع الاتصال وما تأكدناش: شوف البطاقة قبل ما تزيدها (${msg})`, unsure: true };
+    }
   }
 
   const counts: Record<string, number> = {};
@@ -186,7 +215,9 @@ async function sync(s: Settings) {
       else if (!customerId) Object.assign(row, { status: "skipped", reason: "no_mstrmnd_customer" });
       else if (!card) Object.assign(row, { status: "skipped", reason: p.kind === "point" ? "no_loyalty_card" : "no_stamp_card", mstrmnd_customer_id: customerId });
       else {
-        const w = await write(Number(card.id), p.kind, action, amount, `أمارسوفت ${inv.branch_code}-${inv.invoice_no}`, ld);
+        const w = await write(customerId, Number(card.id), p.kind, action, amount, `أمارسوفت ${inv.branch_code}-${inv.invoice_no}`, ld);
+        // MSTRMND ما ردّش: ما نسجّلوش حاجة، فالفاتورة تتعاود في الدورة الجاية.
+        if (w.transient) { bump(`${p.kind}_retry`); continue; }
         // البطاقة تبدّلت: النسخة اللي تحت تقرا الأرقام الجديدة بدل اللي قبل الإرسال.
         if (w.ok && mode === "live") { cardsOf.delete(customerId); touched.add(customerId); }
         Object.assign(row, {
@@ -199,13 +230,20 @@ async function sync(s: Settings) {
     }
   }
 
-  // 2) فواتير تبعتت وبعدها انحذفت في أمارسوفت → ننقصوها من نفس البطاقة.
+  // 2) فواتير تبعتت وبعدها انحذفت في أمارسوفت → ننقصوها من نفس البطاقة، والمرتجع المحذوف يرجع للبطاقة.
   const { data: rev } = await db.rpc("mstrmnd_sync_reversals_t", { p_mode: mode });
-  for (const r of (rev ?? []) as { invoice_id: number; template_id: number; amount_ld: number; card_id: number; branch_code: string; invoice_no: string }[]) {
+  for (const r of (rev ?? []) as {
+    invoice_id: number; template_id: number; amount_ld: number; card_id: number; branch_code: string; invoice_no: string;
+    action: string; mstrmnd_customer_id: string | null;
+  }[]) {
     const kind = r.template_id === s.stamp_template_id ? "stamp" : "point";
-    const w = await write(r.card_id, kind, "subtract", r.amount_ld, `حذف فاتورة أمارسوفت ${r.branch_code}-${r.invoice_no}`, null);
+    const undo = r.action === "subtract" ? "add" : "subtract";
+    const w = await write(r.mstrmnd_customer_id, r.card_id, kind, undo, r.amount_ld,
+      `حذف ${r.action === "subtract" ? "مرتجع" : "فاتورة"} أمارسوفت ${r.branch_code}-${r.invoice_no}`, undo === "add" ? r.amount_ld : null);
+    if (w.transient) { bump(`${kind}_reverse_retry`); continue; }   // يقعد sent ويتعاود
     if (w.ok && mode === "live") { cardsOf.clear(); wroteAll = true; }
-    const status = mode === "dry" ? "would_reverse" : w.ok ? "reversed" : "sent";
+    // ما تأكدناش إنها تنقصت: ما نعاودوهاش (ممكن تنقص مرتين)، وتبان «error» باش يشوفو البطاقة.
+    const status = mode === "dry" ? "would_reverse" : w.ok ? "reversed" : w.unsure ? "error" : "sent";
     await db.from("mstrmnd_sync").update({ status, reason: w.err, http_status: w.status, updated_at: now() })
       .eq("invoice_id", r.invoice_id).eq("mode", mode).eq("template_id", r.template_id);
     bump(mode === "dry" || w.ok ? `${kind}_${status}` : `${kind}_reverse_error`);
@@ -214,17 +252,22 @@ async function sync(s: Settings) {
   // 2ب) فاتورة تبعتت وبعدها الموظف عدّل قيمتها → الفرق بس يتزاد ولا ينقص (المرتجع بالعكس).
   //     لو الكتابة فشلت، amount_ld يبقى قديم وتتعاود في التشغيلة الجاية.
   const { data: adj } = await db.rpc("mstrmnd_sync_adjustments_t", { p_mode: mode });
-  for (const r of (adj ?? []) as { invoice_id: number; template_id: number; card_id: number; action: string; amount_ld: number; ld_now: number; branch_code: string; invoice_no: string }[]) {
+  for (const r of (adj ?? []) as {
+    invoice_id: number; template_id: number; card_id: number; action: string; amount_ld: number; ld_now: number;
+    branch_code: string; invoice_no: string; mstrmnd_customer_id: string | null;
+  }[]) {
     if (mode !== "live") break;
     const delta = (r.ld_now - r.amount_ld) * (r.action === "subtract" ? -1 : 1);
-    const w = await write(r.card_id, "point", delta > 0 ? "add" : "subtract", Math.abs(delta),
+    const w = await write(r.mstrmnd_customer_id, r.card_id, "point", delta > 0 ? "add" : "subtract", Math.abs(delta),
       `تعديل فاتورة أمارسوفت ${r.branch_code}-${r.invoice_no}`, delta > 0 ? Math.abs(delta) : null);
-    if (w.ok) {
+    // ما تأكدناش: نسجّلو المبلغ الجديد باش الفرق ما يتزادش مرتين، والسبب يقول يشوفو البطاقة.
+    if (w.ok || w.unsure) {
       cardsOf.clear(); wroteAll = true;
-      await db.from("mstrmnd_sync").update({ amount_ld: r.ld_now, reason: `تعدّلت: كانت ${r.amount_ld}`, http_status: w.status, updated_at: now() })
-        .eq("invoice_id", r.invoice_id).eq("mode", mode).eq("template_id", r.template_id);
+      await db.from("mstrmnd_sync").update({
+        amount_ld: r.ld_now, reason: w.unsure ? w.err : `تعدّلت: كانت ${r.amount_ld}`, http_status: w.status, updated_at: now(),
+      }).eq("invoice_id", r.invoice_id).eq("mode", mode).eq("template_id", r.template_id);
     }
-    bump(w.ok ? "point_adjusted" : "point_adjust_error");
+    bump(w.ok ? "point_adjusted" : w.unsure ? "point_adjust_unsure" : "point_adjust_error");
   }
 
   // 3) نسخة زبائن MSTRMND وبطاقاتهم للصفحة: الكل كل نص ساعة، واللي تبدّلت بطاقاتهم توا في نفس اللحظة.
