@@ -23,6 +23,7 @@ const StaffChat = lazy(() => import("@/pages/StaffChat"));
 const Upload = lazy(() => import("@/pages/Upload"));
 const ReviewUnnamed = lazy(() => import("@/pages/ReviewUnnamed"));
 const MissingWeights = lazy(() => import("@/pages/MissingWeights"));
+const IncompleteSets = lazy(() => import("@/pages/IncompleteSets"));
 const TeamHub = lazy(() => import("@/pages/TeamHub"));
 const ReportsHub = lazy(() => import("@/pages/ReportsHub"));
 const Transfers = lazy(() => import("@/pages/Transfers"));
@@ -116,6 +117,7 @@ const App = () => (
                 <Route path="/live-add" element={<LiveAdd />} />
                 <Route path="/upload/review" element={<ReviewUnnamed />} />
                 <Route path="/weights" element={<MissingWeights />} />
+                <Route path="/sets" element={<IncompleteSets />} />
                 <Route path="/import" element={<Navigate to="/upload" replace />} />
                 <Route path="/tray" element={<Navigate to="/upload" replace />} />
                 {/* الفريق والتقارير: كل وحدة صفحة بخانات. الروابط القديمة تفتح على خانتها. */}

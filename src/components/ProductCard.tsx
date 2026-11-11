@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useIncompleteSets } from "@/components/SetPartsCard";
 import SellDialog from "@/components/SellDialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -86,6 +87,9 @@ export default function ProductCard({
   onStatusChanged,
   dense,
 }: ProductCardProps) {
+  // شارة «ناقص» للطاقم اللي بيعت منه قطعة (راجع SetPartsCard).
+  const { data: incompleteSets } = useIncompleteSets();
+  const incomplete = incompleteSets?.get(product.id);
   const primary = product.images?.find((i) => i.is_primary) ?? product.images?.[0];
   const imgUrl = getThumbUrl(primary);
   const status = PRODUCT_STATUS[product.status];
@@ -152,6 +156,11 @@ export default function ProductCard({
         )}
         {/* الصورة نظيفة قدر الإمكان: الحالة تطلع بس لما القطعة مش متوفرة (المتوفر هو العادي)،
             والعيار والوزن تحت الصورة مش فوقها. */}
+        {incomplete && (
+          <Badge className={`absolute ${dense ? "bottom-1 left-1 text-[9px] px-1 py-0" : "bottom-2 left-2 text-[11px]"} bg-amber-500 text-white border-0 shadow-md`}>
+            ناقص {incomplete.sold_parts}/{incomplete.total_parts}
+          </Badge>
+        )}
         {product.status !== "available" && (
           <Badge className={`absolute ${dense ? "top-1 right-1 text-[9px] px-1 py-0" : "top-2 right-2 text-[11px]"} ${status.color} border-0 shadow-md`}>
             {status.label}

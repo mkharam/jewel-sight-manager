@@ -43,7 +43,7 @@ export default function SetPartsCard({ productId, images, isSetType, canEdit, to
   const [selling, setSelling] = useState<Part | null>(null);
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
   const [busy, setBusy] = useState(false);
-  const refresh = () => qc.invalidateQueries({ queryKey: ["set-parts", productId] });
+  const refresh = () => { qc.invalidateQueries({ queryKey: ["set-parts", productId] }); qc.invalidateQueries({ queryKey: ["incomplete-sets"] }); };
 
   if (isLoading) return null;
   if (!parts.length && !isSetType) return null;
@@ -175,4 +175,18 @@ export default function SetPartsCard({ productId, images, isSetType, canEdit, to
       </Dialog>
     </Card>
   );
+}
+
+export type IncompleteSet = { product_id: string; total_parts: number; sold_parts: number; sold_grams: number; last_sold_at: string | null };
+
+/** كل الأطقم الناقصة دفعة واحدة (قائمة صغيرة) — لشارة «ناقص» على كروت القطع وصفحة الأطقم الناقصة. */
+export function useIncompleteSets() {
+  return useQuery({
+    queryKey: ["incomplete-sets"],
+    staleTime: 60_000,
+    queryFn: async (): Promise<Map<string, IncompleteSet>> => {
+      const { data } = await db.from("incomplete_sets").select("*");
+      return new Map(((data ?? []) as IncompleteSet[]).map((r) => [r.product_id, r]));
+    },
+  });
 }

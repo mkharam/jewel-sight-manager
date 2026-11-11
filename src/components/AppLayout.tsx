@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, Scale, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Truck, UserCog, Watch, ClipboardList, Award, type LucideIcon } from "lucide-react";
+import { ArrowRight, Scale, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Truck, UserCog, Watch, ClipboardList, Award, Layers, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -59,6 +59,7 @@ function buildAdminNav(): NavSection[] {
         { to: "/watches", label: "الساعات", icon: Watch },
         { to: "/upload", label: "رفع قطع", icon: Upload, badgeKey: "uploads" },
         { to: "/weights", label: "قطع بلا وزن", icon: Scale, badgeKey: "weights" },
+        { to: "/sets", label: "الأطقم الناقصة", icon: Layers },
         { to: "/admin/products", label: "إدارة القطع", icon: ListChecks },
         { to: "/stock-take", label: "جرد التطبيق", icon: ClipboardCheck },
       ],
@@ -122,6 +123,7 @@ function buildNav(isAdmin: boolean, isManager: boolean, isEvalRecorder = false, 
         { to: "/reservations", label: "الحجوزات", icon: BookmarkCheck },
         { to: "/customers", label: "العملاء", icon: Users },
         { to: "/weights", label: "قطع بلا وزن", icon: Scale, badgeKey: "weights" },
+        { to: "/sets", label: "الأطقم الناقصة", icon: Layers },
         { to: "/leaderboard", label: "لوحة المتصدرين", icon: Trophy },
       ],
     },

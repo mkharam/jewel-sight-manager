@@ -51,3 +51,15 @@ language sql stable security definer set search_path = public as $$
 $$;
 revoke all on function public.set_part_sale_candidates(uuid, int) from public, anon;
 grant execute on function public.set_part_sale_candidates(uuid, int) to authenticated;
+
+-- الأطقم الناقصة (بيعت منها قطعة واحدة على الأقل) — لشارة «ناقص» وصفحة الأطقم الناقصة.
+create or replace view public.incomplete_sets with (security_invoker = true) as
+select product_id,
+       count(*)::int as total_parts,
+       count(*) filter (where status = 'sold')::int as sold_parts,
+       coalesce(sum(coalesce((sale_ref->>'grams')::numeric, weight_grams)) filter (where status = 'sold'), 0) as sold_grams,
+       max(sold_at) as last_sold_at
+from public.product_set_parts
+group by product_id
+having count(*) filter (where status = 'sold') > 0;
+grant select on public.incomplete_sets to authenticated;
