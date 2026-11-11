@@ -7,7 +7,7 @@
 // وتُرفع بحجمها الأصلي بترتيب أسماء الملفات. كل صورة قطعة، ثم يكتب الموظف وزنها تحتها.
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Check, Trash2, RotateCcw, Scale, ImagePlus, Loader2, AlertCircle, Video, FolderSync, ScanLine } from "lucide-react";
+import { Check, Trash2, RotateCcw, Scale, ImagePlus, Loader2, AlertCircle, Video, FolderSync, ScanLine, Stethoscope } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { readTag } from "@/lib/tagReader";
 import { useBoxedBarcodeScanner } from "@/lib/useBoxedBarcodeScanner";
@@ -15,6 +15,7 @@ import { normalizeDecimalInput } from "@/lib/constants";
 import { saveCapturedPiece, updateCapturedPiece, deleteCapturedPiece, analyzeCapturedPiece } from "@/lib/uploadRunner";
 import { toast } from "sonner";
 import { isBuiltInCamera } from "@/lib/cameras";
+import SonyDiagnostics from "@/components/SonyDiagnostics";
 
 const DEVICE_KEY = "sony.deviceId";
 // أسماء شائعة لكاميرات Sony وكروت التقاط HDMI — للتفضيل التلقائي فقط.
@@ -63,6 +64,7 @@ export default function SonyCameraCapture({ open, onClose, userId, branchId, onF
   const [shots, setShots] = useState<Shot[]>([]);
   const [karat, setKarat] = useState<"18K" | "21K">("18K");
   const [flash, setFlash] = useState(false);
+  const [diagOpen, setDiagOpen] = useState(false);
 
   const productIds = useRef<Record<string, string>>({});
   const weights = useRef<Record<string, string>>({});
@@ -398,6 +400,9 @@ export default function SonyCameraCapture({ open, onClose, userId, branchId, onF
         <button onClick={() => void start(deviceId)} className="p-2 text-white" aria-label="إعادة تشغيل الكاميرا" title="إعادة تشغيل الكاميرا">
           <RotateCcw className="size-5" />
         </button>
+        <button onClick={() => { stopStream(); setDiagOpen(true); }} className="flex items-center gap-1 rounded-lg border border-white/30 px-2 py-1.5 text-xs text-white" title="فحص سبب عدم اتصال الكاميرا">
+          <Stethoscope className="size-4" /> فحص الاتصال
+        </button>
       </div>
 
       <div className="relative flex-1 overflow-hidden bg-black flex items-center justify-center">
@@ -406,6 +411,9 @@ export default function SonyCameraCapture({ open, onClose, userId, branchId, onF
           <div className="text-center text-white p-6 space-y-2 max-w-sm">
             <Video className="size-10 mx-auto text-white/70" />
             <p className="font-semibold text-sm">{error ?? "اختر الكاميرا من القائمة بالأعلى"}</p>
+            <Button variant="secondary" size="sm" onClick={() => setDiagOpen(true)}>
+              <Stethoscope className="size-4 ml-1" /> لا تتصل؟ افحص السبب
+            </Button>
             <p className="text-xs text-white/60 leading-relaxed">
               Sony a7 III: كابل USB وبرنامج Imaging Edge Webcam. أي كاميرا عبر HDMI: كرت التقاط (مثل Cam Link) يظهر هنا كأنه كاميرا.
               ولأعلى دقة صوّر بالكاميرا ثم استورد الصور بالزر أعلى اليسار.
@@ -495,6 +503,7 @@ export default function SonyCameraCapture({ open, onClose, userId, branchId, onF
           <Scale className="size-3" /> كل صورة تُحفظ فوراً — الكود يُقرأ من الليبل تلقائياً (أو امسحه بمسدس الباركود)، والوزن يأتي من أمارسوفت أو اكتبه
         </p>
       )}
+      <SonyDiagnostics open={diagOpen} onClose={() => setDiagOpen(false)} onUse={(id) => { void refreshDevices().then(() => start(id)); }} />
     </div>
   );
 }
