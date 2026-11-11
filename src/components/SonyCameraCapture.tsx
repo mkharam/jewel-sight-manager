@@ -7,7 +7,10 @@
 // وتُرفع بحجمها الأصلي بترتيب أسماء الملفات. كل صورة قطعة، ثم يكتب الموظف وزنها تحتها.
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Check, Trash2, RotateCcw, Scale, ImagePlus, Loader2, AlertCircle, Video, FolderSync } from "lucide-react";
+import { Check, Trash2, RotateCcw, Scale, ImagePlus, Loader2, AlertCircle, Video, FolderSync, ScanLine } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { readTag } from "@/lib/tagReader";
+import { useBoxedBarcodeScanner } from "@/lib/useBoxedBarcodeScanner";
 import { normalizeDecimalInput } from "@/lib/constants";
 import { saveCapturedPiece, updateCapturedPiece, deleteCapturedPiece, analyzeCapturedPiece } from "@/lib/uploadRunner";
 import { toast } from "sonner";
@@ -23,7 +26,17 @@ const writeSaved = (id: string) => {
 };
 
 type SaveState = "saving" | "saved" | "error";
-type Shot = { id: string; url: string; weight: string; saveState: SaveState };
+type Shot = { id: string; url: string; weight: string; barcode: string; saveState: SaveState };
+type TagInfo = { tag: string; in_stock: boolean; karat: string | null; grams: number | null; type_name: string | null };
+
+// يجيب نوع القطعة ووزنها وعيارها من أمارسوفت لرقم الليبل.
+async function lookupTag(tag: string): Promise<TagInfo | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = await (supabase as any).rpc("amarsoft_lookup_tag", { p_code: tag });
+  const r = Array.isArray(data) ? data[0] : null;
+  if (!r || !r.found) return null;
+  return { tag, in_stock: !!r.in_stock, karat: r.karat, type_name: r.type_name, grams: r.grams != null ? Number(r.grams) : null };
+}
 
 interface Props {
   open: boolean;
@@ -54,6 +67,14 @@ export default function SonyCameraCapture({ open, onClose, userId, branchId, onF
   const productIds = useRef<Record<string, string>>({});
   const weights = useRef<Record<string, string>>({});
   const weightTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // الباركود: يُقرأ من البث المباشر قبل التصوير (وجّه الكاميرا على الليبل)، أو من الصورة نفسها
+  // بعد التصوير/الاستيراد، أو يُكتب يدوياً / بمسدس باركود USB في خانة «كود» تحت الصورة.
+  const barcodes = useRef<Record<string, string>>({});
+  const barcodeTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const [pendingTag, setPendingTag] = useState<TagInfo | { tag: string } | null>(null);
+  const pendingRef = useRef<TagInfo | { tag: string } | null>(null);
+  pendingRef.current = pendingTag;
+  const lastUsedTag = useRef<string | null>(null);
   const pendingDelete = useRef<Set<string>>(new Set());
 
   const stopStream = () => {
@@ -139,6 +160,8 @@ export default function SonyCameraCapture({ open, onClose, userId, branchId, onF
     productIds.current = {};
     weights.current = {};
     weightTimers.current = {};
+    barcodes.current = {};
+    barcodeTimers.current = {};
     pendingDelete.current = new Set();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -156,14 +179,57 @@ export default function SonyCameraCapture({ open, onClose, userId, branchId, onF
       .catch(() => markFailed(id, "تعذّر حفظ الوزن — تحقق من الاتصال وأعد كتابته"));
   };
 
+  const syncBarcode = (id: string) => {
+    const productId = productIds.current[id];
+    if (!productId) return;
+    updateCapturedPiece(productId, { barcode_value: (barcodes.current[id] ?? "").trim() || null })
+      .catch(() => markFailed(id, "تعذّر حفظ الكود — قد يكون مستخدماً لقطعة أخرى"));
+  };
+
+  const setBarcode = (id: string, barcode: string) => {
+    barcodes.current[id] = barcode;
+    setShots((prev) => prev.map((s) => (s.id === id ? { ...s, barcode } : s)));
+    clearTimeout(barcodeTimers.current[id]);
+    barcodeTimers.current[id] = setTimeout(() => syncBarcode(id), 500);
+  };
+
+  // كود جديد لصورة: نجيب وزنه من أمارسوفت ونكتبه إن لم يكتب الموظف وزناً.
+  const applyTagWeight = async (id: string, tag: string) => {
+    const info = await lookupTag(tag);
+    if (info?.grams && !weights.current[id] && id in weights.current) setWeight(id, String(info.grams));
+  };
+
+  // فحص مستمر للبث المباشر: ليبل داخل الإطار يُحجز للصورة التالية.
+  useBoxedBarcodeScanner(videoRef, open && ready, (tag) => {
+    if (tag === lastUsedTag.current || tag === pendingRef.current?.tag) return;
+    lastUsedTag.current = null;
+    setPendingTag({ tag });
+    void lookupTag(tag).then((info) => { if (info && pendingRef.current?.tag === tag) setPendingTag(info); });
+  });
+
   // كل صورة تُرفع وتُحفظ فوراً لحظة التقاطها/استيرادها، فلا يضيع شيء إن أُغلقت الصفحة.
-  const saveShot = (blob: Blob | File) => {
+  const saveShot = (blob: Blob | File, opts: { useLive?: boolean } = {}) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    weights.current[id] = "";
-    setShots((prev) => [...prev, { id, url: URL.createObjectURL(blob), weight: "", saveState: "saving" }]);
+    const pending = opts.useLive ? pendingRef.current : null;
+    const info = pending && "in_stock" in pending ? (pending as TagInfo) : null;
+    const tag = pending?.tag ?? "";
+    const autoWeight = info?.grams ? String(info.grams) : "";
+    const shotKarat = info?.karat === "21" ? "21K" : info?.karat === "18" ? "18K" : karat;
+    if (tag) { lastUsedTag.current = tag; setPendingTag(null); }
+    weights.current[id] = autoWeight;
+    barcodes.current[id] = tag;
+    setShots((prev) => [...prev, { id, url: URL.createObjectURL(blob), weight: autoWeight, barcode: tag, saveState: "saving" }]);
     setFocusId(id);
+    // ما انقراش ليبل قبل التصوير؟ نقراه من الصورة نفسها (صور الكاميرا عالية الدقة تقرأ جيداً).
+    if (!tag) {
+      void readTag(blob).then((found) => {
+        if (!found || barcodes.current[id] || !(id in barcodes.current)) return;
+        setBarcode(id, found);
+        void applyTagWeight(id, found);
+      }).catch(() => {});
+    }
     const file = new File([blob], `capture-${id}.jpg`, { type: blob.type || "image/jpeg" });
-    saveCapturedPiece(file, { userId, branchId, trayMode: false }, null, null, karat)
+    saveCapturedPiece(file, { userId, branchId, trayMode: false }, autoWeight ? Number(autoWeight) : null, tag || null, shotKarat)
       .then(({ productId, imageId }) => {
         if (pendingDelete.current.has(id)) {
           pendingDelete.current.delete(id);
@@ -172,7 +238,8 @@ export default function SonyCameraCapture({ open, onClose, userId, branchId, onF
         }
         productIds.current[id] = productId;
         setShots((prev) => prev.map((s) => (s.id === id ? { ...s, saveState: "saved" } : s)));
-        if (weights.current[id]) syncWeight(id);
+        if (weights.current[id] && weights.current[id] !== autoWeight) syncWeight(id);
+        if (barcodes.current[id] && barcodes.current[id] !== tag) syncBarcode(id);
         void analyzeCapturedPiece(file, { productId, imageId }, { karat: true, itemType: false }).catch(() => {});
       })
       .catch(() => markFailed(id, "تعذّر حفظ إحدى الصور — تحقق من الاتصال وأعد المحاولة"));
@@ -187,7 +254,7 @@ export default function SonyCameraCapture({ open, onClose, userId, branchId, onF
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
-    canvas.toBlob((blob) => { if (blob) saveShot(blob); }, "image/jpeg", 0.92);
+    canvas.toBlob((blob) => { if (blob) saveShot(blob, { useLive: true }); }, "image/jpeg", 0.92);
   };
 
   // استيراد صور الكاميرا (JPEG) بترتيب أسماء الملفات (DSC00001, DSC00002…)، بفاصل قصير حتى لا
@@ -271,9 +338,11 @@ export default function SonyCameraCapture({ open, onClose, userId, branchId, onF
       return prev.filter((s) => s.id !== id);
     });
     clearTimeout(weightTimers.current[id]);
+    clearTimeout(barcodeTimers.current[id]);
     const productId = productIds.current[id];
     delete productIds.current[id];
     delete weights.current[id];
+    delete barcodes.current[id];
     if (productId) {
       deleteCapturedPiece(productId).catch(() => toast.error("تعذّر حذف القطعة — لا تزال في الكتالوج، احذفها من «مراجعة غير المسمّاة»"));
     } else {
@@ -343,6 +412,17 @@ export default function SonyCameraCapture({ open, onClose, userId, branchId, onF
             </p>
           </div>
         )}
+        {pendingTag && (
+          <div className="absolute top-3 inset-x-0 flex justify-center pointer-events-none">
+            <div className="flex items-center gap-2 rounded-full bg-black/75 border border-primary/60 px-3 py-1.5 text-xs text-white">
+              <ScanLine className="size-4 text-primary" />
+              <span dir="ltr" className="font-mono font-bold">{pendingTag.tag}</span>
+              {"in_stock" in pendingTag && pendingTag.grams != null && <span>· {pendingTag.grams} جم</span>}
+              {"in_stock" in pendingTag && pendingTag.karat && <span>· {pendingTag.karat}K</span>}
+              <span className="text-white/60">— صوّر الآن</span>
+            </div>
+          </div>
+        )}
         {flash && <div className="absolute inset-0 bg-white/80 animate-pulse" />}
       </div>
 
@@ -374,6 +454,24 @@ export default function SonyCameraCapture({ open, onClose, userId, branchId, onF
                 onBlur={() => { clearTimeout(weightTimers.current[s.id]); syncWeight(s.id); }}
                 className="w-16 h-7 rounded-md bg-white/10 border border-white/25 text-white text-[10px] text-center placeholder:text-white/40 focus:bg-white/20 focus:outline-none focus:ring-1 focus:ring-primary"
               />
+              <input
+                type="text"
+                dir="ltr"
+                placeholder="كود"
+                value={s.barcode}
+                onChange={(e) => setBarcode(s.id, e.target.value)}
+                onKeyDown={(e) => {
+                  // مسدس الباركود يكتب الكود ثم Enter: نحفظ ونجيب الوزن من أمارسوفت.
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    clearTimeout(barcodeTimers.current[s.id]);
+                    syncBarcode(s.id);
+                    if (s.barcode.trim()) void applyTagWeight(s.id, s.barcode.trim());
+                  }
+                }}
+                onBlur={() => { clearTimeout(barcodeTimers.current[s.id]); syncBarcode(s.id); if (s.barcode.trim()) void applyTagWeight(s.id, s.barcode.trim()); }}
+                className="w-16 h-7 rounded-md bg-white/10 border border-white/25 text-white text-[10px] text-center placeholder:text-white/40 focus:bg-white/20 focus:outline-none focus:ring-1 focus:ring-primary"
+              />
             </div>
           ))}
         </div>
@@ -394,7 +492,7 @@ export default function SonyCameraCapture({ open, onClose, userId, branchId, onF
 
       {shots.length > 0 && (
         <p className="flex items-center justify-center gap-1 text-[11px] text-white/50 pb-2 -mt-3">
-          <Scale className="size-3" /> كل صورة تُحفظ فوراً — الوزن اختياري ويُحفظ تلقائياً أثناء الكتابة
+          <Scale className="size-3" /> كل صورة تُحفظ فوراً — الكود يُقرأ من الليبل تلقائياً (أو امسحه بمسدس الباركود)، والوزن يأتي من أمارسوفت أو اكتبه
         </p>
       )}
     </div>
