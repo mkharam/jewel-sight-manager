@@ -13,12 +13,12 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Camera, FolderUp, Loader2, Sparkles, X, CheckCircle2, AlertCircle, Layers, ImageOff, ScanLine, Video } from "lucide-react";
+import { Camera, FolderUp, Loader2, Sparkles, X, CheckCircle2, AlertCircle, Layers, ImageOff, ScanLine, Images } from "lucide-react";
 import { toast } from "sonner";
 import { runUploadBatch } from "@/lib/uploadRunner";
 import { useUploadQueue, uploadQueue } from "@/lib/uploadQueue";
 import BulkCameraCapture from "@/components/BulkCameraCapture";
-import SonyCameraCapture from "@/components/SonyCameraCapture";
+import SessionUpload from "@/components/SessionUpload";
 import ProductCard from "@/components/ProductCard";
 
 const supportsInAppCamera = () =>
@@ -39,7 +39,7 @@ export default function Upload() {
   const queue = useUploadQueue();
   const [bulkCameraOpen, setBulkCameraOpen] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
-  const [sonyOpen, setSonyOpen] = useState(false);
+  const [sessionOpen, setSessionOpen] = useState(false);
   // معرّفات آخر جلسة "تصوير متتالي" — تُعرض كبطاقات ملخّص فور الرجوع لهذه الصفحة، تأكيداً
   // بصرياً أن كل قطعة حُفظت وتحلّلت فعلاً (لا مجرّد toast عابر). راجع onFinished أدناه.
   const [lastSessionIds, setLastSessionIds] = useState<string[]>([]);
@@ -194,12 +194,10 @@ export default function Upload() {
           </p>
         )}
 
-        {/* كاميرا خارجية (Sony a7 III / HDMI) — شاشة مستقلة عن «تصوير متتالي» أعلاه. */}
-        {supportsInAppCamera() && (
-          <Button variant="outline" className="h-11 w-full" onClick={() => (user ? setSonyOpen(true) : toast.error("سجّل الدخول أولاً"))}>
-            <Video className="size-4 ml-2" /> تصوير بكاميرا Sony / HDMI
-          </Button>
-        )}
+        {/* جلسة تصوير: ليبل ثم صور كل قطعة، تُرفع دفعة واحدة وتُربط تلقائياً بالباركود. */}
+        <Button variant="outline" className="h-11 w-full" onClick={() => (user ? setSessionOpen(true) : toast.error("سجّل الدخول أولاً"))}>
+          <Images className="size-4 ml-2" /> رفع جلسة تصوير (ليبل + صور)
+        </Button>
 
         {supportsInAppCamera() && (
           <Link to="/live-add">
@@ -303,9 +301,9 @@ export default function Upload() {
         </p>
       )}
 
-      <SonyCameraCapture
-        open={sonyOpen}
-        onClose={() => setSonyOpen(false)}
+      <SessionUpload
+        open={sessionOpen}
+        onClose={() => setSessionOpen(false)}
         onFinished={setLastSessionIds}
         userId={user?.id ?? ""}
         branchId={branchId === NO_BRANCH ? null : branchId}

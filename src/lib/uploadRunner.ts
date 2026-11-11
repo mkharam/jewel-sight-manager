@@ -722,3 +722,19 @@ export async function resumePendingUploads(userId: string): Promise<number> {
   for (const p of pending) await removePending(p.id);
   return pending.length;
 }
+
+/** صورة إضافية لقطعة محفوظة (زاوية ثانية) — ليست الرئيسية. يرمي عند الفشل. */
+export async function addExtraPieceImage(productId: string, file: File, userId: string): Promise<void> {
+  const { path, thumbPath } = await uploadFile(file, userId, Math.floor(Math.random() * 1_000_000));
+  const { error } = await supabase.from("product_images").insert({
+    product_id: productId,
+    storage_path: path,
+    thumb_path: thumbPath,
+    is_primary: false,
+    uploaded_by: userId,
+  } as any);
+  if (error) {
+    await removeUnreferencedFiles([path, thumbPath]);
+    throw error;
+  }
+}
