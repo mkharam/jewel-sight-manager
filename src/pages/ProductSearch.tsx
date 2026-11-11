@@ -39,8 +39,8 @@ interface Filters {
   maxWeight: string;
   /** وسم من تحليل الذكاء الاصطناعي (لون المعدن، حجر، ستايل…) */
   tag: string;
-  /** ترتيب حسب تاريخ الإضافة: الأحدث أولاً أو الأقدم أولاً */
-  sortDir: "desc" | "asc";
+  /** الترتيب: تاريخ الإضافة (الأحدث/الأقدم) أو الوزن (الأثقل/الأخف) */
+  sortDir: "desc" | "asc" | "heavy" | "light";
 }
 
 const initialFilters: Filters = {
@@ -292,7 +292,7 @@ export default function ProductSearch() {
   // «صور كبيرة»: قطعة في كل سطر (الصورة بعرض الشاشة) بكل التفاصيل — يتحفظ في الجهاز.
   const [bigView, setBigView] = useState(() => { try { return localStorage.getItem("search.bigView") === "1"; } catch { return false; } });
   const toggleBigView = () => setBigView((v) => { try { localStorage.setItem("search.bigView", v ? "0" : "1"); } catch { /* تجاهل */ } return !v; });
-  const gridCls = bigView ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" : "grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-1.5 md:gap-2";
+  const gridCls = bigView ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" : "grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3";
   const similarIds = useMemo(() => similarMatches?.map((m) => m.product_id) ?? null, [similarMatches]);
 
   // "قطع مشابهة" من صفحة القطعة: /?similar=<productId> — يستخدم البصمة المحفوظة (بدون تحليل جديد)
@@ -347,6 +347,19 @@ export default function ProductSearch() {
       const SELECT =
         "id,name,sku,barcode_value,karat,gold_color,weight_grams,ring_size,sale_price,promo_price,quantity,status,branch_id,search_tags,description,category_id,created_at,branch:branches(name),category:categories(name),images:product_images(storage_path,thumb_path,is_primary)";
       const sortAsc = debounced.sortDir === "asc";
+      const byWeight = debounced.sortDir === "heavy" || debounced.sortDir === "light";
+      // ترتيب الاستعلام: بالوزن (القطع بلا وزن في الآخر) أو بتاريخ الإضافة.
+      const ordered = (q: any) => byWeight
+        ? q.order("weight_grams", { ascending: debounced.sortDir === "light", nullsFirst: false }).order("created_at", { ascending: false })
+        : q.order("created_at", { ascending: sortAsc });
+      const weightSort = (list: any[]) => byWeight
+        ? [...list].sort((a, b) => {
+            const wa = a.weight_grams ?? null, wb = b.weight_grams ?? null;
+            if (wa == null) return wb == null ? 0 : 1;
+            if (wb == null) return -1;
+            return debounced.sortDir === "light" ? wa - wb : wb - wa;
+          })
+        : list;
 
       // لون الحجر مُخزَّن في جدول product_stones منفصل (لا عمود مباشر على products) —
       // نجلب مسبقاً معرّفات القطع المطابقة مرة واحدة ثم نستخدمها كفلتر .in() عادي.
@@ -391,7 +404,7 @@ export default function ProductSearch() {
           .limit(120);
         if (error) throw error;
         const idx = new Map(similarIds.map((id, i) => [id, i]));
-        return [...(data ?? [])].sort((a: any, b: any) => (idx.get(a.id) ?? 999) - (idx.get(b.id) ?? 999));
+        return weightSort([...(data ?? [])].sort((a: any, b: any) => (idx.get(a.id) ?? 999) - (idx.get(b.id) ?? 999)));
       }
 
       const raw = sanitizeTerm(debounced.q);
@@ -419,7 +432,7 @@ export default function ProductSearch() {
           applyFilters(supabase.from("products").select(SELECT))
             .or(orParts.join(","))
             .order("created_at", { ascending: sortAsc })
-            .limit(200),
+            .limit(byWeight ? 400 : 200),
           // مجموعة احتياطية للمطابقة التقريبية (حروف ناقصة/كتابة ليبية)
           applyFilters(supabase.from("products").select(SELECT))
             .order("created_at", { ascending: sortAsc })
@@ -458,11 +471,10 @@ export default function ProductSearch() {
             return sortAsc ? ta - tb : tb - ta;
           });
 
-        return scored.map((x) => x.p);
+        return weightSort(scored.map((x) => x.p));
       }
 
-      const { data, error } = await applyFilters(supabase.from("products").select(SELECT))
-        .order("created_at", { ascending: sortAsc })
+      const { data, error } = await ordered(applyFilters(supabase.from("products").select(SELECT)))
         .range(0, pages * PAGE_SIZE - 1);
       if (error) throw error;
       return data ?? [];
@@ -928,15 +940,17 @@ export default function ProductSearch() {
             {bigView ? <LayoutGrid className="size-4" /> : <Square className="size-4" />}
             <span className="hidden xs:inline xs:mr-1">{bigView ? "شبكة" : "صور كبيرة"}</span>
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setFilters((f) => ({ ...f, sortDir: f.sortDir === "desc" ? "asc" : "desc" }))}
-            title={filters.sortDir === "desc" ? "الأحدث أولاً" : "الأقدم أولاً"}
+          <select
+            value={filters.sortDir}
+            onChange={(e) => setFilters((f) => ({ ...f, sortDir: e.target.value as Filters["sortDir"] }))}
+            aria-label="الترتيب"
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
           >
-            <ArrowUpDown className="size-4 xs:ml-1" />
-            <span className="hidden xs:inline">{filters.sortDir === "desc" ? "الأحدث أولاً" : "الأقدم أولاً"}</span>
-          </Button>
+            <option value="desc">الأحدث أولاً</option>
+            <option value="asc">الأقدم أولاً</option>
+            <option value="heavy">الأثقل أولاً</option>
+            <option value="light">الأخف أولاً</option>
+          </select>
           {canBulkEdit && (
             <Button
               size="sm"
@@ -1036,7 +1050,7 @@ export default function ProductSearch() {
                 onToggleSelect={toggleSelect}
                 onStatusChanged={refreshProducts}
                 lastQuote={latestQuotes?.get(p.id) ?? null}
-                dense={!bigView}
+                dense={false}
               />
             ))}
           </div>
@@ -1089,7 +1103,7 @@ function SimilaritySection({
       </div>
       <div className={gridCls}>
         {products.slice(0, limit).map((p: any) => (
-          <ProductCard key={p.id} product={p} match={p._match} lastQuote={quotes?.get(p.id) ?? null} dense={!gridCls.includes("grid-cols-1")} />
+          <ProductCard key={p.id} product={p} match={p._match} lastQuote={quotes?.get(p.id) ?? null} dense={false} />
         ))}
       </div>
       {limit < products.length && (

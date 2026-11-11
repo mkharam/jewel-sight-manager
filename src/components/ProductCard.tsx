@@ -147,7 +147,7 @@ export default function ProductCard({
             src={imgUrl}
             fallbackSrc={primary ? getImageUrl(primary.storage_path) : null}
             alt={product.name}
-            className={`w-full h-full ${dense ? "object-cover" : "object-contain"} group-hover:scale-105 transition-transform duration-300`}
+            className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
             loading="lazy"
             decoding="async"
           />
@@ -181,7 +181,7 @@ export default function ProductCard({
       </div>
       <div className={dense ? "p-1.5 space-y-0.5" : "p-3 space-y-1.5"}>
         <div className="flex items-center gap-1.5">
-          <h3 className={`font-semibold line-clamp-1 flex-1 ${dense ? "text-xs leading-tight" : "text-sm"}`}>{product.name}</h3>
+          <h3 className={`font-semibold line-clamp-1 flex-1 ${dense ? "text-[11px] leading-tight" : "text-sm"}`}>{product.name}</h3>
           {(product.quantity ?? 1) > 1 && (
             <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-primary/12 text-primary text-[11px] font-bold tabular-nums" title="الكمية المتوفرة">
               ×{product.quantity}
@@ -209,7 +209,7 @@ export default function ProductCard({
             {product.barcode_value}
           </p>
         )}
-        <div className={`flex items-center flex-wrap text-muted-foreground ${dense ? "gap-1 text-[11px] leading-tight" : "gap-1.5 text-xs"}`}>
+        <div className={`flex items-center flex-wrap text-muted-foreground ${dense ? "gap-1 text-[10px] leading-tight" : "gap-1.5 text-xs"}`}>
           {(product.karat || product.gold_color) && (
             <span data-karat-badge className="font-semibold text-foreground">
               {[product.karat, GOLD_COLORS.find((c) => c.value === product.gold_color)?.label].filter(Boolean).join(" · ")}
