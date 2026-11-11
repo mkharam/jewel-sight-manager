@@ -292,7 +292,7 @@ export default function ProductSearch() {
   // «صور كبيرة»: قطعة في كل سطر (الصورة بعرض الشاشة) بكل التفاصيل — يتحفظ في الجهاز.
   const [bigView, setBigView] = useState(() => { try { return localStorage.getItem("search.bigView") === "1"; } catch { return false; } });
   const toggleBigView = () => setBigView((v) => { try { localStorage.setItem("search.bigView", v ? "0" : "1"); } catch { /* تجاهل */ } return !v; });
-  const gridCls = bigView ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" : "grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3";
+  const gridCls = bigView ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" : "grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-1.5 md:gap-2";
   const similarIds = useMemo(() => similarMatches?.map((m) => m.product_id) ?? null, [similarMatches]);
 
   // "قطع مشابهة" من صفحة القطعة: /?similar=<productId> — يستخدم البصمة المحفوظة (بدون تحليل جديد)
@@ -1036,7 +1036,7 @@ export default function ProductSearch() {
                 onToggleSelect={toggleSelect}
                 onStatusChanged={refreshProducts}
                 lastQuote={latestQuotes?.get(p.id) ?? null}
-                dense={false}
+                dense={!bigView}
               />
             ))}
           </div>
@@ -1089,7 +1089,7 @@ function SimilaritySection({
       </div>
       <div className={gridCls}>
         {products.slice(0, limit).map((p: any) => (
-          <ProductCard key={p.id} product={p} match={p._match} lastQuote={quotes?.get(p.id) ?? null} dense={false} />
+          <ProductCard key={p.id} product={p} match={p._match} lastQuote={quotes?.get(p.id) ?? null} dense={!gridCls.includes("grid-cols-1")} />
         ))}
       </div>
       {limit < products.length && (
