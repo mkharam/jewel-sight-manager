@@ -724,17 +724,29 @@ export async function resumePendingUploads(userId: string): Promise<number> {
 }
 
 /** صورة إضافية لقطعة محفوظة (زاوية ثانية) — ليست الرئيسية. يرمي عند الفشل. */
-export async function addExtraPieceImage(productId: string, file: File, userId: string): Promise<void> {
+export async function addExtraPieceImage(productId: string, file: File, userId: string): Promise<string> {
   const { path, thumbPath } = await uploadFile(file, userId, Math.floor(Math.random() * 1_000_000));
-  const { error } = await supabase.from("product_images").insert({
+  const { data, error } = await supabase.from("product_images").insert({
     product_id: productId,
     storage_path: path,
     thumb_path: thumbPath,
     is_primary: false,
     uploaded_by: userId,
-  } as any);
-  if (error) {
+  } as any).select("id").single();
+  if (error || !data) {
     await removeUnreferencedFiles([path, thumbPath]);
-    throw error;
+    throw error ?? new Error("insert failed");
+  }
+  return (data as { id: string }).id;
+}
+
+/** بصمة بحث بالصورة لصورة إضافية (بدون تغيير بيانات القطعة) — حتى يجد البحث بالصورة القطعة
+ *  من أي زاوية صُوّرت. لا يرمي؛ الصور بلا بصمة تلتقطها إعادة الفهرسة لاحقاً. */
+export async function indexExtraImage(file: File, imageId: string): Promise<void> {
+  try {
+    const { base64, mimeType } = await prepareForAIBase64(file);
+    await supabase.functions.invoke("analyze-product-image", { body: { imageBase64: base64, mimeType, categories: [], imageId } });
+  } catch (e) {
+    console.warn("extra image indexing failed", e);
   }
 }

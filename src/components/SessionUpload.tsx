@@ -10,11 +10,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { readTag } from "@/lib/tagReader";
 import { exifDate } from "@/lib/exifDate";
 import { normalizeDecimalInput } from "@/lib/constants";
-import { saveCapturedPiece, addExtraPieceImage, analyzeCapturedPiece } from "@/lib/uploadRunner";
+import { saveCapturedPiece, addExtraPieceImage, analyzeCapturedPiece, indexExtraImage } from "@/lib/uploadRunner";
 
 type Photo = { id: string; file: File; url: string; time: number; tag: string | null; isLabel: boolean; use: boolean };
 type Info = { found: boolean; in_stock: boolean; karat: string | null; grams: number | null; type_name: string | null; existing: string | null };
-type Group = { id: string; tag: string; photos: Photo[]; weight: string; karat: "18K" | "21K"; info: Info | null; state?: "saving" | "saved" | "error" };
+type Group = { id: string; tag: string; photos: Photo[]; weight: string; karat: "18K" | "21K"; info: Info | null; state?: "saving" | "saved" | "error"; ai?: string | null | "pending" };
 
 async function lookup(tag: string): Promise<Info | null> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -30,7 +30,7 @@ interface Props { open: boolean; onClose: () => void; userId: string; branchId: 
 
 export default function SessionUpload({ open, onClose, userId, branchId, onFinished }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [phase, setPhase] = useState<"pick" | "reading" | "review" | "saving">("pick");
+  const [phase, setPhase] = useState<"pick" | "reading" | "review" | "saving" | "analyzing" | "done">("pick");
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [groups, setGroups] = useState<Group[]>([]);
   const [defaultKarat, setDefaultKarat] = useState<"18K" | "21K">("18K");
@@ -119,9 +119,13 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
     return w;
   };
 
+  // الحفظ أولاً لكل القطع (حتى لا يضيع شيء)، ثم التحليل بالذكاء الاصطناعي: يسمّي القطعة
+  // ويحدد نوعها، ويصنع بصمة كل صورة (الرئيسية والإضافية) للبحث بالصورة.
   const saveAll = async () => {
     setPhase("saving");
     const ids: string[] = [];
+    const toSave = groups.filter((g) => g.state !== "saved" && g.photos.some((p) => p.use)).length;
+    const toAnalyze: { gid: string; file: File; saved: { productId: string; imageId: string }; extras: { file: File; imageId: string }[] }[] = [];
     for (const g of groups) {
       if (g.state === "saved") continue;
       const use = g.photos.filter((p) => p.use);
@@ -130,22 +134,35 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
       try {
         const w = parseFloat(g.weight);
         const saved = await saveCapturedPiece(use[0].file, { userId, branchId, trayMode: false }, !isNaN(w) && w > 0 ? w : null, g.tag.trim() || null, g.karat);
+        const extras: { file: File; imageId: string }[] = [];
         for (const extra of use.slice(1)) {
-          await addExtraPieceImage(saved.productId, extra.file, userId).catch(() => toast.error("تعذّر حفظ صورة إضافية لإحدى القطع"));
+          try { extras.push({ file: extra.file, imageId: await addExtraPieceImage(saved.productId, extra.file, userId) }); }
+          catch { toast.error("تعذّر حفظ صورة إضافية لإحدى القطع"); }
         }
         ids.push(saved.productId);
-        void analyzeCapturedPiece(use[0].file, saved, { karat: true, itemType: false }).catch(() => {});
-        update(g.id, { state: "saved" });
+        toAnalyze.push({ gid: g.id, file: use[0].file, saved, extras });
+        update(g.id, { state: "saved", ai: "pending" });
       } catch {
         update(g.id, { state: "error" });
       }
     }
-    setPhase("review");
-    const failed = groups.length - ids.length;
-    if (ids.length) toast.success(`تم حفظ ${ids.length} قطعة`);
-    if (ids.length) onFinished?.(ids);
-    if (!failed) onClose();
-    else toast.error("بعض القطع لم تُحفظ — راجعها واضغط حفظ مرة أخرى");
+    if (ids.length) { toast.success(`تم حفظ ${ids.length} قطعة — جارٍ التحليل والتسمية…`); onFinished?.(ids); }
+    const failed = ids.length < toSave;
+    if (failed) toast.error("بعض القطع لم تُحفظ — راجعها واضغط حفظ مرة أخرى");
+
+    setPhase("analyzing");
+    // قطعتان بالتوازي — أسرع دون إغراق مزوّد الذكاء الاصطناعي.
+    let next = 0;
+    const worker = async () => {
+      while (next < toAnalyze.length) {
+        const job = toAnalyze[next++];
+        const name = await analyzeCapturedPiece(job.file, job.saved, { karat: true, itemType: false }).catch(() => null);
+        for (const ex of job.extras) await indexExtraImage(ex.file, ex.imageId);
+        update(job.gid, { ai: name });
+      }
+    };
+    await Promise.all([worker(), worker()]);
+    setPhase(failed ? "review" : "done");
   };
 
   if (!open) return null;
@@ -193,7 +210,7 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
         </div>
       )}
 
-      {(phase === "review" || phase === "saving") && (
+      {(phase === "review" || phase === "saving" || phase === "analyzing" || phase === "done") && (
         <>
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
             <p className="text-sm text-muted-foreground">{pieces} قطعة — اضغط على صورة لاستبعادها أو تضمينها.</p>
@@ -203,7 +220,10 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
                 <div key={g.id} className={`rounded-xl border p-3 space-y-2 ${warns.length ? "border-amber-400" : ""}`}>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-muted-foreground">#{i + 1}</span>
-                    {g.info?.type_name && <span className="text-sm font-semibold">{g.info.type_name}</span>}
+                    {g.ai && g.ai !== "pending" ? <span className="text-sm font-semibold text-primary">{g.ai}</span>
+                      : g.info?.type_name && <span className="text-sm font-semibold">{g.info.type_name}</span>}
+                    {g.ai === "pending" && <span className="flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3 animate-spin" />يحلل…</span>}
+                    {g.state === "saved" && g.ai === null && <span className="text-xs text-muted-foreground">سيُحلل لاحقاً تلقائياً</span>}
                     <span className="flex-1" />
                     {g.state === "saving" && <Loader2 className="size-4 animate-spin" />}
                     {g.state === "saved" && <Check className="size-4 text-green-600" />}
@@ -237,10 +257,18 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
             })}
           </div>
           <div className="border-t p-3 flex gap-2">
-            <Button variant="outline" onClick={() => setPhase("pick")} disabled={phase === "saving"}>رجوع</Button>
-            <Button className="flex-1 h-11" onClick={() => void saveAll()} disabled={phase === "saving" || !pieces}>
-              {phase === "saving" ? <Loader2 className="size-4 animate-spin ml-2" /> : <Check className="size-4 ml-2" />} حفظ الكل ({pieces})
-            </Button>
+            {phase === "done" || phase === "analyzing" ? (
+              <Button className="flex-1 h-11" onClick={onClose}>
+                {phase === "analyzing" ? <><Loader2 className="size-4 animate-spin ml-2" /> جارٍ التحليل… (يمكنك الإغلاق، يكمل لاحقاً)</> : <><Check className="size-4 ml-2" /> تم</>}
+              </Button>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setPhase("pick")} disabled={phase === "saving"}>رجوع</Button>
+                <Button className="flex-1 h-11" onClick={() => void saveAll()} disabled={phase === "saving" || !pieces}>
+                  {phase === "saving" ? <Loader2 className="size-4 animate-spin ml-2" /> : <Check className="size-4 ml-2" />} حفظ الكل ({pieces})
+                </Button>
+              </>
+            )}
           </div>
         </>
       )}
