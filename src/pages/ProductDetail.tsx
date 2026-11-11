@@ -24,6 +24,7 @@ import ReorderRequestDialog from "@/components/ReorderRequestDialog";
 import QuantityControl from "@/components/QuantityControl";
 import { AmarsoftPieceInfo } from "@/components/AmarsoftTagCheck";
 import ImageLightbox from "@/components/ImageLightbox";
+import SetPartsCard from "@/components/SetPartsCard";
 import EditOwnProductSheet from "@/components/EditOwnProductSheet";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
 import { invalidateInventoryAndSales } from "@/lib/queryInvalidation";
@@ -358,6 +359,13 @@ export default function ProductDetail() {
 
         {/* Info */}
         <div className="space-y-3">
+          <SetPartsCard
+            productId={product.id}
+            images={sortedImages}
+            isSetType={/طقم|طاقم|سيت/.test(`${product.item_type ?? ""} ${product.name ?? ""}`)}
+            canEdit={canAddPhoto}
+            totalWeight={product.weight_grams ?? null}
+          />
           <Card className="p-5 space-y-3">
             <div className="flex items-start justify-between gap-2">
               <div>

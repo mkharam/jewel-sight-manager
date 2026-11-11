@@ -742,11 +742,14 @@ export async function addExtraPieceImage(productId: string, file: File, userId: 
 
 /** بصمة بحث بالصورة لصورة إضافية (بدون تغيير بيانات القطعة) — حتى يجد البحث بالصورة القطعة
  *  من أي زاوية صُوّرت. لا يرمي؛ الصور بلا بصمة تلتقطها إعادة الفهرسة لاحقاً. */
-export async function indexExtraImage(file: File, imageId: string): Promise<void> {
+export async function indexExtraImage(file: File, imageId: string): Promise<string | null> {
   try {
     const { base64, mimeType } = await prepareForAIBase64(file);
-    await supabase.functions.invoke("analyze-product-image", { body: { imageBase64: base64, mimeType, categories: [], imageId } });
+    const { data } = await supabase.functions.invoke("analyze-product-image", { body: { imageBase64: base64, mimeType, categories: [], imageId } });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return ((data as any)?.analysis?.name_ar ?? (data as any)?.name_ar ?? null) as string | null;
   } catch (e) {
     console.warn("extra image indexing failed", e);
+    return null;
   }
 }

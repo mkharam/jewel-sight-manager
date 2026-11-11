@@ -14,7 +14,7 @@ import { saveCapturedPiece, addExtraPieceImage, analyzeCapturedPiece, indexExtra
 
 type Photo = { id: string; file: File; url: string; time: number; tag: string | null; isLabel: boolean; use: boolean };
 type Info = { found: boolean; in_stock: boolean; karat: string | null; grams: number | null; type_name: string | null; existing: string | null };
-type Group = { id: string; tag: string; photos: Photo[]; weight: string; karat: "18K" | "21K"; info: Info | null; state?: "saving" | "saved" | "error"; ai?: string | null | "pending" };
+type Group = { id: string; tag: string; photos: Photo[]; weight: string; karat: "18K" | "21K"; info: Info | null; state?: "saving" | "saved" | "error"; ai?: string | null | "pending"; isSet: boolean };
 
 async function lookup(tag: string): Promise<Info | null> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -61,11 +61,11 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
     for (const p of photos) {
       const cur = gs[gs.length - 1];
       if (p.tag && (!cur || cur.tag !== p.tag)) {
-        gs.push({ id: uid(), tag: p.tag, photos: [{ ...p, isLabel: true, use: false }], weight: "", karat: defaultKarat, info: null });
+        gs.push({ id: uid(), tag: p.tag, photos: [{ ...p, isLabel: true, use: false }], weight: "", karat: defaultKarat, info: null, isSet: false });
       } else if (cur) {
         cur.photos.push(p);
       } else {
-        gs.push({ id: uid(), tag: "", photos: [p], weight: "", karat: defaultKarat, info: null });
+        gs.push({ id: uid(), tag: "", photos: [p], weight: "", karat: defaultKarat, info: null, isSet: false });
       }
     }
     // ليبل بلا صور بعده: غالباً القطعة صُوّرت مع ليبلها في نفس الصورة — نستعمل صورة الليبل.
@@ -74,6 +74,8 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
     await Promise.all(gs.filter((g) => g.tag).map(async (g) => {
       const info = await lookup(g.tag).catch(() => null);
       g.info = info;
+      // الطاقم في أمارسوفت: كل صورة بعد الليبل = قطعة من الطاقم.
+      if (info?.type_name && /طقم|طاقم/.test(info.type_name)) g.isSet = true;
       if (info?.found && info.grams) g.weight = String(info.grams);
       if (info?.karat === "21") g.karat = "21K";
       else if (info?.karat === "18") g.karat = "18K";
@@ -100,7 +102,7 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
     if (!tag.trim()) return update(g.id, { info: null });
     const info = await lookup(tag.trim()).catch(() => null);
     setGroups((gs) => gs.map((x) => (x.id === g.id ? {
-      ...x, info,
+      ...x, info, isSet: x.isSet || /طقم|طاقم/.test(info?.type_name ?? ""),
       weight: x.weight || (info?.grams ? String(info.grams) : ""),
       karat: info?.karat === "21" ? "21K" : info?.karat === "18" ? "18K" : x.karat,
     } : x)));
@@ -125,7 +127,7 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
     setPhase("saving");
     const ids: string[] = [];
     const toSave = groups.filter((g) => g.state !== "saved" && g.photos.some((p) => p.use)).length;
-    const toAnalyze: { gid: string; file: File; saved: { productId: string; imageId: string }; extras: { file: File; imageId: string }[] }[] = [];
+    const toAnalyze: { gid: string; file: File; saved: { productId: string; imageId: string }; extras: { file: File; imageId: string }[]; partIds: string[] }[] = [];
     for (const g of groups) {
       if (g.state === "saved") continue;
       const use = g.photos.filter((p) => p.use);
@@ -140,7 +142,19 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
           catch { toast.error("تعذّر حفظ صورة إضافية لإحدى القطع"); }
         }
         ids.push(saved.productId);
-        toAnalyze.push({ gid: g.id, file: use[0].file, saved, extras });
+        // طاقم: كل صورة محفوظة = قطعة منه (تُسمّى بعد التحليل)، ليُعلَّم المباع منها لاحقاً.
+        let partIds: string[] = [];
+        if (g.isSet) {
+          const imageIds = [saved.imageId, ...extras.map((e) => e.imageId)];
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: parts, error } = await (supabase as any).from("product_set_parts")
+            .insert(imageIds.map((imageId, i) => ({ product_id: saved.productId, image_id: imageId, position: i, name: `قطعة ${i + 1}` })))
+            .select("id,position");
+          if (error) toast.error("تعذّر حفظ قطع أحد الأطقم — قسّمه من صفحته");
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          else partIds = ((parts ?? []) as any[]).sort((a, b) => a.position - b.position).map((p) => p.id);
+        }
+        toAnalyze.push({ gid: g.id, file: use[0].file, saved, extras, partIds });
         update(g.id, { state: "saved", ai: "pending" });
       } catch {
         update(g.id, { state: "error" });
@@ -157,7 +171,14 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
       while (next < toAnalyze.length) {
         const job = toAnalyze[next++];
         const name = await analyzeCapturedPiece(job.file, job.saved, { karat: true, itemType: false }).catch(() => null);
-        for (const ex of job.extras) await indexExtraImage(ex.file, ex.imageId);
+        const extraNames: (string | null)[] = [];
+        for (const ex of job.extras) extraNames.push(await indexExtraImage(ex.file, ex.imageId));
+        // أسماء قطع الطاقم من تحليل كل صورة (عقد، حلق، خاتم…).
+        const partNames = [name, ...extraNames];
+        await Promise.all(job.partIds.map((pid, i) => partNames[i]
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ? (supabase as any).from("product_set_parts").update({ name: partNames[i] }).eq("id", pid)
+          : null));
         update(job.gid, { ai: name });
       }
     };
@@ -184,7 +205,7 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
             <p className="font-semibold">طريقة التصوير:</p>
             <ol className="list-decimal pr-5 space-y-1">
               <li>صوّر <b>ليبل القطعة</b> قريباً وواضحاً في صورة لوحده.</li>
-              <li>صوّر <b>القطعة</b> (صورة أو أكثر).</li>
+              <li>صوّر <b>القطعة</b> (صورة أو أكثر). <b>الطاقم:</b> صوّر كل قطعة منه لوحدها (العقد، الحلق، الخاتم…).</li>
               <li>انتقل للقطعة التالية: ليبلها ثم صورها… وهكذا.</li>
             </ol>
             <p className="text-muted-foreground text-xs">بعدها اختر كل الصور مرة واحدة — المنظومة ترتّبها بوقت التصوير وتربط كل قطعة بكودها ووزنها من أمارسوفت.</p>
@@ -246,6 +267,9 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
                     <input inputMode="decimal" placeholder="الوزن (جم)" value={g.weight} onChange={(e) => update(g.id, { weight: normalizeDecimalInput(e.target.value) })}
                       className="h-9 w-24 rounded-md border px-2 text-sm text-center" />
                     <button onClick={() => update(g.id, { karat: g.karat === "18K" ? "21K" : "18K" })} className="h-9 rounded-md border px-2 text-xs font-bold">{g.karat}</button>
+                    <button onClick={() => update(g.id, { isSet: !g.isSet })} disabled={phase !== "review"}
+                      className={`h-9 rounded-md border px-2 text-xs font-bold ${g.isSet ? "bg-primary text-primary-foreground" : ""}`}
+                      title="طاقم: كل صورة قطعة منه">طاقم</button>
                   </div>
                   {warns.length > 0 && (
                     <ul className="text-xs text-amber-700 space-y-0.5">
