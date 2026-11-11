@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useIncompleteSets } from "@/components/SetPartsCard";
+import RetryImg from "@/components/RetryImg";
 import SellDialog from "@/components/SellDialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,7 +20,7 @@ import { useGoldPrices } from "@/hooks/useGoldPrices";
 import { businessToday, daysBetween } from "@/lib/dates";
 import { priceForPiece, PRICE_GAP_LABEL } from "@/lib/pricing";
 import { usePriceVisibleFor } from "@/hooks/useAppSettings";
-import { PRODUCT_STATUS, formatCurrency, formatWeight, getThumbUrl, ProductStatus } from "@/lib/constants";
+import { PRODUCT_STATUS, formatCurrency, formatWeight, getThumbUrl, getImageUrl, ProductStatus } from "@/lib/constants";
 import { GOLD_COLORS } from "@/lib/luxury";
 import { supabase } from "@/integrations/supabase/client";
 import { invalidateInventoryAndSales } from "@/lib/queryInvalidation";
@@ -142,8 +143,9 @@ export default function ProductCard({
     <>
       <div className="aspect-square bg-gold-soft relative overflow-hidden">
         {imgUrl ? (
-          <img
+          <RetryImg
             src={imgUrl}
+            fallbackSrc={primary ? getImageUrl(primary.storage_path) : null}
             alt={product.name}
             className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
             loading="lazy"
