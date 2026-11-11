@@ -172,7 +172,7 @@ function BranchDetail({ code }: { code: string }) {
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
-      <Link to="/branches" className="inline-flex items-center gap-1 text-sm text-primary"><ArrowRight className="size-4" /> كل الفروع</Link>
+      <Link to="/reports?tab=branches" className="inline-flex items-center gap-1 text-sm text-primary"><ArrowRight className="size-4" /> كل الفروع</Link>
       <div>
         <h1 className="text-2xl font-bold">{o?.branch_name ?? code}</h1>
         {o?.last_sale && <p className="text-xs text-muted-foreground">آخر بيعة: {formatTripoli(o.last_sale)}</p>}

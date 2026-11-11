@@ -204,7 +204,7 @@ export default function Accountant() {
 
           <div className="grid grid-cols-2 gap-2">
             <Button asChild variant="outline"><Link to="/pos-sales?tab=log">الفواتير الممسوحة والمعدّلة</Link></Button>
-            <Button asChild variant="outline"><Link to="/gram-price">سعر الغرام في الفروع</Link></Button>
+            <Button asChild variant="outline"><Link to="/reports?tab=gram">سعر الغرام في الفروع</Link></Button>
           </div>
         </>
       )}

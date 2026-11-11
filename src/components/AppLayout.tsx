@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, Scale, CalendarDays, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Building2, Truck, UserCog, Wallet, Watch, ClipboardList, Award, type LucideIcon } from "lucide-react";
+import { ArrowRight, Scale, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Truck, UserCog, Watch, ClipboardList, Award, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -41,11 +41,9 @@ function buildAdminNav(): NavSection[] {
     {
       title: "المبيعات والفلوس",
       items: [
+        // التقارير صفحة بخانات: الفروع، ملخّص اليوم، المحاسب، سعر الغرام، مبيعات وجرد التطبيق.
         { to: "/reports", label: "التقارير", icon: BarChart3 },
-        { to: "/branches", label: "الفروع", icon: Building2 },
         { to: "/pos-sales", label: "الفواتير", icon: Receipt },
-        { to: "/accountant", label: "المحاسب", icon: Wallet },
-        { to: "/gram-price", label: "سعر بيع الغرام", icon: Coins },
         { to: "/gold-price", label: "سعر الذهب اليوم", icon: Coins },
         { to: "/closing", label: "إقفال اليوم", icon: Landmark },
         { to: "/buybacks", label: "شراء الكسر", icon: Recycle },
@@ -62,25 +60,16 @@ function buildAdminNav(): NavSection[] {
         { to: "/upload", label: "رفع قطع", icon: Upload, badgeKey: "uploads" },
         { to: "/weights", label: "قطع بلا وزن", icon: Scale, badgeKey: "weights" },
         { to: "/admin/products", label: "إدارة القطع", icon: ListChecks },
+        { to: "/stock-take", label: "جرد التطبيق", icon: ClipboardCheck },
       ],
     },
     {
       title: "الناس",
       items: [
-        { to: "/staff", label: "الموظفون", icon: UserCog },
-        { to: "/evaluations", label: "التقييم", icon: ClipboardList },
-        { to: "/leaderboard", label: "المتصدرون", icon: Trophy },
+        // الفريق صفحة بخانات: الموظفون، التقييم، المتصدرون.
+        { to: "/staff", label: "الفريق", icon: UserCog },
         { to: "/customers", label: "العملاء", icon: Users },
         { to: "/suppliers", label: "الموردون", icon: Truck },
-      ],
-    },
-    {
-      title: "أخرى",
-      compact: true,
-      items: [
-        { to: "/daily-summary", label: "الملخّص اليومي", icon: CalendarDays },
-        { to: "/stock-take", label: "جرد التطبيق", icon: ClipboardCheck },
-        { to: "/sales", label: "مبيعات التطبيق", icon: Receipt },
       ],
     },
   ];
@@ -91,12 +80,17 @@ function buildAdminNav(): NavSection[] {
 // أعلى الشاشة على الآيباد والكمبيوتر. الآن: شريط جانبي بأقسام على الشاشات الكبيرة، ونفس
 // الأقسام داخل «المزيد» على الهاتف.
 // المشرف العام: نفس قائمة الإدارة بلا صفحات الفلوس (مبيعات، فروع، محاسب، موردين، تقارير، إقفال…).
-const MONEY_PAGES = new Set(["/branches", "/pos-sales", "/gram-price", "/accountant", "/suppliers", "/staff", "/reports",
-  "/closing", "/buybacks", "/daily-summary", "/sales"]);
-function buildSupervisorNav(): NavSection[] {
+const MONEY_PAGES = new Set(["/pos-sales", "/suppliers", "/staff", "/reports", "/closing", "/buybacks"]);
+function buildSupervisorNav(isEvalRecorder: boolean): NavSection[] {
   const secs = buildAdminNav()
     .map((s) => ({ ...s, items: s.items.filter((i) => !MONEY_PAGES.has(i.to)) }))
     .filter((s) => s.items.length);
+  // «الفريق» للمدير العام بس (فيها الرواتب)؛ المشرف يفتح المتصدرين، والتقييم لو هو مسؤوله.
+  const people = secs.find((s) => s.title === "الناس");
+  if (people) {
+    people.items.unshift({ to: "/leaderboard", label: "المتصدرون", icon: Trophy });
+    if (isEvalRecorder) people.items.unshift({ to: "/evaluations", label: "التقييم", icon: ClipboardList });
+  }
   // قسم «المبيعات والفلوس» يبقى فيه سعر الذهب بس — ما يستاهلش قسم لروحه، يمشي للبضاعة.
   const money = secs.find((s) => s.title === "المبيعات والفلوس");
   const goods = secs.find((s) => s.title === "البضاعة");
@@ -106,7 +100,7 @@ function buildSupervisorNav(): NavSection[] {
 
 function buildNav(isAdmin: boolean, isManager: boolean, isEvalRecorder = false, isSupervisor = false): NavSection[] {
   if (isAdmin) return buildAdminNav();
-  if (isSupervisor) return buildSupervisorNav();
+  if (isSupervisor) return buildSupervisorNav(isEvalRecorder);
   const sections: NavSection[] = [
     {
       title: "الرئيسية",

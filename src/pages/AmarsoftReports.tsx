@@ -486,7 +486,7 @@ export default function AmarsoftReports() {
           <Card className="p-3">
             <div className="flex justify-between items-center mb-1">
               <h2 className="text-lg font-bold">الفروع</h2>
-              <Link to="/branches" className="text-sm font-semibold text-primary">التفاصيل ←</Link>
+              <Link to="/reports?tab=branches" className="text-sm font-semibold text-primary">التفاصيل ←</Link>
             </div>
             <Hint>مرتبة من الأكثر مبيعاً. السهم الأخضر يعني زاد عن الفترة اللي قبلها والأحمر نقص. اضغط على فرع تشوف تفاصيله، والأرقام كاملة في خانة «مقارنة الفروع».</Hint>
             {v.branches.map((b) => (
@@ -545,7 +545,7 @@ export default function AmarsoftReports() {
             <Card className="p-3">
               <div className="flex justify-between items-center mb-1">
                 <h2 className="text-lg font-bold">أحسن البائعين</h2>
-                <Link to="/leaderboard" className="text-sm font-semibold text-primary">الكل ←</Link>
+                <Link to="/staff?tab=leaderboard" className="text-sm font-semibold text-primary">الكل ←</Link>
               </div>
               {v.leaders.map((l, i) => (
                 <div key={`${l.branch_name}-${l.sman}`} className="flex justify-between items-center py-1.5 border-b last:border-0 text-sm">
@@ -578,7 +578,7 @@ export default function AmarsoftReports() {
             )}
           </Card>
 
-          <Link to="/reports/app" className="block text-center text-sm text-muted-foreground underline py-2">
+          <Link to="/reports?tab=stock" className="block text-center text-sm text-muted-foreground underline py-2">
             تقارير التطبيق القديمة (المصاريف، الأسعار، التحويلات، الصيانة)
           </Link>
           </>}

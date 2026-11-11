@@ -13,9 +13,9 @@ const SECTIONS: Section[] = [
     title: "الأرقام والحسابات",
     tiles: [
       { to: "/reports", label: "التقارير", hint: "كل الفروع ومقارنتها", icon: BarChart3, admin: true },
-      { to: "/branches", label: "الفروع", hint: "كل فرع بروحه، يوم بيوم", icon: Building2, admin: true },
-      { to: "/gram-price", label: "سعر الغرام", hint: "بكم يبيع كل فرع الغرام", icon: Coins, admin: true },
-      { to: "/accountant", label: "المحاسب", hint: "نقدي ومصرف وآجل", icon: Wallet, admin: true },
+      { to: "/reports?tab=branches", label: "الفروع", hint: "كل فرع بروحه، يوم بيوم", icon: Building2, admin: true },
+      { to: "/reports?tab=gram", label: "سعر الغرام", hint: "بكم يبيع كل فرع الغرام", icon: Coins, admin: true },
+      { to: "/reports?tab=accountant", label: "المحاسب", hint: "نقدي ومصرف وآجل", icon: Wallet, admin: true },
     ],
   },
   {
