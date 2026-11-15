@@ -4,10 +4,11 @@
 // والنوع من أمارسوفت. ثم شاشة مراجعة قبل الحفظ تنبّه لأي شيء غريب.
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { X, Images, Loader2, Trash2, AlertTriangle, Check, Tag } from "lucide-react";
+import { X, Images, Loader2, Trash2, AlertTriangle, Check, Tag, ScanLine, Scissors } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { readTag } from "@/lib/tagReader";
+import { readTagDeep } from "@/lib/tagReader";
+import TagScanDialog from "@/components/TagScanDialog";
 import { exifDate } from "@/lib/exifDate";
 import { normalizeDecimalInput } from "@/lib/constants";
 import { saveCapturedPiece, addExtraPieceImage, analyzeCapturedPiece, indexExtraImage } from "@/lib/uploadRunner";
@@ -34,6 +35,11 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [groups, setGroups] = useState<Group[]>([]);
   const [defaultKarat, setDefaultKarat] = useState<"18K" | "21K">("18K");
+  // مسح كود قطعة بالكاميرا من شاشة المراجعة، ووضع «تقسيم» لفصل صور قطعة لم يُقرأ ليبلها.
+  const [allPhotos, setAllPhotos] = useState<Photo[]>([]);
+  const [labelAfter, setLabelAfter] = useState(false);
+  const [scanFor, setScanFor] = useState<string | null>(null);
+  const [splitIn, setSplitIn] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) return;
@@ -46,19 +52,36 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
     if (!files.length) return;
     setPhase("reading");
     setProgress({ done: 0, total: files.length });
-    const photos: Photo[] = [];
+    const photos: (Photo & { exif: number | null })[] = [];
     for (const file of files) {
-      const time = (await exifDate(file)) ?? file.lastModified;
-      const tag = await readTag(file);
-      photos.push({ id: uid(), file, url: URL.createObjectURL(file), time, tag, isLabel: false, use: true });
+      const exif = await exifDate(file);
+      // قراءة عميقة: تلتقط الليبل حتى لو صُوّر من بعيد أو مائلاً (راجع readTagDeep).
+      const tag = await readTagDeep(file);
+      photos.push({ id: uid(), file, url: URL.createObjectURL(file), time: exif ?? file.lastModified, exif, tag, isLabel: false, use: true });
       setProgress((p) => ({ ...p, done: p.done + 1 }));
     }
-    photos.sort((a, b) => a.time - b.time || a.file.name.localeCompare(b.file.name, undefined, { numeric: true }));
+    // الترتيب بوقت التصوير (EXIF) إن وُجد في كل الصور؛ وإلا باسم الملف (IMG_4899, IMG_4902… متسلسلة
+    // في الآيفون) — خلط وقت التصوير لبعضها مع تاريخ الملف لغيرها يلخبط الترتيب.
+    const byName = (a: Photo, b: Photo) => a.file.name.localeCompare(b.file.name, undefined, { numeric: true });
+    if (photos.every((p) => p.exif != null)) photos.sort((a, b) => a.time - b.time || byName(a, b));
+    else photos.sort((a, b) => byName(a, b) || a.time - b.time);
 
-    // التجميع: كود جديد يبدأ قطعة جديدة وصورته ليبل (لا تُحفظ كصورة للقطعة)؛ صور بنفس الكود أو
-    // بلا كود تتبع القطعة الحالية. صور قبل أول ليبل تصير مجموعة بلا كود (تنبيه).
+    // هل المصوّر يصوّر الليبل قبل القطعة أم بعدها؟ نعرفها من أول الجلسة وآخرها.
+    const after = !photos[0]?.tag && !!photos[photos.length - 1]?.tag;
+    setAllPhotos(photos);
+    setLabelAfter(after);
+    await regroup(photos, after);
+    setPhase("review");
+  };
+
+  // التجميع: كود جديد يبدأ قطعة جديدة وصورته ليبل (لا تُحفظ كصورة للقطعة)؛ صور بنفس الكود أو بلا
+  // كود تتبع القطعة الحالية. في وضع «الليبل بعد الصور» نمشي على الصور بالعكس ثم نعيد الترتيب.
+  // صور لا ليبل لها تصير مجموعة بلا كود (تنبيه).
+  const regroup = async (photos: Photo[], after: boolean) => {
+    const seq = after ? [...photos].reverse() : photos;
     const gs: Group[] = [];
-    for (const p of photos) {
+    for (const p0 of seq) {
+      const p = { ...p0, isLabel: false, use: true };
       const cur = gs[gs.length - 1];
       if (p.tag && (!cur || cur.tag !== p.tag)) {
         gs.push({ id: uid(), tag: p.tag, photos: [{ ...p, isLabel: true, use: false }], weight: "", karat: defaultKarat, info: null, isSet: false });
@@ -68,20 +91,20 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
         gs.push({ id: uid(), tag: "", photos: [p], weight: "", karat: defaultKarat, info: null, isSet: false });
       }
     }
-    // ليبل بلا صور بعده: غالباً القطعة صُوّرت مع ليبلها في نفس الصورة — نستعمل صورة الليبل.
+    if (after) { gs.reverse(); gs.forEach((g) => g.photos.reverse()); }
+    // ليبل بلا صور معه: غالباً القطعة صُوّرت مع ليبلها في نفس الصورة — نستعمل صورة الليبل.
     gs.forEach((g) => { if (!g.photos.some((p) => p.use)) g.photos.forEach((p) => { p.use = true; }); });
 
     await Promise.all(gs.filter((g) => g.tag).map(async (g) => {
       const info = await lookup(g.tag).catch(() => null);
       g.info = info;
-      // الطاقم في أمارسوفت: كل صورة بعد الليبل = قطعة من الطاقم.
+      // الطاقم في أمارسوفت: كل صورة مع الليبل = قطعة من الطاقم.
       if (info?.type_name && /طقم|طاقم/.test(info.type_name)) g.isSet = true;
       if (info?.found && info.grams) g.weight = String(info.grams);
       if (info?.karat === "21") g.karat = "21K";
       else if (info?.karat === "18") g.karat = "18K";
     }));
     setGroups(gs);
-    setPhase("review");
   };
 
   const update = (id: string, patch: Partial<Group>) => setGroups((gs) => gs.map((g) => (g.id === id ? { ...g, ...patch } : g)));
@@ -97,15 +120,31 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
     return [...gs.slice(0, i - 1), merged, ...gs.slice(i + 1)];
   });
 
-  const relookup = async (g: Group, tag: string) => {
-    update(g.id, { tag });
-    if (!tag.trim()) return update(g.id, { info: null });
+  // تغيير كود قطعة (كتابة أو مسح بالكاميرا): الوزن والعيار يتبعان الكود الجديد من أمارسوفت —
+  // الوزن القديم كان للكود الغلط فلا نبقيه إن وُجد وزن للكود الجديد.
+  const relookup = async (gid: string, tag: string) => {
+    update(gid, { tag });
+    if (!tag.trim()) return update(gid, { info: null });
     const info = await lookup(tag.trim()).catch(() => null);
-    setGroups((gs) => gs.map((x) => (x.id === g.id ? {
+    setGroups((gs) => gs.map((x) => (x.id === gid ? {
       ...x, info, isSet: x.isSet || /طقم|طاقم/.test(info?.type_name ?? ""),
-      weight: x.weight || (info?.grams ? String(info.grams) : ""),
+      weight: info?.found && info.grams ? String(info.grams) : x.weight,
       karat: info?.karat === "21" ? "21K" : info?.karat === "18" ? "18K" : x.karat,
     } : x)));
+  };
+
+  // فصل مجموعة عند صورة: الصورة وما بعدها تصير قطعة جديدة بلا كود (ليبلها لم يُقرأ أو لم يُصوَّر)،
+  // ثم يُمسح كودها بالكاميرا أو يُكتب.
+  const splitAt = (gid: string, pid: string) => {
+    setGroups((gs) => {
+      const i = gs.findIndex((g) => g.id === gid);
+      const at = i < 0 ? -1 : gs[i].photos.findIndex((p) => p.id === pid);
+      if (at <= 0) return gs;
+      const g = gs[i];
+      const next: Group = { id: uid(), tag: "", photos: g.photos.slice(at).map((p) => ({ ...p, isLabel: false, use: true })), weight: "", karat: g.karat, info: null, isSet: false };
+      return [...gs.slice(0, i), { ...g, photos: g.photos.slice(0, at) }, next, ...gs.slice(i + 1)];
+    });
+    setSplitIn(null);
   };
 
   const tagCounts = groups.reduce<Record<string, number>>((m, g) => { if (g.tag) m[g.tag] = (m[g.tag] ?? 0) + 1; return m; }, {});
@@ -204,7 +243,7 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
           <div className="rounded-xl border bg-muted/40 p-4 text-sm space-y-2 leading-relaxed">
             <p className="font-semibold">طريقة التصوير:</p>
             <ol className="list-decimal pr-5 space-y-1">
-              <li>صوّر <b>ليبل القطعة</b> قريباً وواضحاً في صورة لوحده.</li>
+              <li>صوّر <b>ليبل القطعة</b> في صورة لوحده (قبل صور القطعة أو بعدها، المهم نفس الترتيب في كل الجلسة).</li>
               <li>صوّر <b>القطعة</b> (صورة أو أكثر). <b>الطاقم:</b> صوّر كل قطعة منه لوحدها (العقد، الحلق، الخاتم…).</li>
               <li>انتقل للقطعة التالية: ليبلها ثم صورها… وهكذا.</li>
             </ol>
@@ -234,7 +273,18 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
       {(phase === "review" || phase === "saving" || phase === "analyzing" || phase === "done") && (
         <>
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
-            <p className="text-sm text-muted-foreground">{pieces} قطعة — اضغط على صورة لاستبعادها أو تضمينها.</p>
+            <p className="text-sm text-muted-foreground">{pieces} قطعة — اضغط على صورة لاستبعادها أو تضمينها. كود ناقص أو غلط؟ اكتبه أو امسحه بزر الكاميرا.</p>
+            {phase === "review" && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-muted-foreground">الليبل صُوّر:</span>
+                {([false, true] as const).map((v) => (
+                  <Button key={String(v)} size="sm" variant={labelAfter === v ? "default" : "outline"} className="h-7 text-xs"
+                    onClick={() => { if (labelAfter !== v) { setLabelAfter(v); void regroup(allPhotos, v); } }}>
+                    {v ? "بعد صور القطعة" : "قبل صور القطعة"}
+                  </Button>
+                ))}
+              </div>
+            )}
             {groups.map((g, i) => {
               const warns = warningsOf(g);
               return (
@@ -249,12 +299,18 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
                     {g.state === "saving" && <Loader2 className="size-4 animate-spin" />}
                     {g.state === "saved" && <Check className="size-4 text-green-600" />}
                     {g.state === "error" && <AlertTriangle className="size-4 text-destructive" />}
+                    {phase === "review" && g.photos.length > 1 && (
+                      <Button variant={splitIn === g.id ? "default" : "ghost"} size="sm" className="h-7 text-xs" onClick={() => setSplitIn(splitIn === g.id ? null : g.id)}>
+                        <Scissors className="size-3 ml-1" />قسّم
+                      </Button>
+                    )}
                     {i > 0 && <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => mergeUp(g.id)} disabled={phase === "saving"}>ضمّ للسابقة</Button>}
                     <button onClick={() => removeGroup(g.id)} disabled={phase === "saving"} aria-label="حذف القطعة"><Trash2 className="size-4 text-destructive" /></button>
                   </div>
+                  {splitIn === g.id && <p className="text-xs text-primary">اضغط على أول صورة للقطعة التالية — هي وما بعدها تصير قطعة جديدة.</p>}
                   <div className="flex gap-2 overflow-x-auto">
                     {g.photos.map((p) => (
-                      <button key={p.id} onClick={() => togglePhoto(g.id, p.id)} className="relative shrink-0">
+                      <button key={p.id} onClick={() => (splitIn === g.id ? splitAt(g.id, p.id) : togglePhoto(g.id, p.id))} className="relative shrink-0">
                         <img src={p.url} alt="" className={`size-20 rounded-lg object-cover border ${p.use ? "border-primary" : "opacity-40 grayscale"}`} />
                         {p.isLabel && <span className="absolute bottom-0.5 right-0.5 rounded bg-black/70 px-1 text-[9px] text-white flex items-center gap-0.5"><Tag className="size-2.5" />ليبل</span>}
                         {p.use && <Check className="absolute top-0.5 left-0.5 size-4 rounded-full bg-primary p-0.5 text-primary-foreground" />}
@@ -262,8 +318,12 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
                     ))}
                   </div>
                   <div className="flex gap-2">
-                    <input dir="ltr" placeholder="الكود" defaultValue={g.tag} onBlur={(e) => { if (e.target.value !== g.tag) void relookup(g, e.target.value); }}
+                    <input key={g.tag} dir="ltr" inputMode="numeric" placeholder="الكود" defaultValue={g.tag} disabled={phase !== "review"}
+                      onBlur={(e) => { if (e.target.value !== g.tag) void relookup(g.id, e.target.value); }}
+                      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
                       className="h-9 min-w-0 flex-1 rounded-md border px-2 text-sm font-mono" />
+                    <button onClick={() => setScanFor(g.id)} disabled={phase !== "review"} aria-label="مسح الكود بالكاميرا" title="مسح الكود بالكاميرا"
+                      className="h-9 shrink-0 rounded-md border px-2 text-primary"><ScanLine className="size-5" /></button>
                     <input inputMode="decimal" placeholder="الوزن (جم)" value={g.weight} onChange={(e) => update(g.id, { weight: normalizeDecimalInput(e.target.value) })}
                       className="h-9 w-24 rounded-md border px-2 text-sm text-center" />
                     <button onClick={() => update(g.id, { karat: g.karat === "18K" ? "21K" : "18K" })} className="h-9 rounded-md border px-2 text-xs font-bold">{g.karat}</button>
@@ -295,6 +355,12 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
             )}
           </div>
         </>
+      )}
+      {scanFor && (
+        <TagScanDialog
+          onClose={() => setScanFor(null)}
+          onDetect={(tag) => { const gid = scanFor; setScanFor(null); void relookup(gid, tag); }}
+        />
       )}
     </div>
   );
