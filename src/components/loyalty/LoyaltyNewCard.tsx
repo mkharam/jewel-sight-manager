@@ -1,6 +1,6 @@
 // «بطاقة جديدة»: الزبون الجديد يختار أي بطاقة يبيها (ولاء، أختام، هدايا) ويمسح الـ QR من شاشة الموظف.
 // كل QR فيه الفرع (utm_source=b05)، فالبطاقة تتسجّل على الفرع اللي ركّبها فيه بلا ما حد يكتب حاجة.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
 import { Copy } from "lucide-react";
@@ -26,6 +26,15 @@ export default function LoyaltyNewCard() {
   const [card, setCard] = useState<(typeof WALLET_CARDS)[number]["key"]>("loyalty");
   const c = WALLET_CARDS.find((x) => x.key === card)!;
   const url = cardInstallUrl(c.hash, branch);
+
+  // MSTRMND ما يحفظش الفرع من الرابط، فنسجّلو عندنا أي فرع الـ QR ظاهر فيه توا (وكل دقيقتين ما دام مفتوح).
+  useEffect(() => {
+    if (!branch) return;
+    const ping = () => { if (document.visibilityState === "visible") void sb.rpc("loyalty_qr_shown", { p_branch: branch }); };
+    ping();
+    const t = setInterval(ping, 120_000);
+    return () => clearInterval(t);
+  }, [branch]);
 
   const copy = async () => {
     try { await navigator.clipboard.writeText(url); toast.success("تم نسخ الرابط"); } catch { toast.error("ما قدرتش ننسخ الرابط"); }

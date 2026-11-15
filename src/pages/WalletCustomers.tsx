@@ -216,7 +216,7 @@ function Customers() {
                   ]} warn={stamps.stamps_total > 100 ? "عدد الأختام غير طبيعي — غالباً الموظف كتب المبلغ في خانة الأختام." : undefined} />
                 )}
                 {gift && <Detail title="بطاقة الهدايا" status={gift.status} rows={[["الرصيد", ld(gift.balance)]]} />}
-                <CustomerActivity id={c.id} />
+                <CustomerActivity c={c} />
               </div>
             )}
           </Card>
@@ -252,18 +252,77 @@ function Detail({ title, status, rows, warn }: { title: string; status: string |
 
 const SYNC_SELECT = "invoice_id, template_id, action, amount_ld, status, reason, mstrmnd_customer_id, updated_at, amarsoft_invoices(branch_code, invoice_no, sold_at, details)";
 
-function CustomerActivity({ id }: { id: string }) {
+type Inv = { id: number; branch_code: string; invoice_no: string; sold_at: string | null; first_seen_at: string | null; net_dirhams: number | null; details: { customer?: string; phone?: string } | null };
+const INV_SELECT = "id, branch_code, invoice_no, sold_at, first_seen_at, net_dirhams, details";
+const NEAR_HOURS = 3;
+
+// فواتير الزبون: اللي بعتها الربط، وبعدها أي فاتورة برقمه في أمارسوفت. لو ما لقيناش شي،
+// نطلّعو الفواتير اللي تسجّلت قريب من وقت ما طلّع البطاقة (تخمين: غالباً وحدة منهم فاتورته).
+function CustomerActivity({ c }: { c: WCustomer }) {
   const { data } = useQuery({
-    queryKey: ["mstrmnd-sync-customer", id],
+    queryKey: ["mstrmnd-sync-customer", c.id],
     queryFn: async () => {
-      const { data, error } = await sb.from("mstrmnd_sync").select(SYNC_SELECT).eq("mode", "live").eq("mstrmnd_customer_id", id)
+      const { data, error } = await sb.from("mstrmnd_sync").select(SYNC_SELECT).eq("mode", "live").eq("mstrmnd_customer_id", c.id)
         .order("updated_at", { ascending: false }).limit(20);
       if (error) throw error;
       return (data ?? []) as SyncRow[];
     },
   });
-  if (!data?.length) return <p className="text-xs text-muted-foreground">الربط ما بعتش لهذا الزبون حتى فاتورة لين توا.</p>;
-  return <SyncList rows={data} />;
+  const { data: inv } = useQuery({
+    queryKey: ["mstrmnd-customer-invoices", c.id],
+    queryFn: async () => {
+      const base = () => sb.from("amarsoft_invoices").select(INV_SELECT).eq("kind", "sale").eq("is_deleted", false);
+      const p8 = (c.phone9 ?? "").slice(-8);
+      const byPhone = p8.length === 8
+        ? ((await base().ilike("details->>phone", `%${p8}%`).order("sold_at", { ascending: false }).limit(20)).data ?? []) as Inv[]
+        : [];
+      let near: Inv[] = [];
+      if (!byPhone.length && c.created_at) {
+        const t = new Date(c.created_at).getTime(), span = NEAR_HOURS * 3600_000;
+        const a = new Date(t - span).toISOString(), b = new Date(t + span).toISOString();
+        const { data } = await base()
+          .or(`and(first_seen_at.gte.${a},first_seen_at.lte.${b}),and(sold_at.gte.${a},sold_at.lte.${b})`).limit(60);
+        const gap = (i: Inv) => Math.min(...[i.first_seen_at, i.sold_at].filter(Boolean).map((v) => Math.abs(new Date(v!).getTime() - t)));
+        near = ((data ?? []) as Inv[]).sort((x, y) => gap(x) - gap(y)).slice(0, 15);
+      }
+      const { data: names } = await sb.from("amarsoft_branch_map").select("code, branches(name)");
+      const nm = new Map<string, string>(((names ?? []) as { code: string; branches: { name: string } | null }[])
+        .map((r) => [r.code, String(r.branches?.name ?? r.code).replace(/^\d+\s*-\s*/, "")]));
+      return { byPhone, near, nm };
+    },
+  });
+  const sent = new Set((data ?? []).map((r) => r.invoice_id));
+  const byPhone = (inv?.byPhone ?? []).filter((i) => !sent.has(i.id));
+  return (
+    <div className="space-y-2">
+      {data?.length ? <SyncList rows={data} /> : <p className="text-xs text-muted-foreground">الربط ما بعتش لهذا الزبون حتى فاتورة لين توا.</p>}
+      {!!byPhone.length && <InvList title="فواتير برقمه في أمارسوفت" rows={byPhone} nm={inv!.nm} />}
+      {!data?.length && !!inv?.near.length && (
+        <InvList title={`فواتير محتملة — تسجّلت قريب من وقت ما طلّع البطاقة (${time(c.created_at)})`} rows={inv.near} nm={inv.nm}
+          note="تخمين مش أكيد: ما فيش فاتورة برقمه، فهذي الفواتير اللي دخلت في نفس الوقت تقريباً." />
+      )}
+    </div>
+  );
+}
+
+function InvList({ title, rows, nm, note }: { title: string; rows: Inv[]; nm: Map<string, string>; note?: string }) {
+  return (
+    <div className="rounded-lg bg-muted/40 p-2.5">
+      <p className="font-bold">{title}</p>
+      {note && <p className="text-xs text-muted-foreground">{note}</p>}
+      <div className="divide-y text-sm">
+        {rows.map((i) => (
+          <div key={i.id} className="py-1.5 flex items-center gap-2">
+            <div className="flex-1 min-w-0">
+              <p className="truncate">{nm.get(i.branch_code) ?? i.branch_code} · فاتورة {i.branch_code}-{i.invoice_no}{i.details?.customer ? ` · ${i.details.customer}` : ""}</p>
+              <p className="text-xs text-muted-foreground">{time(i.sold_at)}{i.first_seen_at ? ` · دخلت ${time(i.first_seen_at)}` : ""}</p>
+            </div>
+            <span className="tabular-nums">{ld((i.net_dirhams ?? 0) / 1000)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function SyncList({ rows, showCustomer }: { rows: SyncRow[]; showCustomer?: boolean }) {
