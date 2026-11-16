@@ -11,6 +11,84 @@ import { sb } from "@/lib/amarsoft";
 import { WALLET_CARDS, cardInstallUrl } from "@/lib/loyalty";
 
 type Branch = { code: string; name: string; mine: boolean };
+type Issued = { serial: string | null; existed: boolean; via_manager: boolean; url: string | null };
+
+// الموظف يكتب اسم الزبون ورقمه، والبطاقة تطلع في MSTRMND بحساب مدير الفرع (تتسجّل بفرعه)، ويطلع QR خاص بيها.
+function IssueCard({ branch }: { branch: string }) {
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<Issued | null>(null);
+
+  const submit = async () => {
+    setBusy(true);
+    const { data, error } = await sb.functions.invoke("mstrmnd-link?action=issue", { body: { branch, name, phone } });
+    setBusy(false);
+    if (error || !data?.ok) {
+      const msg = (await (error as any)?.context?.json?.().catch(() => null))?.error ?? data?.error ?? "ما قدرتش نطلّع البطاقة";
+      toast.error(msg);
+      return;
+    }
+    setDone(data as Issued);
+    if (!data.via_manager) toast.warning("طلعت بالحساب الرئيسي (حساب مدير الفرع مش مربوط)، فما تنحسبش على الفرع في MSTRMND");
+  };
+
+  if (done) {
+    return (
+      <Card className="p-5 flex flex-col items-center gap-3 text-center">
+        <p className="font-bold">{done.existed ? "الزبون عنده بطاقة من قبل" : "طلعت البطاقة"} {done.serial && <span dir="ltr" className="text-xs text-muted-foreground">{done.serial}</span>}</p>
+        {done.url ? (
+          <>
+            <div className="bg-white p-3 rounded-xl"><QRCodeSVG value={done.url} size={220} /></div>
+            <p className="text-sm">خلي الزبون يمسح الـ QR ويضيف البطاقة لـ Wallet. ما يحتاجش يكتب حاجة.</p>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">البطاقة طلعت، لكن رابطها مازال ما بانش. جرّب بعد شوية من «بطاقات Wallet».</p>
+        )}
+        <Button variant="outline" size="sm" onClick={() => { setDone(null); setName(""); setPhone(""); }}>زبون ثاني</Button>
+      </Card>
+    );
+  }
+  return (
+    <Card className="p-4 space-y-2">
+      <p className="font-bold">طلّع بطاقة ولاء للزبون</p>
+      <input className="w-full rounded-md border px-3 py-2 text-sm bg-background" placeholder="اسم الزبون" value={name} onChange={(e) => setName(e.target.value)} />
+      <input className="w-full rounded-md border px-3 py-2 text-sm bg-background" placeholder="رقم الموبايل 09xxxxxxxx" dir="ltr" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+      <Button className="w-full" disabled={busy || !name.trim() || phone.replace(/\D/g, "").length < 9} onClick={submit}>
+        {busy ? "لحظة…" : "طلّع البطاقة"}
+      </Button>
+    </Card>
+  );
+}
+
+type NoInvoice = { customer_id: string; full_name: string | null; phone9: string; created_at: string; branch_code: string; issued_here: boolean };
+
+// بطاقات جديدة (آخر 7 أيام) وصاحبها ما عندهش فاتورة في أمارسوفت برقمه.
+function NoInvoiceCards() {
+  const { data } = useQuery({
+    queryKey: ["loyalty-cards-no-invoice"],
+    queryFn: async () => {
+      const { data, error } = await sb.rpc("loyalty_cards_no_invoice", { p_days: 7 });
+      if (error) throw error;
+      return (data ?? []) as NoInvoice[];
+    },
+  });
+  if (!data?.length) return null;
+  return (
+    <Card className="p-4 space-y-2 border-amber-500/50">
+      <p className="font-bold text-sm">بطاقات جديدة بلا فاتورة ({data.length})</p>
+      <p className="text-xs text-muted-foreground">زبون طلّع بطاقة وما فيش فاتورة أمارسوفت برقمه. لو شرا، حط رقمه في الفاتورة باش تنحسبله.</p>
+      <ul className="text-sm divide-y">
+        {data.map((r) => (
+          <li key={r.customer_id} className="py-1.5 flex justify-between gap-2">
+            <span>{r.full_name ?? "—"} <span dir="ltr" className="text-xs text-muted-foreground">0{r.phone9}</span></span>
+            <span className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleDateString("ar-LY")}</span>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
 
 export default function LoyaltyNewCard() {
   const { data: branches } = useQuery({
@@ -63,6 +141,9 @@ export default function LoyaltyNewCard() {
           </Button>
         ))}
       </div>
+
+      {card === "loyalty" && branch && <IssueCard branch={branch} />}
+      <NoInvoiceCards />
 
       <Card className="p-5 flex flex-col items-center gap-3 text-center">
         <p className="text-lg font-bold">{c.label}</p>

@@ -336,6 +336,52 @@ async function sync(s: Settings) {
   return { mode, customers: customers.size, mirrored, ...counts };
 }
 
+// ?action=issue (POST {branch, name, phone}، بدخول الموظف): يطلّع بطاقة الولاء بحساب مدير الفرع باش تتسجّل في MSTRMND بفرعه،
+// ويرجّع رابط التركيب (getpass) للـ QR. الرقم اللي عنده بطاقة: MSTRMND يرجّع نفس البطاقة بلا تكرار.
+const LOYALTY = { templateId: 908119, nameField: 4027964, phoneField: 4027965 };
+async function issue(req: Request): Promise<[unknown, number?]> {
+  if (req.method !== "POST") return [{ error: "POST only" }, 405];
+  const auth = req.headers.get("authorization") ?? "";
+  const asUser = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: auth } } });
+  const { data: u } = await asUser.auth.getUser();
+  if (!u?.user) return [{ error: "login" }, 401];
+  const b = await req.json().catch(() => ({}));
+  const name = String(b.name ?? "").trim(), p9 = phone9(b.phone), branch = String(b.branch ?? "");
+  if (!name || p9.length !== 9) return [{ error: "الاسم والرقم (9 أرقام) لازمين" }, 400];
+  const { data: allowed } = await asUser.rpc("loyalty_counter_branches");
+  if (!(allowed ?? []).some((x: any) => x.code === branch)) return [{ error: "الفرع مش متاحلك" }, 403];
+
+  const { data: before } = await db.from("mstrmnd_customers").select("id").eq("phone9", p9).limit(1);
+  const mgr = await accessToken(branch, true).catch(() => null);
+  const token = mgr?.token ?? (await accessToken()).token;
+  const r = await api("/cards/issue", token, {
+    method: "POST",
+    body: JSON.stringify({ templateId: LOYALTY.templateId, fields: [{ id: LOYALTY.nameField, value: name }, { id: LOYALTY.phoneField, value: `+218${p9}` }] }),
+  });
+  if (r.status >= 300) return [{ error: `MSTRMND ${r.status}`, detail: r.body?.detail ?? r.body?.message ?? null }, 502];
+  const serial = r.body?.serialNumber ?? null;
+  await db.from("mstrmnd_issued_cards").insert({
+    branch_code: branch, phone9: p9, full_name: name, serial, existed: !!before?.length, issued_by: u.user.id, via_manager: !!mgr,
+  });
+
+  // رابط التركيب: نلقاو الزبون برقمه ونجيبو cardholderHash لبطاقة الولاء.
+  let url: string | null = null;
+  const main = (await accessToken()).token;
+  let customerId: string | null = before?.[0]?.id ?? null;
+  for (let page = 1; !customerId && page < 20; page++) {
+    const c = await api(`/customers?itemsPerPage=500&page=${page}`, main);
+    const rows = list(c.body).map((x: any) => ({ ...attrs(x), _id: String(x.id ?? attrs(x).id) }));
+    customerId = rows.find((x: any) => phone9(x.phone) === p9)?._id ?? null;
+    if (rows.length < 500) break;
+  }
+  if (customerId) {
+    const k = list((await api(`/customers/${customerId}/cards`, main)).body).map(attrs)
+      .find((x: any) => Number(x.userTemplateId) === LOYALTY.templateId);
+    if (k?.templateHash && k?.cardholderHash) url = `https://app.mstrmnd.agency/getpass/${k.templateHash}/${k.cardholderHash}`;
+  }
+  return [{ ok: true, serial, existed: !!before?.length, via_manager: !!mgr, url }];
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   const action = new URL(req.url).searchParams.get("action");
@@ -373,6 +419,7 @@ Deno.serve(async (req) => {
       }
       return json(result);
     }
+    if (action === "issue") return json(...(await issue(req)));
     return json({ error: "unknown action" }, 400);
   } catch (e) {
     return json({ ok: false, error: String((e as Error).message) }, 500);
