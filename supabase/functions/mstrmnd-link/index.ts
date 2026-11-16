@@ -49,17 +49,24 @@ function seedToken(raw: string) {
   }
 }
 
-async function accessToken(): Promise<{ token: string; refreshed: boolean }> {
-  const seed = seedToken(Deno.env.get("MSTRMND_REFRESH_TOKEN") ?? "");
+// branch (مثلاً "01"): حساب مدير الفرع من السر MSTRMND_TOKEN_01، باش العملية تتسجّل في MSTRMND بفرعه ومديره.
+// صفه في mstrmnd_auth رقمه 1000+الفرع. الفرع اللي ما عندهش سر يرجّع null ويخدم بالحساب الرئيسي (id 1).
+async function accessToken(branch?: string): Promise<{ token: string; refreshed: boolean }>;
+async function accessToken(branch: string | undefined, optional: true): Promise<{ token: string; refreshed: boolean } | null>;
+async function accessToken(branch?: string, optional = false): Promise<{ token: string; refreshed: boolean } | null> {
+  const id = branch ? 1000 + Number(branch) : 1;
+  const secret = branch ? `MSTRMND_TOKEN_${branch}` : "MSTRMND_REFRESH_TOKEN";
+  const seed = seedToken(Deno.env.get(secret) ?? "");
+  if (optional && !seed) return null;
   const seedHash = seed ? await sha256(seed) : null;
-  const { data } = await db.from("mstrmnd_auth").select("*").eq("id", 1).maybeSingle();
+  const { data } = await db.from("mstrmnd_auth").select("*").eq("id", id).maybeSingle();
   let row = (data ?? { refresh_token: null, access_token: null, access_expires_at: null, seed_hash: null }) as Auth;
 
   // سر جديد (أول مرة، أو صاحب المحل دخل من جديد وحط رمز جديد) → نبداو منه.
   if (seedHash && seedHash !== row.seed_hash) {
     row = { refresh_token: seed, access_token: null, access_expires_at: null, seed_hash: seedHash };
   }
-  if (!row.refresh_token) throw new Error("no refresh token: set MSTRMND_REFRESH_TOKEN");
+  if (!row.refresh_token) throw new Error(`no refresh token: set ${secret}`);
 
   const exp = row.access_expires_at ? new Date(row.access_expires_at) : null;
   if (row.access_token && exp && exp.getTime() - Date.now() > 60_000) return { token: row.access_token, refreshed: false };
@@ -72,12 +79,12 @@ async function accessToken(): Promise<{ token: string; refreshed: boolean }> {
   const body = await r.json().catch(() => null);
   const token = body?.token ?? body?.data?.token ?? body?.data?.attributes?.token;
   if (!r.ok || !token) {
-    await db.from("mstrmnd_auth").upsert({ id: 1, ...row, last_error: `refresh ${r.status}`, updated_at: new Date().toISOString() });
+    await db.from("mstrmnd_auth").upsert({ id, ...row, last_error: `refresh ${r.status}`, updated_at: new Date().toISOString() });
     throw new Error(`refresh failed ${r.status}`);
   }
   const newRefresh = body?.refresh_token ?? body?.data?.refresh_token ?? row.refresh_token;
   await db.from("mstrmnd_auth").upsert({
-    id: 1, refresh_token: newRefresh, access_token: token, access_expires_at: jwtExp(token)?.toISOString() ?? null,
+    id, refresh_token: newRefresh, access_token: token, access_expires_at: jwtExp(token)?.toISOString() ?? null,
     seed_hash: row.seed_hash, last_error: null, updated_at: new Date().toISOString(),
   });
   return { token, refreshed: true };
@@ -153,9 +160,19 @@ async function sync(s: Settings) {
   //   transient: MSTRMND ما ردّش (5xx/429)، ولا الاتصال طاح وتأكدنا من البطاقة إنها ما وصلتش → تتعاود في الدورة الجاية.
   //   unsure: الاتصال طاح وما قدرناش نتأكدو → ما نعاودوهاش (ممكن وصلت وتتزاد مرتين)، وتبان في الصفحة باش يتأكدو.
   type Wrote = { status: number | null; ok: boolean; err: string | null; transient?: boolean; unsure?: boolean };
-  async function write(customerId: string | null, cardId: number, kind: "point" | "stamp", action: "add" | "subtract",
+  // حساب مدير الفرع للكتابة؛ لو ما عندهش سر ولا تجديده فشل، نكتبو بالحساب الرئيسي باش الربط ما يوقفش.
+  const branchTokens = new Map<string, string | null>();
+  async function tokenFor(branch: string) {
+    if (!branchTokens.has(branch)) {
+      branchTokens.set(branch, await accessToken(branch, true).then((t) => t?.token ?? null).catch(() => null));
+    }
+    return branchTokens.get(branch) ?? token;
+  }
+
+  async function write(branch: string, customerId: string | null, cardId: number, kind: "point" | "stamp", action: "add" | "subtract",
                        amount: number, comment: string, purchase: number | null): Promise<Wrote> {
     if (mode === "dry") return { status: null, ok: true, err: null };
+    const writeToken = await tokenFor(branch);
     const body = kind === "point"
       ? { sourceType: 1, points: amount, comment, purchaseSum: action === "add" ? purchase : null }
       : { sourceType: 1, stamps: amount, comment, purchaseSum: action === "add" ? purchase : null };
@@ -169,7 +186,12 @@ async function sync(s: Settings) {
     };
     const before = await mark().catch(() => null);
     try {
-      const r = await api(`/cards/${cardId}/${action}-${kind}`, token, { method: "POST", body: JSON.stringify(body) });
+      let r = await api(`/cards/${cardId}/${action}-${kind}`, writeToken, { method: "POST", body: JSON.stringify(body) });
+      // المدير ما عندهش صلاحية (401/403): الطلب ما تنفّذش، نعاودوه بالحساب الرئيسي.
+      if ((r.status === 401 || r.status === 403) && writeToken !== token) {
+        branchTokens.set(branch, null);
+        r = await api(`/cards/${cardId}/${action}-${kind}`, token, { method: "POST", body: JSON.stringify(body) });
+      }
       const ok = r.status >= 200 && r.status < 300;
       return {
         status: r.status, ok, err: ok ? null : String(r.body?.detail ?? r.body?.message ?? r.status).slice(0, 200),
@@ -215,7 +237,7 @@ async function sync(s: Settings) {
       else if (!customerId) Object.assign(row, { status: "skipped", reason: "no_mstrmnd_customer" });
       else if (!card) Object.assign(row, { status: "skipped", reason: p.kind === "point" ? "no_loyalty_card" : "no_stamp_card", mstrmnd_customer_id: customerId });
       else {
-        const w = await write(customerId, Number(card.id), p.kind, action, amount, `أمارسوفت ${inv.branch_code}-${inv.invoice_no}`, ld);
+        const w = await write(inv.branch_code, customerId, Number(card.id), p.kind, action, amount, `أمارسوفت ${inv.branch_code}-${inv.invoice_no}`, ld);
         // MSTRMND ما ردّش: ما نسجّلوش حاجة، فالفاتورة تتعاود في الدورة الجاية.
         if (w.transient) { bump(`${p.kind}_retry`); continue; }
         // البطاقة تبدّلت: النسخة اللي تحت تقرا الأرقام الجديدة بدل اللي قبل الإرسال.
@@ -238,7 +260,7 @@ async function sync(s: Settings) {
   }[]) {
     const kind = r.template_id === s.stamp_template_id ? "stamp" : "point";
     const undo = r.action === "subtract" ? "add" : "subtract";
-    const w = await write(r.mstrmnd_customer_id, r.card_id, kind, undo, r.amount_ld,
+    const w = await write(r.branch_code, r.mstrmnd_customer_id, r.card_id, kind, undo, r.amount_ld,
       `حذف ${r.action === "subtract" ? "مرتجع" : "فاتورة"} أمارسوفت ${r.branch_code}-${r.invoice_no}`, undo === "add" ? r.amount_ld : null);
     if (w.transient) { bump(`${kind}_reverse_retry`); continue; }   // يقعد sent ويتعاود
     if (w.ok && mode === "live") { cardsOf.clear(); wroteAll = true; }
@@ -258,7 +280,7 @@ async function sync(s: Settings) {
   }[]) {
     if (mode !== "live") break;
     const delta = (r.ld_now - r.amount_ld) * (r.action === "subtract" ? -1 : 1);
-    const w = await write(r.mstrmnd_customer_id, r.card_id, "point", delta > 0 ? "add" : "subtract", Math.abs(delta),
+    const w = await write(r.branch_code, r.mstrmnd_customer_id, r.card_id, "point", delta > 0 ? "add" : "subtract", Math.abs(delta),
       `تعديل فاتورة أمارسوفت ${r.branch_code}-${r.invoice_no}`, delta > 0 ? Math.abs(delta) : null);
     // ما تأكدناش: نسجّلو المبلغ الجديد باش الفرق ما يتزادش مرتين، والسبب يقول يشوفو البطاقة.
     if (w.ok || w.unsure) {
@@ -319,7 +341,8 @@ Deno.serve(async (req) => {
   const action = new URL(req.url).searchParams.get("action");
   try {
     if (action === "ping") {
-      const { token, refreshed } = await accessToken();
+      // ?branch=01 → يجرّب حساب مدير الفرع بدل الرئيسي (قراءة بس).
+      const { token, refreshed } = await accessToken(new URL(req.url).searchParams.get("branch") ?? undefined);
       const t = await api("/user_templates/brief", token);
       const me = await api("/users/me", token);
       return json({
