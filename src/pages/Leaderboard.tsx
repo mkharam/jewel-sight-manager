@@ -88,7 +88,8 @@ export default function Leaderboard() {
   const [period, setPeriod] = useState<Period>("month");
   const [branch, setBranch] = useState(ALL);
   const [open, setOpen] = useState<Row | null>(null);
-  const [sortBy, setSortBy] = useState<SortKey>("grams");
+  const [sortChoice, setSortBy] = useState<SortKey>("grams");
+  const sortBy: SortKey = isAdmin ? sortChoice : "grams";
   const sortOptions = SORTS.filter((o) => !o.admin || isAdmin);
 
   const board = useQuery({
@@ -139,15 +140,15 @@ export default function Leaderboard() {
         ))}
       </div>
 
-      {/* معيار الترتيب */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {/* معيار الترتيب — للمدير فقط؛ الموظفون يرون ترتيب الوزن وحده بالكلام بلا أرقام. */}
+      {isAdmin && <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <span className="text-xs text-muted-foreground shrink-0">رتّب بـ:</span>
         {sortOptions.map((o) => (
           <Button key={o.key} size="sm" variant={sortBy === o.key ? "default" : "outline"} onClick={() => setSortBy(o.key)} className="shrink-0 h-8 text-xs">
             {o.label}
           </Button>
         ))}
-      </div>
+      </div>}
 
       {board.isLoading ? (
         <div className="flex justify-center py-16"><Loader2 className="size-6 animate-spin text-primary" /></div>
@@ -182,7 +183,7 @@ export default function Leaderboard() {
             {shown.map(({ row: r, weightRank, invoiceRank }, i) => {
               const me = !!user && r.profile_id === user.id;
               const note = sortBy === "grams" ? describe(weightRank, invoiceRank, ranked.length) : `${ORDINALS[weightRank] ?? `رقم ${weightRank + 1}`} في الوزن`;
-              const value = metricLabel(r, sortBy);
+              const value = isAdmin ? metricLabel(r, sortBy) : null;
               return (
                 <button key={`${r.branch_code}-${r.sman}`} onClick={() => setOpen(r)} className="w-full text-right">
                   <Card className={`p-3 flex items-center gap-3 ${i < 3 ? "border-primary/40" : ""} ${me ? "ring-2 ring-primary" : ""}`}>
