@@ -36,6 +36,7 @@ const PosCount = lazy(() => import("@/pages/PosCount"));
 const AmarsoftHub = lazy(() => import("@/pages/AmarsoftHub"));
 const Branches = lazy(() => import("@/pages/Branches"));
 const Leaderboard = lazy(() => import("@/pages/Leaderboard"));
+const StaffEval = lazy(() => import("@/pages/StaffEval"));
 const Repairs = lazy(() => import("@/pages/Repairs"));
 const DailyClosing = lazy(() => import("@/pages/DailyClosing"));
 const Reservations = lazy(() => import("@/pages/Reservations"));
@@ -138,6 +139,7 @@ const App = () => (
                 <Route path="/branches/:code" element={<RequireRole allow={["admin"]}><Branches /></RequireRole>} />
                 <Route path="/suppliers" element={<RequireRole allow={["admin"]}><AmarsoftSuppliers /></RequireRole>} />
                 <Route path="/leaderboard" element={<Leaderboard />} />
+                <Route path="/staff-eval" element={<RequireRole allow={["admin"]}><StaffEval /></RequireRole>} />
                 <Route path="/reservations" element={<Reservations />} />
                 <Route path="/watches" element={<Watches />} />
                 <Route path="/amarsoft-link" element={<RequireRole allow={["admin"]}><AmarsoftLink /></RequireRole>} />

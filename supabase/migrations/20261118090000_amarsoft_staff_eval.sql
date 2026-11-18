@@ -1,0 +1,1 @@
+-- amarsoft_staff_eval: applied via Supabase migration 'amarsoft_staff_eval' (admin-only per-salesman evaluation sums).

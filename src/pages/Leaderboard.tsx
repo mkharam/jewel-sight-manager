@@ -122,6 +122,9 @@ export default function Leaderboard() {
       <div className="flex items-center gap-2">
         <Trophy className="size-6 text-primary" />
         <h1 className="text-2xl font-bold">لوحة المتصدرين</h1>
+        {isAdmin && (
+          <Link to="/staff-eval" className="mr-auto text-sm font-semibold text-primary">التقييم المفصّل ←</Link>
+        )}
       </div>
 
       <Tabs value={period} onValueChange={(v) => setPeriod(v as Period)}>
