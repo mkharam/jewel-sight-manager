@@ -1,10 +1,11 @@
-// تقييم البائعين المفصّل (للمدير العام فقط): لكل بائع ولكل فرع — الوزن، الفواتير، فواتير ثقيلة
-// وخفيفة، سعر الجرام والمصنعية والخصم، القطع المبيعة تحت السعر المعتاد، البيع بلا باركود،
-// المرتجعات — وكل رقم مقارن بمتوسط الشركة (أخضر أحسن، أحمر أسوأ). المجاميع من amarsoft_staff_eval.
+// تقييم البائعين والفروع (للمدير العام فقط) — مصمّم ليكون واضحاً لأي أحد يقراه:
+// أقسام منفصلة، كل قسم جدول يقارن الكل جنب بعض، وتحت كل جدول شرح بسيط لكل عمود.
+// النقاط: كل مقياس يُقيَّم بترتيب البائع بين زملائه (الأحسن 100، الأضعف 0، الوسط 50)،
+// ثم مجموع موزون حسب أهمية كل مقياس. هكي النقاط عادلة ولا تتأثر بحجم الأرقام.
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Loader2, ClipboardList, SlidersHorizontal } from "lucide-react";
+import { ArrowRight, Loader2, ClipboardList, SlidersHorizontal, Info } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,238 +17,280 @@ type Raw = {
   light_inv: number; mid_inv: number; heavy_inv: number; max_inv_grams: number;
   amount: number; making: number; discount: number; grams_21: number; untagged_lines: number; low_price_lines: number; active_days: number;
 };
-
 type Extra = {
   branch_code: string; sman: string; price_index: number | null; typed_grams: number;
   phone_invoices: number; new_customers: number; repeat_customers: number;
   avg_age_days: number | null; old_pieces: number; aged_lines: number;
 };
 
-/** دمج المقاييس الإضافية (لفرع أو للشركة: متوسط موزون بالوزن/العدد). */
-function sumExtra(rows: Extra[]): Extra {
-  const n = (v: unknown) => Number(v ?? 0);
-  const tg = rows.reduce((a, r) => a + n(r.typed_grams), 0);
-  const al = rows.reduce((a, r) => a + n(r.aged_lines), 0);
-  return {
-    branch_code: "", sman: "",
-    price_index: tg ? rows.reduce((a, r) => a + n(r.price_index) * n(r.typed_grams), 0) / tg : null,
-    typed_grams: tg,
-    phone_invoices: rows.reduce((a, r) => a + n(r.phone_invoices), 0),
-    new_customers: rows.reduce((a, r) => a + n(r.new_customers), 0),
-    repeat_customers: rows.reduce((a, r) => a + n(r.repeat_customers), 0),
-    avg_age_days: al ? rows.reduce((a, r) => a + n(r.avg_age_days) * n(r.aged_lines), 0) / al : null,
-    old_pieces: rows.reduce((a, r) => a + n(r.old_pieces), 0),
-    aged_lines: al,
-  };
-}
-
-/** المقاييس المحسوبة من المجاميع — نفس الدالة للبائع وللفرع وللشركة، فالمقارنة عادلة. */
+/** كل المقاييس لشخص أو فرع — محسوبة من المجاميع بنفس الطريقة للجميع. */
 type M = {
-  grams: number; invoices: number; pieces: number; avgInv: number; perDay: number;
-  lightPct: number; heavyPct: number; pricePerGram: number; makingPerGram: number; discountPct: number;
-  lowPricePct: number; untaggedPct: number; k21Pct: number; returnPct: number; days: number;
-  light: number; mid: number; heavy: number; maxInv: number; lowLines: number; returns: number;
-  priceIndex: number; phonePct: number; newCust: number; repeatCust: number; avgAge: number; oldPct: number; oldPieces: number;
+  grams: number; invoices: number; pieces: number; avgInv: number; light: number; mid: number; heavy: number; lightPct: number; heavyPct: number;
+  pricePerGram: number; priceIndex: number | null; discountPct: number; lowPricePct: number; lowLines: number;
+  phonePct: number; newCust: number; repeatCust: number; oldPieces: number; avgAge: number | null;
+  untaggedPct: number; returns: number; returnPct: number; days: number;
 };
 
-function sum(rows: Raw[]): Raw {
-  const z = { invoices: 0, returns: 0, return_grams: 0, lines: 0, pieces: 0, grams: 0, pure_grams: 0, light_inv: 0, mid_inv: 0, heavy_inv: 0,
-    max_inv_grams: 0, amount: 0, making: 0, discount: 0, grams_21: 0, untagged_lines: 0, low_price_lines: 0, active_days: 0 } as Raw;
-  for (const r of rows) {
-    for (const k of Object.keys(z) as (keyof Raw)[]) {
-      if (k === "max_inv_grams") (z as any)[k] = Math.max(Number(z[k]), Number(r[k]));
-      else if (typeof (z as any)[k] === "number") (z as any)[k] = Number(z[k]) + Number(r[k] ?? 0);
-    }
-  }
-  return z;
-}
+const n = (v: unknown) => Number(v ?? 0);
+const pct = (a: number, b: number) => (b > 0 ? (a / b) * 100 : 0);
 
-function measure(r: Raw, x?: Extra): M {
-  const n = (v: unknown) => Number(v ?? 0);
-  const g = n(r.grams), inv = n(r.invoices), lines = n(r.lines);
-  const pct = (a: number, b: number) => (b > 0 ? (a / b) * 100 : 0);
+function measure(rs: Raw[], xs: Extra[]): M {
+  const t = (k: keyof Raw) => rs.reduce((a, r) => a + n(r[k]), 0);
+  const tx = (k: keyof Extra) => xs.reduce((a, r) => a + n(r[k]), 0);
+  const g = t("grams"), inv = t("invoices"), lines = t("lines");
+  const tg = tx("typed_grams"), al = tx("aged_lines");
   return {
-    grams: g, invoices: inv, pieces: n(r.pieces), days: n(r.active_days),
-    avgInv: inv ? g / inv : 0, perDay: n(r.active_days) ? g / n(r.active_days) : 0,
-    light: n(r.light_inv), mid: n(r.mid_inv), heavy: n(r.heavy_inv), maxInv: n(r.max_inv_grams),
-    lightPct: pct(n(r.light_inv), inv), heavyPct: pct(n(r.heavy_inv), inv),
-    pricePerGram: g ? n(r.amount) / 1000 / g : 0, makingPerGram: g ? n(r.making) / 1000 / g : 0,
-    discountPct: pct(n(r.discount), n(r.amount) + n(r.discount)),
-    lowLines: n(r.low_price_lines), lowPricePct: pct(n(r.low_price_lines), lines),
-    untaggedPct: pct(n(r.untagged_lines), lines), k21Pct: pct(n(r.grams_21), g),
-    returns: n(r.returns), returnPct: pct(n(r.returns), inv + n(r.returns)),
-    priceIndex: n(x?.price_index), phonePct: pct(n(x?.phone_invoices), inv),
-    newCust: n(x?.new_customers), repeatCust: n(x?.repeat_customers),
-    avgAge: n(x?.avg_age_days), oldPieces: n(x?.old_pieces), oldPct: pct(n(x?.old_pieces), n(x?.aged_lines)),
+    grams: g, invoices: inv, pieces: t("pieces"), avgInv: inv ? g / inv : 0,
+    light: t("light_inv"), mid: t("mid_inv"), heavy: t("heavy_inv"),
+    lightPct: pct(t("light_inv"), inv), heavyPct: pct(t("heavy_inv"), inv),
+    pricePerGram: g ? t("amount") / 1000 / g : 0,
+    priceIndex: tg ? xs.reduce((a, x) => a + n(x.price_index) * n(x.typed_grams), 0) / tg : null,
+    discountPct: pct(t("discount"), t("amount") + t("discount")),
+    lowLines: t("low_price_lines"), lowPricePct: pct(t("low_price_lines"), lines),
+    phonePct: pct(tx("phone_invoices"), inv), newCust: tx("new_customers"), repeatCust: tx("repeat_customers"),
+    oldPieces: tx("old_pieces"), avgAge: al ? xs.reduce((a, x) => a + n(x.avg_age_days) * n(x.aged_lines), 0) / al : null,
+    untaggedPct: pct(t("untagged_lines"), lines), returns: t("returns"), returnPct: pct(t("returns"), inv + t("returns")),
+    days: t("active_days"),
   };
 }
+
+// ===== النقاط =====
+type ScoreKey = "grams" | "priceIndex" | "avgInv" | "discountPct" | "lowPricePct" | "phonePct" | "returnPct" | "untaggedPct";
+const SCORE_PARTS: { key: ScoreKey; label: string; lowerBetter?: boolean; def: number }[] = [
+  { key: "grams", label: "الوزن المباع", def: 35 },
+  { key: "priceIndex", label: "سعر البيع", def: 20 },
+  { key: "avgInv", label: "وزن الفاتورة", def: 10 },
+  { key: "lowPricePct", label: "قلة البيع تحت السعر", lowerBetter: true, def: 10 },
+  { key: "discountPct", label: "قلة الخصم", lowerBetter: true, def: 10 },
+  { key: "phonePct", label: "تسجيل رقم الزبون", def: 5 },
+  { key: "returnPct", label: "قلة المرتجعات", lowerBetter: true, def: 5 },
+  { key: "untaggedPct", label: "قلة البيع بلا باركود", lowerBetter: true, def: 5 },
+];
+const WEIGHTS_KEY = "staffEval.weights.v2";
+const defaults = () => Object.fromEntries(SCORE_PARTS.map((p) => [p.key, p.def])) as Record<ScoreKey, number>;
+const loadWeights = (): Record<ScoreKey, number> => {
+  try { return { ...defaults(), ...JSON.parse(localStorage.getItem(WEIGHTS_KEY) ?? "{}") }; } catch { return defaults(); }
+};
+
+/** نقاط كل واحد من 100: ترتيبه بين زملائه في كل مقياس (الأحسن 100، الأضعف 0)، مجموع موزون. */
+function scoreAll(list: M[], w: Record<ScoreKey, number>): number[] {
+  const out = list.map(() => 0);
+  if (list.length <= 1) return list.map(() => 50);
+  let wsum = 0;
+  for (const p of SCORE_PARTS) {
+    const wt = w[p.key] ?? 0;
+    if (!wt) continue;
+    wsum += wt;
+    const vals = list.map((m) => m[p.key]);
+    list.forEach((m, i) => {
+      const v = vals[i];
+      if (v === null || v === undefined) { out[i] += 50 * wt; return; }
+      const valid = vals.filter((x): x is number => x !== null && x !== undefined);
+      // كم واحد هو أحسن منهم (والتعادل نص)
+      let better = 0;
+      for (const o of valid) {
+        if (o === v) better += 0.5;
+        else if (p.lowerBetter ? v < o : v > o) better += 1;
+      }
+      better -= 0.5; // نفسه
+      out[i] += (valid.length > 1 ? (better / (valid.length - 1)) * 100 : 50) * wt;
+    });
+  }
+  return out.map((x) => (wsum ? Math.round(x / wsum) : 50));
+}
+
+const f = (v: number | null | undefined, d = 0) => (v === null || v === undefined ? "—" : v.toLocaleString("en-US", { maximumFractionDigits: d }));
+
+// ===== أعمدة الجداول وشرحها =====
+type Col = { key: string; label: string; explain: string; get: (m: M) => number | null; fmt: (m: M) => string; lowerBetter?: boolean; neutral?: boolean };
+const SECTIONS: { key: string; label: string; intro: string; cols: Col[] }[] = [
+  {
+    key: "sales", label: "المبيعات", intro: "قدّاش باع كل واحد، وهل يبيع قطع ثقيلة ولا خفيفة.",
+    cols: [
+      { key: "grams", label: "الوزن", explain: "مجموع جرامات الذهب اللي باعها. هذا أهم رقم لأن الوزن هو الربح.", get: (m) => m.grams, fmt: (m) => `${f(m.grams, 1)} جم` },
+      { key: "invoices", label: "الفواتير", explain: "عدد الفواتير — يعني كم زبون خدم.", get: (m) => m.invoices, fmt: (m) => f(m.invoices) },
+      { key: "avgInv", label: "وزن الفاتورة", explain: "معدل الجرامات في الفاتورة الوحدة. الأعلى يعني يقنع الزبون بقطع أثقل.", get: (m) => m.avgInv, fmt: (m) => `${f(m.avgInv, 1)} جم` },
+      { key: "heavyPct", label: "فواتير ثقيلة", explain: "نسبة الفواتير اللي وزنها 20 جرام أو أكثر.", get: (m) => m.heavyPct, fmt: (m) => `${f(m.heavyPct)}% (${m.heavy})` },
+      { key: "lightPct", label: "فواتير خفيفة", explain: "نسبة الفواتير اللي وزنها أقل من 5 جرام (حلق، خواتم صغار…). مش عيب، لكن الكثير منها يعني ربح أقل.", get: (m) => m.lightPct, fmt: (m) => `${f(m.lightPct)}% (${m.light})`, lowerBetter: true },
+    ],
+  },
+  {
+    key: "price", label: "الأسعار", intro: "هل يبيع بالسعر الصحيح ولا يكسر السعر؟",
+    cols: [
+      { key: "priceIndex", label: "سعر البيع", explain: "يقارن سعر الجرام عنده بسعر نفس نوع القطعة في فرعه (خاتم بخاتم، طقم بطقم). 100 = نفس الفرع، 110 = يبيع أغلى بـ10%، 90 = أرخص بـ10%.", get: (m) => m.priceIndex, fmt: (m) => f(m.priceIndex) },
+      { key: "pricePerGram", label: "سعر الجرام", explain: "قيمة المبيعات ÷ الوزن بالدينار. للمعلومة فقط — يتأثر بنوع البضاعة، فالمقارنة الصحيحة هي «سعر البيع».", get: (m) => m.pricePerGram, fmt: (m) => `${f(m.pricePerGram)} د.ل`, neutral: true },
+      { key: "lowPricePct", label: "تحت السعر", explain: "نسبة القطع اللي باعها بسعر جرام أقل من المعتاد في فرعه لنفس العيار (أقل من 95%). الأقل أحسن.", get: (m) => m.lowPricePct, fmt: (m) => `${f(m.lowPricePct)}% (${m.lowLines})`, lowerBetter: true },
+      { key: "discountPct", label: "الخصم", explain: "نسبة الخصم المكتوب في الفواتير من قيمة البيع. الأقل أحسن.", get: (m) => m.discountPct, fmt: (m) => `${f(m.discountPct, 1)}%`, lowerBetter: true },
+    ],
+  },
+  {
+    key: "care", label: "الزبائن والبضاعة", intro: "الاهتمام بالزبون، تصريف البضاعة القديمة، والالتزام بالنظام.",
+    cols: [
+      { key: "phonePct", label: "رقم الزبون", explain: "نسبة الفواتير اللي فيها رقم تلفون الزبون. مهم باش نتواصلوا مع الزبون ونعرفوا مين يرجع.", get: (m) => m.phonePct, fmt: (m) => `${f(m.phonePct)}%` },
+      { key: "newCust", label: "زبائن جدد", explain: "زبائن أول مرة يشروا من المحل (حسب رقم التلفون).", get: (m) => m.newCust, fmt: (m) => f(m.newCust) },
+      { key: "repeatCust", label: "زبائن رجعوا", explain: "زبائن شروا قبل ورجعوا يشروا.", get: (m) => m.repeatCust, fmt: (m) => f(m.repeatCust) },
+      { key: "oldPieces", label: "قطع قديمة باعها", explain: "قطع قعدت في المخزون أكثر من 6 شهور وهو باعها — شطارة في تصريف البضاعة.", get: (m) => m.oldPieces, fmt: (m) => f(m.oldPieces) },
+      { key: "untaggedPct", label: "بلا باركود", explain: "نسبة البيع بالكود العام (18K GEN) بدل باركود القطعة. الأقل أحسن، لأن البيع بلا باركود يخرب الجرد.", get: (m) => m.untaggedPct, fmt: (m) => `${f(m.untaggedPct)}%`, lowerBetter: true },
+      { key: "returnPct", label: "المرتجعات", explain: "نسبة الفواتير اللي رجعت. الأقل أحسن.", get: (m) => m.returnPct, fmt: (m) => `${f(m.returnPct)}% (${m.returns})`, lowerBetter: true },
+    ],
+  },
+];
 
 const PERIODS: { key: Period; label: string }[] = [
   { key: "week", label: "الأسبوع" }, { key: "month", label: "الشهر" }, { key: "year", label: "السنة" },
 ];
-type SortKey = "grams" | "avgInv" | "pricePerGram" | "makingPerGram" | "lowPricePct" | "discountPct";
-const SORTS: { key: SortKey; label: string; asc?: boolean }[] = [
-  { key: "grams", label: "الوزن" },
-  { key: "avgInv", label: "وزن الفاتورة" },
-  { key: "pricePerGram", label: "سعر الجرام" },
-  { key: "makingPerGram", label: "المصنعية" },
-  { key: "lowPricePct", label: "تحت السعر", asc: true },
-  { key: "discountPct", label: "الخصم", asc: true },
-];
 
-// ===== نقاط التقييم من 100 =====
-// كل مقياس يُقارن بمتوسط الشركة: المتوسط = 50، ضعف المتوسط (أو نصفه للمقاييس اللي الأقل فيها أحسن) = 100.
-type ScoreKey = "grams" | "priceIndex" | "avgInv" | "discountPct" | "lowPricePct" | "returnPct" | "untaggedPct" | "phonePct" | "oldPct";
-const SCORE_PARTS: { key: ScoreKey; label: string; lowerBetter?: boolean; def: number }[] = [
-  { key: "grams", label: "الوزن المباع", def: 30 },
-  { key: "priceIndex", label: "سعر الجرام (لنفس الصنف)", def: 20 },
-  { key: "avgInv", label: "وزن الفاتورة", def: 10 },
-  { key: "discountPct", label: "قلة الخصم", lowerBetter: true, def: 10 },
-  { key: "lowPricePct", label: "قلة البيع تحت السعر", lowerBetter: true, def: 10 },
-  { key: "phonePct", label: "تسجيل رقم الزبون", def: 10 },
-  { key: "returnPct", label: "قلة المرتجعات", lowerBetter: true, def: 5 },
-  { key: "untaggedPct", label: "قلة البيع بلا باركود", lowerBetter: true, def: 5 },
-  { key: "oldPct", label: "بيع البضاعة الراكدة", def: 0 },
-];
-const WEIGHTS_KEY = "staffEval.weights";
-const loadWeights = (): Record<ScoreKey, number> => {
-  const d = Object.fromEntries(SCORE_PARTS.map((p) => [p.key, p.def])) as Record<ScoreKey, number>;
-  try { return { ...d, ...JSON.parse(localStorage.getItem(WEIGHTS_KEY) ?? "{}") }; } catch { return d; }
-};
-function scoreOf(m: M, avg: M, w: Record<ScoreKey, number>): number {
-  let total = 0, wsum = 0;
-  for (const p of SCORE_PARTS) {
-    const wt = w[p.key] ?? 0;
-    if (!wt) continue;
-    const v = m[p.key], a = avg[p.key];
-    let s: number;
-    if (p.key === "priceIndex") s = v ? Math.max(0, Math.min(100, 50 + (v - 100) * 2.5)) : 50; // كل 1% فوق متوسط الفرع = 2.5 نقطة
-    else if (!a) s = 50;
-    else if (p.lowerBetter) s = Math.max(0, Math.min(100, 100 - (v / a) * 50));
-    else s = Math.max(0, Math.min(100, (v / a) * 50));
-    total += s * wt; wsum += wt;
-  }
-  return wsum ? Math.round(total / wsum) : 0;
+type Who = { id: string; name: string; sub: string; m: M; prev?: M; score: number; prevScore?: number };
+
+/** لون الخلية مقارنة بمتوسط الجدول: أخضر أحسن بـ10%+، أحمر أسوأ بـ10%+. */
+function tone(v: number | null, avg: number | null, lowerBetter?: boolean, neutral?: boolean) {
+  if (neutral || v === null || avg === null || !avg) return "";
+  const d = (v - avg) / Math.abs(avg);
+  if (Math.abs(d) < 0.1) return "";
+  return (lowerBetter ? d < 0 : d > 0) ? "text-green-700 bg-green-50 dark:bg-green-950/40" : "text-red-700 bg-red-50 dark:bg-red-950/40";
 }
 
-const f = (v: number, d = 0) => v.toLocaleString("en-US", { maximumFractionDigits: d, minimumFractionDigits: 0 });
-
-/** خلية مقياس مع مقارنة بالمتوسط: higherBetter يحدد اللون. */
-function Stat({ label, value, avg, unit = "", d = 0, higherBetter = true, hint }: {
-  label: string; value: number; avg?: number; unit?: string; d?: number; higherBetter?: boolean; hint?: string;
-}) {
-  let tone = "", arrow = "";
-  if (avg !== undefined && avg > 0 && value > 0) {
-    const diff = (value - avg) / avg;
-    if (Math.abs(diff) >= 0.05) {
-      const good = higherBetter ? diff > 0 : diff < 0;
-      tone = good ? "text-green-600" : "text-red-600";
-      arrow = diff > 0 ? "▲" : "▼";
-    }
-  }
+function Explain({ items }: { items: { label: string; text: string }[] }) {
   return (
-    <div className="rounded-lg bg-muted/40 p-2" title={hint}>
-      <div className="text-[11px] text-muted-foreground">{label}</div>
-      <div className={`font-bold tabular-nums ${tone}`}>{f(value, d)}{unit && <span className="text-xs font-normal"> {unit}</span>} {arrow && <span className="text-[10px]">{arrow}</span>}</div>
-      {avg !== undefined && <div className="text-[10px] text-muted-foreground tabular-nums">المتوسط {f(avg, d)}</div>}
-    </div>
-  );
-}
-
-function MixBar({ m }: { m: M }) {
-  const t = m.light + m.mid + m.heavy || 1;
-  return (
-    <div className="space-y-1">
-      <div className="flex h-2.5 overflow-hidden rounded-full bg-muted">
-        <div className="bg-sky-400" style={{ width: `${(m.light / t) * 100}%` }} />
-        <div className="bg-amber-400" style={{ width: `${(m.mid / t) * 100}%` }} />
-        <div className="bg-primary" style={{ width: `${(m.heavy / t) * 100}%` }} />
-      </div>
-      <div className="flex justify-between text-[10px] text-muted-foreground">
-        <span>خفيفة (&lt;5 جم): {m.light}</span><span>متوسطة: {m.mid}</span><span>ثقيلة (20+ جم): {m.heavy}</span>
-      </div>
-    </div>
-  );
-}
-
-function Card2({ title, sub, m, avg, score, prev, prevScore }: { title: string; sub?: string; m: M; avg: M; score?: number; prev?: M; prevScore?: number }) {
-  const notes: string[] = [];
-  if (m.priceIndex && m.priceIndex < 92) notes.push(`يبيع نفس الأصناف أرخص من فرعه بـ${f(100 - m.priceIndex)}%`);
-  if (m.priceIndex > 108) notes.push(`يبيع نفس الأصناف أغلى من فرعه بـ${f(m.priceIndex - 100)}% 👏`);
-  if (m.invoices >= 5 && m.phonePct < Math.min(avg.phonePct * 0.5, 15)) notes.push("نادراً ما يسجل رقم الزبون في الفاتورة");
-  if (m.oldPieces >= 3 && m.oldPct > avg.oldPct * 1.3) notes.push(`باع ${m.oldPieces} قطع راكدة (أكثر من 6 شهور في المخزون) 👏`);
-  if (avg.lowPricePct > 0 && m.lowPricePct > avg.lowPricePct * 1.5 && m.lowLines >= 2) notes.push(`باع ${m.lowLines} قطعة بسعر جرام تحت المعتاد`);
-  if (m.discountPct > avg.discountPct * 1.5 && m.discountPct > 1) notes.push("خصومات أعلى من الباقين");
-  if (m.untaggedPct > Math.max(avg.untaggedPct * 1.5, 10)) notes.push("نسبة كبيرة من بيعه بلا باركود (كود عام)");
-  if (m.returnPct > Math.max(avg.returnPct * 1.5, 5)) notes.push("مرتجعات أكثر من المعتاد");
-  if (m.avgInv > avg.avgInv * 1.3) notes.push("يبيع قطع أثقل من الباقين 👏");
-  if (m.pricePerGram > avg.pricePerGram * 1.05) notes.push("يبيع الجرام بسعر أعلى من المتوسط 👏");
-  return (
-    <Card className="p-3 space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <div className="font-bold">{title}</div>
-          {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
-        </div>
-        {score !== undefined && (
-          <div className="text-center">
-            <div className={`text-2xl font-black tabular-nums ${score >= 60 ? "text-green-600" : score < 40 ? "text-red-600" : ""}`}>{score}</div>
-            <div className="text-[10px] text-muted-foreground">من 100
-              {prevScore !== undefined && prevScore > 0 && (
-                <span className={score > prevScore ? "text-green-600" : score < prevScore ? "text-red-600" : ""}> ({score >= prevScore ? "+" : ""}{score - prevScore})</span>
-              )}
-            </div>
+    <Card className="p-3 bg-muted/30">
+      <p className="mb-2 flex items-center gap-1.5 text-sm font-bold"><Info className="size-4 text-primary" /> شن معنى كل عمود</p>
+      <dl className="grid gap-2 sm:grid-cols-2 text-sm">
+        {items.map((i) => (
+          <div key={i.label}>
+            <dt className="font-semibold">{i.label}</dt>
+            <dd className="text-muted-foreground leading-relaxed">{i.text}</dd>
           </div>
-        )}
-      </div>
-      {prev && prev.grams > 0 && (
-        <div className="text-[11px] text-muted-foreground">
-          الفترة اللي قبلها: {f(prev.grams, 1)} جم، {f(prev.invoices)} فاتورة —{" "}
-          <span className={m.grams >= prev.grams ? "text-green-600" : "text-red-600"}>
-            الوزن {m.grams >= prev.grams ? "زاد" : "نقص"} {f(Math.abs(((m.grams - prev.grams) / prev.grams) * 100))}%
-          </span>
-        </div>
-      )}
-      <div className="grid grid-cols-3 gap-1.5 text-sm">
-        <Stat label="الوزن" value={m.grams} unit="جم" d={1} />
-        <Stat label="الفواتير" value={m.invoices} />
-        <Stat label="وزن الفاتورة" value={m.avgInv} avg={avg.avgInv} unit="جم" d={1} />
-        <Stat label="سعر الجرام" value={m.pricePerGram} avg={avg.pricePerGram} unit="د.ل" hint="قيمة المبيعات ÷ الوزن" />
-        <Stat label="المصنعية للجرام" value={m.makingPerGram} avg={avg.makingPerGram} unit="د.ل" />
-        <Stat label="الخصم" value={m.discountPct} avg={avg.discountPct} unit="%" d={1} higherBetter={false} />
-        <Stat label="تحت السعر المعتاد" value={m.lowPricePct} avg={avg.lowPricePct} unit="%" d={0} higherBetter={false}
-          hint="قطع سعر جرامها أقل من 95% من وسيط نفس الصنف في الفرع" />
-        <Stat label="بلا باركود" value={m.untaggedPct} avg={avg.untaggedPct} unit="%" d={0} higherBetter={false} />
-        <Stat label="وزن لكل يوم بيع" value={m.perDay} avg={avg.perDay} unit="جم" d={1} />
-        <Stat label="مؤشر السعر للصنف" value={m.priceIndex} avg={100} d={0}
-          hint="سعر جرامه مقارنة بمتوسط فرعه لنفس نوع القطعة: 100 = نفس المتوسط، 110 = أغلى بـ10%" />
-        <Stat label="فواتير برقم الزبون" value={m.phonePct} avg={avg.phonePct} unit="%" d={0} />
-        <Stat label="زبائن جدد" value={m.newCust} d={0} hint="أول شراء لهم في الفترة (حسب رقم الهاتف في الفاتورة)" />
-        <Stat label="عمر القطعة المباعة" value={m.avgAge} avg={avg.avgAge} unit="يوم" d={0}
-          hint="متوسط الأيام في المخزون قبل البيع — الأعلى يعني يصرّف البضاعة القديمة" />
-        <Stat label="قطع راكدة مباعة" value={m.oldPieces} d={0} hint="قطع قعدت أكثر من 180 يوم قبل ما تنباع" />
-        <Stat label="زبائن رجعوا" value={m.repeatCust} d={0} />
-      </div>
-      <MixBar m={m} />
-      <div className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground tabular-nums">
-        <span>{f(m.pieces)} قطعة</span><span>{m.days} يوم بيع</span><span>أثقل فاتورة {f(m.maxInv, 1)} جم</span>
-        <span>عيار 21: {f(m.k21Pct)}%</span>{m.returns > 0 && <span className="text-amber-600">{m.returns} مرتجع</span>}
-      </div>
-      {notes.length > 0 && <ul className="text-xs space-y-0.5">{notes.map((n) => <li key={n}>• {n}</li>)}</ul>}
+        ))}
+      </dl>
+      <p className="mt-2 text-xs text-muted-foreground">🟩 أخضر = أحسن من المتوسط بـ10% أو أكثر. 🟥 أحمر = أضعف من المتوسط بـ10% أو أكثر. اضغط على اسم العمود لترتيب الجدول بيه.</p>
     </Card>
   );
 }
 
+function Table({ rows, cols, showScore }: { rows: Who[]; cols: Col[]; showScore?: boolean }) {
+  const [sort, setSort] = useState<string>(showScore ? "score" : cols[0].key);
+  const avg = (c: Col) => {
+    const v = rows.map((r) => c.get(r.m)).filter((x): x is number => x !== null);
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+  };
+  const avgs = Object.fromEntries(cols.map((c) => [c.key, avg(c)]));
+  const sorted = [...rows].sort((a, b) => {
+    if (sort === "score") return b.score - a.score;
+    const c = cols.find((x) => x.key === sort)!;
+    const va = c.get(a.m) ?? -Infinity, vb = c.get(b.m) ?? -Infinity;
+    return c.lowerBetter ? va - vb : vb - va;
+  });
+  const th = "px-2 py-2 text-xs font-semibold whitespace-nowrap cursor-pointer select-none";
+  return (
+    <div className="overflow-x-auto rounded-xl border bg-card">
+      <table className="w-full text-sm">
+        <thead className="bg-muted/50">
+          <tr>
+            <th className="sticky right-0 z-10 bg-muted px-2 py-2 text-right text-xs font-semibold">الاسم</th>
+            {showScore && <th className={`${th} ${sort === "score" ? "text-primary" : ""}`} onClick={() => setSort("score")}>النقاط {sort === "score" && "▼"}</th>}
+            {cols.map((c) => (
+              <th key={c.key} className={`${th} ${sort === c.key ? "text-primary" : ""}`} onClick={() => setSort(c.key)}>{c.label} {sort === c.key && "▼"}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((r, i) => (
+            <tr key={r.id} className="border-t">
+              <td className="sticky right-0 z-10 bg-card px-2 py-2 min-w-[120px]">
+                <div className="font-semibold leading-tight">{i < 3 ? ["🥇", "🥈", "🥉"][i] : `${i + 1}.`} {r.name}</div>
+                <div className="text-[11px] text-muted-foreground">{r.sub}</div>
+              </td>
+              {showScore && (
+                <td className="px-2 py-2 text-center">
+                  <div className={`text-lg font-black tabular-nums ${r.score >= 65 ? "text-green-700" : r.score < 35 ? "text-red-700" : ""}`}>{r.score}</div>
+                  {r.prevScore !== undefined && (
+                    <div className={`text-[10px] tabular-nums ${r.score > r.prevScore ? "text-green-700" : r.score < r.prevScore ? "text-red-700" : "text-muted-foreground"}`}>
+                      {r.score === r.prevScore ? "نفس" : `${r.score > r.prevScore ? "▲" : "▼"} ${Math.abs(r.score - r.prevScore)}`}
+                    </div>
+                  )}
+                </td>
+              )}
+              {cols.map((c) => (
+                <td key={c.key} className={`px-2 py-2 text-center tabular-nums whitespace-nowrap ${tone(c.get(r.m), avgs[c.key], c.lowerBetter, c.neutral)}`}>
+                  {c.fmt(r.m)}
+                </td>
+              ))}
+            </tr>
+          ))}
+          <tr className="border-t bg-muted/30 text-xs text-muted-foreground">
+            <td className="sticky right-0 bg-muted px-2 py-2 font-semibold">المتوسط</td>
+            {showScore && <td className="text-center">50</td>}
+            {cols.map((c) => <td key={c.key} className="px-2 py-2 text-center tabular-nums">{f(avgs[c.key], 1)}</td>)}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** نظرة عامة: النقاط + 4 أرقام أساسية + جملة واضحة لكل واحد. */
+function Overview({ rows }: { rows: Who[] }) {
+  const sorted = [...rows].sort((a, b) => b.score - a.score);
+  const avgG = rows.reduce((a, r) => a + r.m.grams, 0) / (rows.length || 1);
+  const sentence = (r: Who) => {
+    const out: string[] = [];
+    if (r.m.grams > avgG * 1.2) out.push("يبيع وزن أكثر من زملائه");
+    else if (r.m.grams < avgG * 0.6) out.push("وزنه المباع قليل");
+    if (r.m.priceIndex !== null && r.m.priceIndex >= 105) out.push("يبيع بسعر أعلى من فرعه");
+    if (r.m.priceIndex !== null && r.m.priceIndex <= 93) out.push("يبيع أرخص من فرعه");
+    if (r.m.lowPricePct > 25) out.push("يكسر السعر كثير");
+    if (r.m.discountPct > 3) out.push("يعطي خصومات كثيرة");
+    if (r.m.invoices >= 5 && r.m.phonePct < 10) out.push("ما يسجلش رقم الزبون");
+    if (r.prev && r.prev.grams > 0) {
+      const ch = ((r.m.grams - r.prev.grams) / r.prev.grams) * 100;
+      if (ch >= 15) out.push(`تحسّن عن الفترة اللي قبلها (+${f(ch)}%)`);
+      if (ch <= -15) out.push(`نقص عن الفترة اللي قبلها (${f(ch)}%)`);
+    }
+    return out.length ? out.join(" · ") : "أداء قريب من المتوسط";
+  };
+  return (
+    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      {sorted.map((r, i) => (
+        <Card key={r.id} className="p-3 space-y-2">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="font-bold">{i < 3 ? ["🥇", "🥈", "🥉"][i] : `${i + 1}.`} {r.name}</div>
+              <div className="text-xs text-muted-foreground">{r.sub}</div>
+            </div>
+            <div className="text-center">
+              <div className={`text-3xl font-black tabular-nums leading-none ${r.score >= 65 ? "text-green-700" : r.score < 35 ? "text-red-700" : ""}`}>{r.score}</div>
+              <div className="text-[10px] text-muted-foreground">من 100</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-4 gap-1 text-center">
+            {[["الوزن", `${f(r.m.grams, 0)}`, "جم"], ["فواتير", f(r.m.invoices), ""], ["الفاتورة", f(r.m.avgInv, 1), "جم"], ["السعر", f(r.m.priceIndex), ""]].map(([l, v, u]) => (
+              <div key={l} className="rounded-md bg-muted/40 py-1">
+                <div className="text-[10px] text-muted-foreground">{l}</div>
+                <div className="text-sm font-bold tabular-nums">{v}<span className="text-[10px] font-normal"> {u}</span></div>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs leading-relaxed">{sentence(r)}</p>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+type View = "overview" | "sales" | "price" | "care" | "hours" | "guide";
+const VIEWS: { key: View; label: string }[] = [
+  { key: "overview", label: "النتيجة" }, { key: "sales", label: "المبيعات" }, { key: "price", label: "الأسعار" },
+  { key: "care", label: "الزبائن والبضاعة" }, { key: "hours", label: "أوقات البيع" }, { key: "guide", label: "كيف تنحسب النقاط" },
+];
+
 export default function StaffEval() {
   const [period, setPeriod] = useState<Period>("month");
+  const [level, setLevel] = useState<"staff" | "branches">("staff");
   const [branch, setBranch] = useState<string>("all");
-  const [view, setView] = useState<"staff" | "branches" | "hours">("staff");
-  const [sortBy, setSortBy] = useState<SortKey | "score">("score");
+  const [view, setView] = useState<View>("overview");
   const [weights, setWeights] = useState<Record<ScoreKey, number>>(loadWeights);
-  const [editWeights, setEditWeights] = useState(false);
   const saveWeights = (w: Record<ScoreKey, number>) => { setWeights(w); try { localStorage.setItem(WEIGHTS_KEY, JSON.stringify(w)); } catch { /* ignore */ } };
 
-  // الفترة الحالية والتي قبلها بنفس الطول (للمقارنة).
   const ranges = useMemo(() => {
     const { from, to } = periodDays(period);
     const len = Math.round((new Date(to).getTime() - new Date(from).getTime()) / 86_400_000) + 1;
@@ -273,125 +316,133 @@ export default function StaffEval() {
     },
   });
 
-  const rows = q.data?.rows ?? [];
-  const extra = q.data?.extra ?? [];
-  const keyOf = (r: { branch_code: string; sman: string }) => `${r.branch_code}|${r.sman}`;
-  const extraBy = useMemo(() => new Map(extra.map((x) => [keyOf(x), x])), [extra]);
-  const company = useMemo(() => measure(sum(rows), sumExtra(extra)), [rows, extra]);
+  const branchList = useMemo(() => {
+    const m = new Map<string, string>();
+    (q.data?.rows ?? []).forEach((r) => m.set(r.branch_code, r.branch_name));
+    return [...m.entries()].sort();
+  }, [q.data]);
 
-  const prevRows = qPrev.data?.rows ?? [];
-  const prevExtra = qPrev.data?.extra ?? [];
-  const prevCompany = useMemo(() => measure(sum(prevRows), sumExtra(prevExtra)), [prevRows, prevExtra]);
-  const prevBy = useMemo(() => {
-    const ex = new Map(prevExtra.map((x) => [keyOf(x), x]));
-    return new Map(prevRows.map((r) => {
-      const m = measure(r, ex.get(keyOf(r)));
-      return [keyOf(r), { m, score: scoreOf(m, prevCompany, weights) }];
+  // الأشخاص أو الفروع، مع الفترة اللي قبلها، والنقاط محسوبة بين نفس المجموعة.
+  const build = (data: { rows: Raw[]; extra: Extra[] } | undefined): { id: string; name: string; sub: string; m: M }[] => {
+    if (!data) return [];
+    const key = (r: { branch_code: string; sman: string }) => `${r.branch_code}|${r.sman}`;
+    if (level === "branches") {
+      return [...new Set(data.rows.map((r) => r.branch_code))].map((code) => {
+        const rs = data.rows.filter((r) => r.branch_code === code);
+        return { id: code, name: rs[0].branch_name, sub: `${rs.length} بائع`, m: measure(rs, data.extra.filter((x) => x.branch_code === code)) };
+      });
+    }
+    return data.rows.filter((r) => branch === "all" || r.branch_code === branch).map((r) => ({
+      id: key(r), name: r.salesman_name, sub: r.branch_name,
+      m: measure([r], data.extra.filter((x) => key(x) === key(r))),
     }));
-  }, [prevRows, prevExtra, prevCompany, weights]);
-
-  const branches = useMemo(() => {
-    const map = new Map<string, Raw[]>();
-    rows.forEach((r) => map.set(r.branch_code, [...(map.get(r.branch_code) ?? []), r]));
-    return [...map.entries()].map(([code, rs]) => {
-      const m = measure(sum(rs), sumExtra(extra.filter((x) => x.branch_code === code)));
-      const pr = prevRows.filter((r) => r.branch_code === code);
-      const pm = pr.length ? measure(sum(pr), sumExtra(prevExtra.filter((x) => x.branch_code === code))) : undefined;
-      return { code, name: rs[0].branch_name, m, staff: rs.length, score: scoreOf(m, company, weights), prev: pm, prevScore: pm ? scoreOf(pm, prevCompany, weights) : undefined };
+  };
+  const who: Who[] = useMemo(() => {
+    const cur = build(q.data).filter((x) => x.m.invoices > 0);
+    const prev = build(qPrev.data).filter((x) => x.m.invoices > 0);
+    const sc = scoreAll(cur.map((x) => x.m), weights);
+    const psc = scoreAll(prev.map((x) => x.m), weights);
+    return cur.map((x, i) => {
+      const pi = prev.findIndex((p) => p.id === x.id);
+      return { ...x, score: sc[i], prev: pi >= 0 ? prev[pi].m : undefined, prevScore: pi >= 0 ? psc[pi] : undefined };
     });
-  }, [rows, extra, prevRows, prevExtra, company, prevCompany, weights]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q.data, qPrev.data, level, branch, weights]);
 
-  const staff = rows.filter((r) => branch === "all" || r.branch_code === branch)
-    .map((r) => {
-      const m = measure(r, extraBy.get(keyOf(r)));
-      const p = prevBy.get(keyOf(r));
-      return { r, m, score: scoreOf(m, company, weights), prev: p?.m, prevScore: p?.score };
-    })
-    .sort((a, b) => {
-      if (sortBy === "score") return b.score - a.score;
-      const o = SORTS.find((x) => x.key === sortBy)!;
-      return o.asc ? a.m[sortBy] - b.m[sortBy] : b.m[sortBy] - a.m[sortBy];
-    });
+  const section = SECTIONS.find((x) => x.key === view);
 
   return (
-    <div className="max-w-3xl mx-auto space-y-4" dir="rtl">
+    <div className="mx-auto max-w-6xl space-y-4" dir="rtl">
       <div className="flex items-center gap-2">
-        <Link to="/leaderboard"><ArrowRight className="size-5" /></Link>
+        <Link to="/leaderboard" aria-label="رجوع"><ArrowRight className="size-5" /></Link>
         <ClipboardList className="size-6 text-primary" />
-        <h1 className="text-2xl font-bold">تقييم البائعين والفروع</h1>
-      </div>
-      <p className="text-xs text-muted-foreground">كل رقم مقارن بمتوسط الشركة في نفس الفترة: الأخضر أحسن من المتوسط، والأحمر أسوأ (فرق 5% أو أكثر).</p>
-
-      <Tabs value={period} onValueChange={(v) => setPeriod(v as Period)}>
-        <TabsList className="grid grid-cols-3 w-full">{PERIODS.map((p) => <TabsTrigger key={p.key} value={p.key}>{p.label}</TabsTrigger>)}</TabsList>
-      </Tabs>
-
-      <div className="flex gap-2">
-        <Button size="sm" variant={view === "staff" ? "default" : "outline"} onClick={() => setView("staff")}>البائعين</Button>
-        <Button size="sm" variant={view === "branches" ? "default" : "outline"} onClick={() => setView("branches")}>الفروع</Button>
-        <Button size="sm" variant={view === "hours" ? "default" : "outline"} onClick={() => setView("hours")}>أوقات البيع</Button>
-        <span className="flex-1" />
-        <Button size="sm" variant={editWeights ? "default" : "ghost"} onClick={() => setEditWeights(!editWeights)}>
-          <SlidersHorizontal className="size-4 ml-1" /> أوزان النقاط
-        </Button>
+        <h1 className="text-xl sm:text-2xl font-bold">تقييم البائعين والفروع</h1>
       </div>
 
-      {editWeights && (
-        <Card className="p-3 space-y-2">
-          <p className="text-xs text-muted-foreground">قدّاش يأثر كل مقياس في نقاط التقييم (من 0 إلى 50). المتوسط = 50 نقطة، والأحسن من المتوسط فوقها.</p>
-          {SCORE_PARTS.map((p) => (
-            <label key={p.key} className="flex items-center gap-2 text-sm">
-              <span className="w-40 shrink-0">{p.label}</span>
-              <input type="range" min={0} max={50} step={5} value={weights[p.key] ?? 0} className="flex-1 accent-primary"
-                onChange={(e) => saveWeights({ ...weights, [p.key]: Number(e.target.value) })} />
-              <span className="w-8 text-center tabular-nums">{weights[p.key] ?? 0}</span>
-            </label>
+      {/* الفترة + بائعين/فروع + الفرع */}
+      <div className="grid gap-2 lg:grid-cols-[1fr_auto]">
+        <Tabs value={period} onValueChange={(v) => setPeriod(v as Period)}>
+          <TabsList className="grid w-full grid-cols-3">{PERIODS.map((p) => <TabsTrigger key={p.key} value={p.key}>{p.label}</TabsTrigger>)}</TabsList>
+        </Tabs>
+        <div className="flex gap-1">
+          <Button size="sm" className="flex-1" variant={level === "staff" ? "default" : "outline"} onClick={() => setLevel("staff")}>البائعين</Button>
+          <Button size="sm" className="flex-1" variant={level === "branches" ? "default" : "outline"} onClick={() => setLevel("branches")}>الفروع</Button>
+        </div>
+      </div>
+      {(level === "staff" || view === "hours") && (
+        <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
+          <Button size="sm" variant={branch === "all" ? "default" : "outline"} className="shrink-0" onClick={() => setBranch("all")}>كل الفروع</Button>
+          {branchList.map(([code, name]) => (
+            <Button key={code} size="sm" variant={branch === code ? "default" : "outline"} className="shrink-0" onClick={() => setBranch(code)}>{name}</Button>
           ))}
-          <Button size="sm" variant="outline" onClick={() => saveWeights(Object.fromEntries(SCORE_PARTS.map((p) => [p.key, p.def])) as Record<ScoreKey, number>)}>الافتراضي</Button>
-        </Card>
+        </div>
       )}
 
-      {(view === "staff" || view === "hours") && (
-        <>
-          <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
-            <Button size="sm" variant={branch === "all" ? "default" : "outline"} className="shrink-0" onClick={() => setBranch("all")}>كل الفروع</Button>
-            {branches.map((b) => (
-              <Button key={b.code} size="sm" variant={branch === b.code ? "default" : "outline"} className="shrink-0" onClick={() => setBranch(b.code)}>{b.name}</Button>
-            ))}
-          </div>
-          {view === "staff" && <div className="flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
-            <span className="text-xs text-muted-foreground shrink-0">رتّب بـ:</span>
-            <Button size="sm" variant={sortBy === "score" ? "default" : "outline"} className="shrink-0 h-8 text-xs" onClick={() => setSortBy("score")}>النقاط</Button>
-            {SORTS.map((s) => (
-              <Button key={s.key} size="sm" variant={sortBy === s.key ? "default" : "outline"} className="shrink-0 h-8 text-xs" onClick={() => setSortBy(s.key)}>{s.label}</Button>
-            ))}
-          </div>}
-        </>
-      )}
+      {/* الأقسام */}
+      <div className="flex gap-1.5 overflow-x-auto border-b pb-2 [scrollbar-width:none]">
+        {VIEWS.map((v) => (
+          <button key={v.key} onClick={() => setView(v.key)}
+            className={`shrink-0 rounded-full px-3 py-1.5 text-sm transition ${view === v.key ? "bg-primary text-primary-foreground font-semibold" : "bg-muted/60 text-muted-foreground"}`}>
+            {v.label}
+          </button>
+        ))}
+      </div>
 
       {q.isLoading ? (
         <div className="flex justify-center py-16"><Loader2 className="size-6 animate-spin text-primary" /></div>
       ) : q.error ? (
         <Card className="p-6 text-center text-sm text-destructive">تعذّر التحميل: {(q.error as Error).message}</Card>
-      ) : !rows.length ? (
-        <Card className="p-6 text-center text-sm text-muted-foreground">لا توجد فواتير بأسماء البائعين في هذه الفترة.</Card>
       ) : view === "hours" ? (
         <Heatmap data={heat.data} loading={heat.isLoading} />
-      ) : view === "branches" ? (
-        <div className="space-y-2">
-          <Card2 title="كل الشركة" m={company} avg={company} prev={prevCompany} />
-          {[...branches].sort((a, b) => b.score - a.score).map((b) => (
-            <Card2 key={b.code} title={b.name} sub={`${b.staff} بائع`} m={b.m} avg={company} score={b.score} prev={b.prev} prevScore={b.prevScore} />
-          ))}
+      ) : view === "guide" ? (
+        <Guide weights={weights} onChange={saveWeights} />
+      ) : !who.length ? (
+        <Card className="p-6 text-center text-sm text-muted-foreground">لا توجد فواتير بأسماء البائعين في هذه الفترة.</Card>
+      ) : view === "overview" ? (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            النقاط من 100 تجمع كل شي: الوزن، السعر، الخصم، المرتجعات… كل واحد مقارن بزملائه. ٥٠ = في النص، فوق ٦٥ ممتاز 🟢، تحت ٣٥ يحتاج متابعة 🔴.
+            الشرح الكامل في «كيف تنحسب النقاط».
+          </p>
+          <Overview rows={who} />
         </div>
-      ) : (
-        <div className="space-y-2">
-          {staff.map(({ r, m, score, prev, prevScore }, i) => (
-            <Card2 key={`${r.branch_code}-${r.sman}`} title={`${i + 1}. ${r.salesman_name}`} sub={r.branch_name} m={m} avg={company}
-              score={score} prev={prev} prevScore={prevScore} />
-          ))}
+      ) : section ? (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">{section.intro}</p>
+          <Table key={section.key} rows={who} cols={section.cols} showScore={section.key === "sales"} />
+          <Explain items={section.cols.map((c) => ({ label: c.label, text: c.explain }))} />
         </div>
-      )}
+      ) : null}
+    </div>
+  );
+}
+
+function Guide({ weights, onChange }: { weights: Record<ScoreKey, number>; onChange: (w: Record<ScoreKey, number>) => void }) {
+  const total = SCORE_PARTS.reduce((a, p) => a + (weights[p.key] ?? 0), 0) || 1;
+  return (
+    <div className="grid gap-3 lg:grid-cols-2">
+      <Card className="p-4 space-y-2 text-sm leading-relaxed">
+        <p className="font-bold text-base">كيف تنحسب النقاط؟</p>
+        <p>١. في كل مقياس (مثلاً الوزن) نرتّب البائعين من الأحسن للأضعف.</p>
+        <p>٢. الأول ياخذ <b>100</b>، الأخير ياخذ <b>0</b>، واللي في النص ياخذ <b>50</b>.</p>
+        <p>٣. نجمع نقاط كل المقاييس حسب أهميتها (النسب على اليسار)، ويطلع رقم واحد من 100.</p>
+        <p>٤. المقاييس اللي «الأقل أحسن» (الخصم، المرتجعات، البيع تحت السعر…) الأقل فيها ياخذ 100.</p>
+        <p className="text-muted-foreground">مثال: لو الوزن 35% من النقاط، وأحمد الأول في الوزن (100) وفي النص في الباقي (50)، نقاطه تقريباً 68.</p>
+        <p className="text-muted-foreground">البائع يتقارن مع زملائه في نفس الفترة — الفروع تتقارن مع بعضها. الأسبوع فيه فواتير قليلة، فالشهر أعدل للتقييم.</p>
+        <p className="text-muted-foreground">الرقم الصغير تحت النقاط (▲ أو ▼) = الفرق عن الفترة اللي قبلها.</p>
+      </Card>
+      <Card className="p-4 space-y-3">
+        <p className="flex items-center gap-1.5 font-bold"><SlidersHorizontal className="size-4" /> أهمية كل مقياس</p>
+        {SCORE_PARTS.map((p) => (
+          <label key={p.key} className="flex items-center gap-2 text-sm">
+            <span className="w-36 shrink-0">{p.label}</span>
+            <input type="range" min={0} max={50} step={5} value={weights[p.key] ?? 0} className="flex-1 accent-primary"
+              onChange={(e) => onChange({ ...weights, [p.key]: Number(e.target.value) })} />
+            <span className="w-10 text-left tabular-nums">{Math.round(((weights[p.key] ?? 0) / total) * 100)}%</span>
+          </label>
+        ))}
+        <Button size="sm" variant="outline" onClick={() => onChange(defaults())}>رجّع الافتراضي</Button>
+      </Card>
     </div>
   );
 }
