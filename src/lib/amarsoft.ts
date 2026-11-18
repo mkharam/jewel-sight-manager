@@ -18,7 +18,7 @@ export function tripoliToday(now = new Date()) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(now);
 }
 
-function addDays(ymd: string, n: number) {
+export function addDays(ymd: string, n: number) {
   const d = new Date(`${ymd}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);

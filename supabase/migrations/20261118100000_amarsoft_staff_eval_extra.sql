@@ -1,0 +1,1 @@
+-- amarsoft_staff_eval_extra + amarsoft_sales_heatmap: applied via Supabase migration 'amarsoft_staff_eval_extra' (admin-only).
