@@ -26,6 +26,33 @@ const PERIODS: { key: Period; label: string }[] = [
   { key: "month", label: "الشهر" }, { key: "year", label: "السنة" },
 ];
 
+// معايير الترتيب: الوزن هو الأساس (الربح)، والباقي لتقييم زاوية ثانية من الأداء.
+type SortKey = "grams" | "invoices" | "pieces" | "avg" | "pure" | "money";
+const SORTS: { key: SortKey; label: string; hint: string; admin?: boolean }[] = [
+  { key: "grams", label: "الوزن", hint: "الترتيب بالوزن، لأن الوزن هو الربح." },
+  { key: "invoices", label: "الفواتير", hint: "الترتيب بعدد الفواتير — مين خدم زبائن أكثر." },
+  { key: "pieces", label: "القطع", hint: "الترتيب بعدد القطع المباعة." },
+  { key: "avg", label: "وزن الفاتورة", hint: "متوسط الوزن في الفاتورة الواحدة — مين يبيع قطع ثقيلة." },
+  { key: "pure", label: "الذهب الصافي", hint: "الترتيب بالذهب الصافي (حسب العيار) — 21 يحسب أكثر من 18." },
+  { key: "money", label: "المبيعات", hint: "الترتيب بقيمة المبيعات بالدينار.", admin: true },
+];
+const avgOf = (r: Row) => (Number(r.invoices) > 0 ? Number(r.grams) / Number(r.invoices) : 0);
+const metric = (r: Row, k: SortKey) =>
+  k === "grams" ? Number(r.grams) : k === "invoices" ? Number(r.invoices) : k === "pieces" ? Number(r.pieces)
+    : k === "avg" ? avgOf(r) : k === "pure" ? Number(r.pure_grams) : Number(r.net_dirhams ?? 0);
+/** القيمة المعروضة بجانب الاسم في الترتيب المختار (للجميع ما عدا المبيعات بالدينار). */
+function metricLabel(r: Row, k: SortKey) {
+  const n = (v: number, d = 0) => v.toLocaleString("en-US", { maximumFractionDigits: d });
+  switch (k) {
+    case "invoices": return `${n(Number(r.invoices))} فاتورة`;
+    case "pieces": return `${n(Number(r.pieces))} قطعة`;
+    case "avg": return `${n(avgOf(r), 1)} جم للفاتورة`;
+    case "pure": return `${n(Number(r.pure_grams), 1)} جم صافي`;
+    case "money": return `${n(Number(r.net_dirhams ?? 0) / 1000)} د.ل`;
+    default: return null;
+  }
+}
+
 async function fetchBoard(period: Period, branch: string | null) {
   const { from, to } = periodDays(period);
   const { start, end } = daysToRange(from, to);
@@ -61,6 +88,8 @@ export default function Leaderboard() {
   const [period, setPeriod] = useState<Period>("month");
   const [branch, setBranch] = useState(ALL);
   const [open, setOpen] = useState<Row | null>(null);
+  const [sortBy, setSortBy] = useState<SortKey>("grams");
+  const sortOptions = SORTS.filter((o) => !o.admin || isAdmin);
 
   const board = useQuery({
     queryKey: ["amarsoft-leaderboard-v2", period, branch],
@@ -78,6 +107,10 @@ export default function Leaderboard() {
   });
 
   const ranked = useMemo(() => rank(board.data ?? []), [board.data]);
+  // الترتيب المعروض حسب المعيار المختار؛ عند التساوي الوزن يحسم.
+  const shown = useMemo(() => sortBy === "grams" ? ranked
+    : [...ranked].sort((a, b) => metric(b.row, sortBy) - metric(a.row, sortBy) || Number(b.row.grams) - Number(a.row.grams)),
+  [ranked, sortBy]);
   const topWeight = ranked[0]?.row;
   const topInvoices = ranked.find((r) => r.invoiceRank === 0)?.row;
   const scopeTagging = (tagging.data ?? []).filter((t) => branch === ALL || t.branch_code === branch);
@@ -106,6 +139,16 @@ export default function Leaderboard() {
         ))}
       </div>
 
+      {/* معيار الترتيب */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <span className="text-xs text-muted-foreground shrink-0">رتّب بـ:</span>
+        {sortOptions.map((o) => (
+          <Button key={o.key} size="sm" variant={sortBy === o.key ? "default" : "outline"} onClick={() => setSortBy(o.key)} className="shrink-0 h-8 text-xs">
+            {o.label}
+          </Button>
+        ))}
+      </div>
+
       {board.isLoading ? (
         <div className="flex justify-center py-16"><Loader2 className="size-6 animate-spin text-primary" /></div>
       ) : board.error ? (
@@ -116,7 +159,7 @@ export default function Leaderboard() {
         </Card>
       ) : (
         <>
-          {topWeight && topInvoices && (
+          {sortBy === "grams" && topWeight && topInvoices && (
             <Card className="p-4 bg-gold-soft border-primary/30 space-y-1">
               {sameAs(topWeight, topInvoices) ? (
                 <p className="text-base"><b>{nameOf(topWeight)}</b> الأول: باع أكثر وزن وعنده أكثر فواتير 👏</p>
@@ -128,11 +171,18 @@ export default function Leaderboard() {
               <p className="text-xs text-muted-foreground">الترتيب بالوزن، لأن الوزن هو الربح.</p>
             </Card>
           )}
+          {sortBy !== "grams" && shown[0] && (
+            <Card className="p-4 bg-gold-soft border-primary/30 space-y-1">
+              <p className="text-base"><b>{nameOf(shown[0].row)}</b> الأول في {SORTS.find((o) => o.key === sortBy)?.label}.</p>
+              <p className="text-xs text-muted-foreground">{SORTS.find((o) => o.key === sortBy)?.hint}</p>
+            </Card>
+          )}
 
           <div className="space-y-2">
-            {ranked.map(({ row: r, weightRank: i, invoiceRank }) => {
+            {shown.map(({ row: r, weightRank, invoiceRank }, i) => {
               const me = !!user && r.profile_id === user.id;
-              const note = describe(i, invoiceRank, ranked.length);
+              const note = sortBy === "grams" ? describe(weightRank, invoiceRank, ranked.length) : `${ORDINALS[weightRank] ?? `رقم ${weightRank + 1}`} في الوزن`;
+              const value = metricLabel(r, sortBy);
               return (
                 <button key={`${r.branch_code}-${r.sman}`} onClick={() => setOpen(r)} className="w-full text-right">
                   <Card className={`p-3 flex items-center gap-3 ${i < 3 ? "border-primary/40" : ""} ${me ? "ring-2 ring-primary" : ""}`}>
@@ -145,6 +195,7 @@ export default function Leaderboard() {
                         {me && <Badge className="text-[10px]">أنت</Badge>}
                       </div>
                       <div className="text-xs text-muted-foreground">{r.branch_name ?? r.branch_code}</div>
+                      {value && <div className="text-sm font-semibold text-primary mt-0.5 tabular-nums">{value}</div>}
                       {note && <div className="text-sm mt-0.5">{note}</div>}
                       {isAdmin && <Numbers r={r} />}
                     </div>
