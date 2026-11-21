@@ -69,7 +69,8 @@ const SPOT_RATE = "spot_usd_lyd_rate";
 const SPOT_MARGIN = "spot_margin_percent";
 const SPOT_MODE = "spot_rate_mode"; // manual = سعر دولار يدوي | official = الرسمي الحيّ × (1 + العلاوة)
 const SPOT_PREMIUM = "spot_premium_percent"; // علاوة السوق فوق السعر الرسمي
-export type SpotRateMode = "manual" | "official";
+/** parallel = الدولار الموازي التلقائي (market_rates، يتحدّث كل ساعة) — الافتراضي لو المدير ما اختارش. */
+export type SpotRateMode = "manual" | "official" | "parallel";
 
 /** سعر الدولار بالدينار وهامش الربح % لاقتراح سعر الذهب من السوق العالمي. */
 export function useSpotSettings() {
@@ -91,7 +92,8 @@ export function useSpotSettings() {
     await qc.invalidateQueries({ queryKey: ["app-settings"] });
   };
 
-  const mode: SpotRateMode = data?.get(SPOT_MODE) === "official" ? "official" : "manual";
+  const saved = data?.get(SPOT_MODE);
+  const mode: SpotRateMode = saved === "official" ? "official" : saved === "manual" ? "manual" : "parallel";
   return {
     rate: numOrNull(data?.get(SPOT_RATE)),
     marginPercent: numOrNull(data?.get(SPOT_MARGIN)) ?? 0,

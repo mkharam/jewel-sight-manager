@@ -29,7 +29,7 @@ export default function StaleGoldPriceBanner() {
 
   return (
     <Link
-      to="/gold-price"
+      to="/gold-price?tab=price"
       className="mb-3 flex items-center gap-2 rounded-lg border border-warning/50 bg-warning/10 px-3 py-2.5 text-sm hover:bg-warning/20"
     >
       <AlertTriangle className="size-4 shrink-0 text-warning-foreground" />

@@ -1,8 +1,8 @@
 // اقتراح سعر الجرام من سعر الذهب العالمي الحيّ — للمالك يراجعه ويضغط «استعمل»؛ لا يُطبَّق
 // شيء تلقائياً. الحساب: دولار/أونصة ÷ 31.1035 × نقاء العيار × سعر الدولار بالدينار × (1 + الهامش).
 //
-// سعر الدولار له وضعان لأن السعر الرسمي (يُجلب حيّاً) أقل بكثير من سعر السوق الذي يُسعَّر به
-// الذهب عندكم، ولا يوجد مصدر مجاني موثوق لسعر السوق:
+// سعر الدولار له ثلاث أوضاع، لأن السعر الرسمي أقل بكثير من سعر السوق الذي يُسعَّر به الذهب عندكم:
+//  - «الموازي التلقائي» (الافتراضي): سعر السوق الموازي من market_rates، يتحدّث وحده كل ساعة.
 //  - «الرسمي + علاوة السوق»: السعر يتبع الرسمي الحيّ، والمالك يضبط العلاوة مرة (زرّ المعايرة
 //    يحسبها من آخر سعر جرام محفوظ) فلا يكتب سعر الدولار كل يوم.
 //  - «يدوي»: يكتب المالك سعر السوق بنفسه.
@@ -11,6 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useGoldPrices } from "@/hooks/useGoldPrices";
+import { useMarketRates } from "@/components/MarketRatesCard";
 import { useSpotSettings, type SpotRateMode } from "@/hooks/useAppSettings";
 import { KARAT_OPTIONS, formatCurrency, normalizeDecimalInput } from "@/lib/constants";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,7 +41,9 @@ export default function GoldSpotSuggestion({ onUse }: { onUse: (karat: string, p
   const [rateInput, setRateInput] = useState("");
   const [marginInput, setMarginInput] = useState("");
   const [premiumInput, setPremiumInput] = useState("");
-  const [modeInput, setModeInput] = useState<SpotRateMode>("manual");
+  const [modeInput, setModeInput] = useState<SpotRateMode>("parallel");
+  const { data: rates } = useMarketRates();
+  const parallel = rates?.market != null ? Number(rates.market) : null;
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -61,7 +64,7 @@ export default function GoldSpotSuggestion({ onUse }: { onUse: (karat: string, p
     },
   });
 
-  const official = spot?.usd_lyd_official ?? null;
+  const official = spot?.usd_lyd_official ?? (rates?.official != null ? Number(rates.official) : null);
   const num = (v: string, fallback: number | null = null) => (v.trim() === "" ? fallback : Number(v));
   const margin = num(marginInput, 0) ?? 0;
   const premium = num(premiumInput, 0) ?? 0;
@@ -69,10 +72,13 @@ export default function GoldSpotSuggestion({ onUse }: { onUse: (karat: string, p
 
   // السعر المستعمل فعلاً في الاقتراح (من الحقول الحالية لا المحفوظة، فيتحدّث الاقتراح وأنت تكتب).
   const effectiveRate: number | null =
-    modeInput === "official" ? (official != null && !isNaN(premium) ? official * (1 + premium / 100) : null)
+    modeInput === "parallel" ? parallel
+    : modeInput === "official" ? (official != null && !isNaN(premium) ? official * (1 + premium / 100) : null)
     : manualRate != null && !isNaN(manualRate) && manualRate > 0 ? manualRate : null;
 
-  const perGramUsd = (karat: string) => (spot ? (spot.usd_per_oz / GRAMS_PER_OZ) * (PURITY[karat] ?? 0) : null);
+  // الأونصة الحيّة من دالة gold-spot، ولو تعطّلت نكمّلو بآخر سعر مسجّل (يتحدّث كل ساعة).
+  const ounce = spot?.usd_per_oz ?? (rates?.gold != null ? Number(rates.gold) : null);
+  const perGramUsd = (karat: string) => (ounce ? (ounce / GRAMS_PER_OZ) * (PURITY[karat] ?? 0) : null);
 
   const suggestion = (karat: string): number | null => {
     const g = perGramUsd(karat);
@@ -85,6 +91,13 @@ export default function GoldSpotSuggestion({ onUse }: { onUse: (karat: string, p
     const savedPrice = saved?.get(CALIBRATION_KARAT)?.price_per_gram;
     const g = perGramUsd(CALIBRATION_KARAT);
     if (!savedPrice || g == null) return toast.error("لا سعر محفوظ لـ18K أو تعذّر جلب السعر العالمي");
+    if (modeInput === "parallel") {
+      // الدولار معروف، فالمعايرة تطلّع الهامش اللي يعطي آخر سعر محفوظ.
+      if (parallel == null) return toast.error("سعر الدولار الموازي غير متاح الآن");
+      setMarginInput(((savedPrice / (g * parallel) - 1) * 100).toFixed(1));
+      toast.success("الهامش عُيِّر من آخر سعر 18K محفوظ — راجع ثم احفظ");
+      return;
+    }
     const impliedRate = savedPrice / (g * (1 + margin / 100));
     if (modeInput === "official") {
       if (official == null) return toast.error("السعر الرسمي غير متاح الآن");
@@ -122,13 +135,13 @@ export default function GoldSpotSuggestion({ onUse }: { onUse: (karat: string, p
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {isError ? (
+        {isError && !ounce ? (
           <p className="text-sm text-destructive">تعذّر جلب الأسعار العالمية الآن — أدخل السعر يدوياً.</p>
-        ) : !spot ? (
+        ) : !ounce ? (
           <p className="text-sm text-muted-foreground">جارٍ الجلب…</p>
         ) : (
           <div className="text-sm space-y-0.5">
-            <p>الذهب العالمي: <span className="font-bold" dir="ltr">${spot.usd_per_oz.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span> / أونصة</p>
+            <p>الذهب العالمي: <span className="font-bold" dir="ltr">${ounce.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span> / أونصة</p>
             <p>
               الدولار الرسمي: {official != null ? <span className="font-bold" dir="ltr">{official.toFixed(3)} د.ل</span> : <span className="text-muted-foreground">غير متاح الآن</span>}
               {effectiveRate != null && official != null && (
@@ -140,7 +153,10 @@ export default function GoldSpotSuggestion({ onUse }: { onUse: (karat: string, p
 
         <div>
           <Label className="text-xs">مصدر سعر الدولار</Label>
-          <div className="flex gap-2 mt-1">
+          <div className="flex flex-wrap gap-2 mt-1">
+            <Button type="button" size="sm" disabled={!isAdmin} variant={modeInput === "parallel" ? "default" : "secondary"} onClick={() => setModeInput("parallel")}>
+              الموازي التلقائي
+            </Button>
             <Button type="button" size="sm" disabled={!isAdmin} variant={modeInput === "official" ? "default" : "secondary"} onClick={() => setModeInput("official")}>
               الرسمي الحيّ + علاوة السوق
             </Button>
@@ -151,7 +167,14 @@ export default function GoldSpotSuggestion({ onUse }: { onUse: (karat: string, p
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          {modeInput === "official" ? (
+          {modeInput === "parallel" ? (
+            <div>
+              <Label className="text-xs">الدولار الموازي اليوم</Label>
+              <p className="mt-1 h-10 rounded-md border bg-muted/40 px-3 text-sm font-bold leading-10" dir="ltr">
+                {parallel != null ? `${parallel.toFixed(2)} د.ل` : "—"}
+              </p>
+            </div>
+          ) : modeInput === "official" ? (
             <div>
               <Label className="text-xs">علاوة السوق فوق الرسمي %</Label>
               <Input dir="ltr" inputMode="decimal" disabled={!isAdmin} value={premiumInput} onChange={(e) => setPremiumInput(normalizeDecimalInput(e.target.value))} />
@@ -202,7 +225,8 @@ export default function GoldSpotSuggestion({ onUse }: { onUse: (karat: string, p
           </div>
         )}
         <p className="text-[11px] text-muted-foreground">
-          اقتراح فقط: «استعمل» يملأ خانة السعر أدناه ولا يحفظ شيئاً. راجع الرقم ثم اضغط «حفظ سعر اليوم». السعر الرسمي للدولار أقل بكثير من سعر السوق — لذلك تُضبط العلاوة بالمعايرة.
+          اقتراح فقط: «استعمل» يملأ خانة السعر أدناه ولا يحفظ شيئاً. راجع الرقم ثم اضغط «حفظ سعر اليوم».
+          {modeInput === "parallel" ? " الحسبة: الأونصة × الدولار الموازي (يتحدّث وحده كل ساعة) × العيار + هامش الربح." : " السعر الرسمي للدولار أقل بكثير من سعر السوق — لذلك تُضبط العلاوة بالمعايرة."}
         </p>
       </CardContent>
     </Card>

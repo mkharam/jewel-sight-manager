@@ -30,7 +30,7 @@ const TeamHub = lazy(() => import("@/pages/TeamHub"));
 const ReportsHub = lazy(() => import("@/pages/ReportsHub"));
 const Transfers = lazy(() => import("@/pages/Transfers"));
 const Reorders = lazy(() => import("@/pages/Reorders"));
-const GoldPrice = lazy(() => import("@/pages/GoldPrice"));
+const GoldHub = lazy(() => import("@/pages/GoldHub"));
 const PosSales = lazy(() => import("@/pages/PosSales"));
 const AmarsoftHub = lazy(() => import("@/pages/AmarsoftHub"));
 const Branches = lazy(() => import("@/pages/Branches"));
@@ -134,7 +134,8 @@ const App = () => (
                 <Route path="/daily-summary" element={<Navigate to="/reports?tab=daily" replace />} />
                 <Route path="/transfers" element={<Transfers />} />
                 <Route path="/reorders" element={<Reorders />} />
-                <Route path="/gold-price" element={<RequireRole allow={["admin", "manager", "supervisor"]}><GoldPrice /></RequireRole>} />
+                {/* «الذهب والسوق»: السوق اليوم، تسعير المحل، المنافسين، سعري والسوق (للمدير العام). */}
+                <Route path="/gold-price" element={<RequireRole allow={["admin", "manager", "supervisor"]}><GoldHub /></RequireRole>} />
                 {/* «الجرد» و«المخزون»: كل وحدة صفحة بخانات (أمارسوفت + التطبيق). */}
                 <Route path="/count" element={<RequireRole allow={["admin", "manager", "supervisor"]}><CountHub /></RequireRole>} />
                 <Route path="/stock" element={<RequireRole allow={["admin", "manager", "supervisor"]}><StockHub /></RequireRole>} />

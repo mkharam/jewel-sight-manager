@@ -5,7 +5,7 @@ import {
   Search, MessageCircle, MessagesSquare, Upload, Users, ArrowLeftRight, BarChart3, Coins, ClipboardCheck, PackagePlus,
   Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Truck, UserCog, Watch, ClipboardList,
   Award, Layers, Scale, Building2, Wallet, TrendingUp, History, Link2, CalendarDays, CreditCard, ShoppingBag, Gem,
-  PieChart, Bell, Tags, ScanLine, type LucideIcon,
+  PieChart, Bell, Tags, ScanLine, Store, type LucideIcon,
 } from "lucide-react";
 
 export type Role = "admin" | "supervisor" | "manager" | "staff" | "evalRecorder";
@@ -45,7 +45,10 @@ export const NAV: NavSection[] = [
       { to: "/loyalty?tab=members", label: "أعضاء الولاء", hint: "كل اللي عندهم بطاقة", icon: Users, roles: ["admin", "manager", "supervisor"] },
       { to: "/loyalty?tab=wallet", label: "بطاقات Wallet", hint: "بطاقات الآيفون والأندرويد", icon: Wallet, roles: A },
       { to: "/buybacks", label: "شراء الكسر", hint: "شراء ذهب مستعمل من زبون", icon: Recycle, roles: AM },
-      { to: "/gold-price", label: "سعر الذهب اليوم", hint: "سعر الجرام للبيع في المحل", icon: Coins, roles: AMS },
+      { to: "/gold-price", label: "الذهب والسوق", hint: "سعر الذهب العالمي والدولار، تسعير المحل، المنافسين", icon: Coins, roles: AMS, keywords: "اونصة دولار موازي كسر حاسبة سعر الذهب اليوم" },
+      { to: "/gold-price?tab=price", label: "تسعير المحل", hint: "سعر الجرام اللي يبيع بيه المحل اليوم", icon: Coins, roles: AMS, searchOnly: true, keywords: "سعر الذهب اليوم مصنعية" },
+      { to: "/gold-price?tab=rivals", label: "أسعار المنافسين", hint: "سجّل سعر محل ثاني وشوف متوسطهم", icon: Store, roles: AMS, searchOnly: true, keywords: "منافس محلات سوق" },
+      { to: "/gold-price?tab=compare", label: "سعري مقارنة بالسوق", hint: "سعرك غالي ولا لا، وربحك فوق الذهب", icon: Scale, roles: A, searchOnly: true, keywords: "منافسين ربح غالي رخيص" },
     ],
   },
   {

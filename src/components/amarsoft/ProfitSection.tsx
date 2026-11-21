@@ -1,6 +1,7 @@
 // الربح الحقيقي لكل فرع: سعر البيع − قيمة الذهب الخام يوم البيع (تلقائي من سعر الأونصة والدولار الموازي)
 // − مصنعية المورّد. بدل خانة «سعر الذهب الخام» اللي كانت تتكتب باليد في صفحة الأرباح القديمة.
 import { useMemo } from "react";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Info, Loader2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -154,7 +155,8 @@ export default function ProfitSection({ from, to, karat }: { from: string; to: s
             <p>
               <b>الربح/جم</b> = سعر البيع للجرام − قيمة الذهب الخام للجرام يوم البيع − مصنعية المورّد للجرام (من تكلفة القطعة في أمارسوفت).
               الفروع مرتّبة من الأعلى ربح للجرام. «الذهب الخام» يتغيّر مع الأونصة والدولار، فلو الربح نقص بينما سعر البيع ثابت
-              يعني الذهب غلى وسعر البيع ما اتعدّلش.
+              يعني الذهب غلى وسعر البيع ما اتعدّلش.{" "}
+              <Link to="/gold-price?tab=compare" className="font-semibold text-primary underline">قارن سعرك بالمنافسين ←</Link>
             </p>
           </div>
         </>
