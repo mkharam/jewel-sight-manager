@@ -590,7 +590,7 @@ export default function ProductForm() {
           </label>
         </Card>
 
-        <div className="flex gap-2 sticky bottom-20 md:bottom-4">
+        <div className="flex gap-2 sticky bottom-20 lg:bottom-4">
           <Button type="submit" disabled={saving} className="flex-1 bg-gold-gradient text-primary-foreground shadow-gold" size="lg">
             {saving ? "جارٍ الحفظ..." : editing ? "تحديث" : "إضافة القطعة"}
           </Button>

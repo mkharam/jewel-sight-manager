@@ -1,7 +1,9 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, Scale, Search, MessageCircle, MessagesSquare, Upload, LogOut, Sparkles, Users, ArrowLeftRight, BarChart3, MoreHorizontal, Coins, ClipboardCheck, PackagePlus, Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Truck, UserCog, Watch, ClipboardList, Award, Layers, type LucideIcon } from "lucide-react";
+import { ArrowRight, LogOut, LayoutGrid } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import NavMenu from "@/components/NavMenu";
+import { currentPage, navFor, pushRecent, type NavItem, type Role } from "@/lib/nav";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { roleLabel as roleLabelOf, useAuth } from "@/hooks/useAuth";
@@ -19,140 +21,14 @@ import { resumePendingUploads } from "@/lib/uploadRunner";
 import { useActivityFeed } from "@/hooks/useActivityFeed";
 import { CHAT_SEEN_KEY, NOTIFS_SEEN_KEY, SEEN_EVENT, readSeen, setIconBadge } from "@/lib/appBadge";
 
-type BadgeKey = "transfers" | "uploads" | "reorders" | "weights" | "chat";
-type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean; badgeKey?: BadgeKey };
-// compact: صفحات قليلة الاستعمال — أيقوناتها في «المزيد» بلون هادي بدل الذهبي.
-type NavSection = { title: string; items: NavItem[]; compact?: boolean };
-
-// المدير العام: «المزيد» مقسوم حسب الموضوع — الفلوس، البضاعة، الناس — بدل «الإدارة/اليوم/أخرى»
-// اللي كانت تخلط مواضيع مختلفة في نفس القسم. «أخرى» صغيرة وفيها بس اللي يُستعمل نادراً.
-function buildAdminNav(): NavSection[] {
-  return [
-    {
-      title: "الرئيسية",
-      items: [
-        { to: "/", label: "البحث", icon: Search, end: true },
-        { to: "/chat", label: "المحادثة", icon: MessagesSquare, badgeKey: "chat" },
-        { to: "/inquiries", label: "الاستفسارات", icon: MessageCircle },
-        { to: "/amarsoft", label: "أمارسوفت", icon: Boxes },
-        { to: "/loyalty", label: "الولاء", icon: Award },
-      ],
-    },
-    {
-      title: "المبيعات والفلوس",
-      items: [
-        // التقارير صفحة بخانات: الفروع، ملخّص اليوم، المحاسب، سعر الغرام، مبيعات وجرد التطبيق.
-        { to: "/reports", label: "التقارير", icon: BarChart3 },
-        { to: "/pos-sales", label: "الفواتير", icon: Receipt },
-        { to: "/gold-price", label: "سعر الذهب اليوم", icon: Coins },
-        { to: "/closing", label: "إقفال اليوم", icon: Landmark },
-        { to: "/buybacks", label: "شراء الكسر", icon: Recycle },
-      ],
-    },
-    {
-      title: "البضاعة",
-      items: [
-        { to: "/transfers", label: "التحويلات", icon: ArrowLeftRight, badgeKey: "transfers" },
-        { to: "/reorders", label: "إعادة الطلب", icon: PackagePlus, badgeKey: "reorders" },
-        { to: "/reservations", label: "الحجوزات", icon: BookmarkCheck },
-        { to: "/admin/repairs", label: "الصيانة", icon: Wrench },
-        { to: "/watches", label: "الساعات", icon: Watch },
-        { to: "/upload", label: "رفع قطع", icon: Upload, badgeKey: "uploads" },
-        { to: "/weights", label: "قطع بلا وزن", icon: Scale, badgeKey: "weights" },
-        { to: "/sets", label: "الأطقم الناقصة", icon: Layers },
-        { to: "/admin/products", label: "إدارة القطع", icon: ListChecks },
-        { to: "/stock-take", label: "جرد التطبيق", icon: ClipboardCheck },
-      ],
-    },
-    {
-      title: "الناس",
-      items: [
-        // الفريق صفحة بخانات: الموظفون، التقييم، المتصدرون.
-        { to: "/staff", label: "الفريق", icon: UserCog },
-        { to: "/customers", label: "العملاء", icon: Users },
-        { to: "/suppliers", label: "الموردون", icon: Truck },
-      ],
-    },
-  ];
-}
-
-// مصدر واحد لكل التنقّل، مقسّم بأقسام واضحة — كان هناك ست قوائم متداخلة (أساسية، إضافات
-// سطح المكتب، مشتركة، مشرف، مدير، موظف) فتتكرّر العناصر وتظهر للمدير 20 رابطاً في صف واحد
-// أعلى الشاشة على الآيباد والكمبيوتر. الآن: شريط جانبي بأقسام على الشاشات الكبيرة، ونفس
-// الأقسام داخل «المزيد» على الهاتف.
-// المشرف العام: نفس قائمة الإدارة بلا صفحات الفلوس (مبيعات، فروع، محاسب، موردين، تقارير، إقفال…).
-const MONEY_PAGES = new Set(["/pos-sales", "/suppliers", "/staff", "/reports", "/closing", "/buybacks"]);
-function buildSupervisorNav(isEvalRecorder: boolean): NavSection[] {
-  const secs = buildAdminNav()
-    .map((s) => ({ ...s, items: s.items.filter((i) => !MONEY_PAGES.has(i.to)) }))
-    .filter((s) => s.items.length);
-  // «الفريق» للمدير العام بس (فيها الرواتب)؛ المشرف يفتح المتصدرين، والتقييم لو هو مسؤوله.
-  const people = secs.find((s) => s.title === "الناس");
-  if (people) {
-    people.items.unshift({ to: "/leaderboard", label: "المتصدرون", icon: Trophy });
-    if (isEvalRecorder) people.items.unshift({ to: "/evaluations", label: "التقييم", icon: ClipboardList });
-  }
-  // قسم «المبيعات والفلوس» يبقى فيه سعر الذهب بس — ما يستاهلش قسم لروحه، يمشي للبضاعة.
-  const money = secs.find((s) => s.title === "المبيعات والفلوس");
-  const goods = secs.find((s) => s.title === "البضاعة");
-  if (money && goods) goods.items.push(...money.items);
-  return secs.filter((s) => s !== money);
-}
-
-function buildNav(isAdmin: boolean, isManager: boolean, isEvalRecorder = false, isSupervisor = false): NavSection[] {
-  if (isAdmin) return buildAdminNav();
-  if (isSupervisor) return buildSupervisorNav(isEvalRecorder);
-  const sections: NavSection[] = [
-    {
-      title: "الرئيسية",
-      items: [
-        { to: "/", label: "البحث", icon: Search, end: true },
-        { to: "/chat", label: "المحادثة", icon: MessagesSquare, badgeKey: "chat" },
-        { to: "/inquiries", label: "الاستفسارات", icon: MessageCircle },
-        { to: "/upload", label: "رفع قطع", icon: Upload, badgeKey: "uploads" },
-        { to: "/loyalty", label: "الولاء", icon: Award },
-        // الإشعارات ليست هنا: الجرس في الرأس ظاهر على كل الشاشات ويفتح صفحتها الكاملة.
-      ],
-    },
-    {
-      title: "العمل اليومي",
-      items: [
-        { to: "/transfers", label: "التحويلات", icon: ArrowLeftRight, badgeKey: "transfers" },
-        { to: "/reorders", label: "إعادة الطلب", icon: PackagePlus, badgeKey: "reorders" },
-        { to: "/watches", label: "الساعات", icon: Watch },
-        { to: "/reservations", label: "الحجوزات", icon: BookmarkCheck },
-        { to: "/customers", label: "العملاء", icon: Users },
-        { to: "/weights", label: "قطع بلا وزن", icon: Scale, badgeKey: "weights" },
-        { to: "/sets", label: "الأطقم الناقصة", icon: Layers },
-        { to: "/leaderboard", label: "لوحة المتصدرين", icon: Trophy },
-      ],
-    },
-  ];
-  // سعر الذهب والإقفال والصيانة وشراء الكسر: المشرف (المدير العام له قائمته فوق).
-  if (isManager) {
-    sections.push({
-      title: "الفرع",
-      items: [
-        { to: "/gold-price", label: "سعر الذهب", icon: Coins },
-        { to: "/closing", label: "إقفال اليوم", icon: Landmark },
-        { to: "/admin/repairs", label: "الصيانة", icon: Wrench },
-        { to: "/buybacks", label: "شراء الكسر", icon: Recycle },
-        // كل صفحات أمارسوفت (مبيعات، أرباح، سجل، مخزون، جرد) خلف زر واحد بدل خمسة.
-        { to: "/amarsoft", label: "أمارسوفت", icon: Boxes },
-      ],
-    });
-  }
-  // مسؤول التقييم (أيمن) يشوف لوحة التقييمات ويسجّل فيها، حتى لو موظف عادي.
-  if (isEvalRecorder) sections[1].items.unshift({ to: "/evaluations", label: "تقييم الموظفين", icon: ClipboardList });
-  return sections;
-}
-
-// الشريط السفلي على الهاتف: أربع/خمس صفحات يومية + «المزيد». الموظف عمله اليومي تسجيل
-// استفسار وطلب إعادة قطعة، فيحصل «إعادة الطلب» على مكان في الشريط بدل دفنه في «المزيد».
+// القائمة كلها من كتالوج واحد (src/lib/nav.ts): الأقسام، الصلاحيات، الوصف، البحث.
+// الشريط السفلي على الهاتف: أربع صفحات يومية + «القائمة». الموظف عمله اليومي تسجيل استفسار
+// وطلب إعادة قطعة؛ المدير العام أمارسوفت أهم له من رفع القطع.
 const MOBILE_BAR = ["/", "/chat", "/inquiries", "/upload"];
-// المدير العام ما يرفعش قطع كل يوم؛ أمارسوفت (مبيعات، فروع، مخزون) أهم له، و«رفع قطع» في «المزيد».
 const MOBILE_BAR_ADMIN = ["/", "/chat", "/inquiries", "/amarsoft"];
 const MOBILE_BAR_STAFF = ["/", "/chat", "/inquiries", "/reorders", "/upload"];
+// أسماء قصيرة للشريط السفلي (الاسم الكامل في القائمة).
+const BAR_LABEL: Record<string, string> = { "/": "البحث", "/chat": "المحادثة", "/inquiries": "الاستفسارات", "/amarsoft": "أمارسوفت", "/upload": "رفع قطع", "/reorders": "إعادة الطلب" };
 
 function CountBadge({ count, className }: { count: number; className?: string }) {
   if (count <= 0) return null;
@@ -345,17 +221,24 @@ export default function AppLayout() {
   const isSupervisor = roles.includes("supervisor");
   const isStaff = !isAdmin && !isManager && !isSupervisor;
   const isEvalRecorder = !!useIsEvalAdmin();
-  const sections = buildNav(isAdmin, isManager, isEvalRecorder, isSupervisor);
+  const navRoles: Role[] = [
+    ...(isAdmin ? ["admin" as const] : []), ...(isSupervisor ? ["supervisor" as const] : []),
+    ...(isManager ? ["manager" as const] : []), ...(isStaff ? ["staff" as const] : []),
+    ...(isEvalRecorder ? ["evalRecorder" as const] : []),
+  ];
+  const sections = navFor(navRoles);
   const allItems = sections.flatMap((sec) => sec.items);
   const barPaths = isAdmin || isSupervisor ? MOBILE_BAR_ADMIN : isStaff ? MOBILE_BAR_STAFF : MOBILE_BAR;
   const mobileBar = barPaths.map((to) => allItems.find((i) => i.to === to)!).filter(Boolean);
-  // «المزيد» = كل ما ليس في الشريط السفلي، بنفس الأقسام.
-  const moreSections = sections
-    .map((sec) => ({ ...sec, items: sec.items.filter((i) => !barPaths.includes(i.to)) }))
-    .filter((sec) => sec.items.length > 0);
   const countOf = (i: NavItem) => (i.badgeKey ? badges[i.badgeKey] ?? 0 : 0);
-  // تنبيه مجمّع على زر «المزيد» حتى لا تختفي التحويلات المعلّقة داخله دون أن يعرف بها أحد.
-  const moreBadgeCount = moreSections.reduce((n, sec) => n + sec.items.reduce((m, i) => m + countOf(i), 0), 0);
+  // تنبيه مجمّع على زر «القائمة» للي مش في الشريط، حتى ما تختفيش التحويلات المعلّقة داخلها.
+  const moreBadgeCount = allItems.filter((i) => !barPaths.includes(i.to)).reduce((n, i) => n + countOf(i), 0);
+  // اسم الصفحة الحالية وقسمها في الرأس، وتسجيلها في «آخر صفحات».
+  const { search } = useLocation();
+  const page = currentPage(sections, pathname, search);
+  useEffect(() => {
+    if (page?.item && page.item.to !== "/") pushRecent(page.item.to);
+  }, [page?.item?.to]); // eslint-disable-line react-hooks/exhaustive-deps
   const roleLabel = roleLabelOf(roles);
 
   const signOut = async () => {
@@ -396,10 +279,18 @@ export default function AppLayout() {
               height={36}
               className="size-8 sm:size-9 rounded-xl object-cover shadow-emerald ring-1 ring-primary/25"
             />
-            <div className="leading-tight">
-              <h1 className="text-base sm:text-lg font-extrabold text-gold-gradient">مخرّم</h1>
-              <p className="text-[9px] sm:text-[10px] text-muted-foreground -mt-0.5 hidden sm:block">إدارة المجوهرات</p>
-            </div>
+            {/* وين أنت: اسم الصفحة وقسمها، وفي الرئيسية اسم المحل. */}
+            {pathname === "/" || !page ? (
+              <div className="leading-tight">
+                <h1 className="text-base sm:text-lg font-extrabold text-gold-gradient">مخرّم</h1>
+                <p className="text-[9px] sm:text-[10px] text-muted-foreground -mt-0.5 hidden sm:block">إدارة المجوهرات</p>
+              </div>
+            ) : (
+              <div className="leading-tight min-w-0">
+                {page.section && <p className="text-[10px] sm:text-[11px] text-muted-foreground truncate">{page.section.title}</p>}
+                <h1 className="text-base sm:text-lg font-bold truncate max-w-[46vw] sm:max-w-none">{page.label}</h1>
+              </div>
+            )}
           </Link>
           </div>
 
@@ -417,41 +308,17 @@ export default function AppLayout() {
       </header>
 
       <div className="flex flex-1">
-        {/* الشريط الجانبي (يمين الشاشة في العربية): آيباد = أيقونات بعناوين صغيرة تحتها لتوفير
-            العرض، كمبيوتر = أيقونة واسم وأقسام معنونة. */}
-        <aside className="hidden md:block shrink-0 w-[88px] lg:w-60 border-l border-border bg-card/60">
+        {/* الشريط الجانبي على الكمبيوتر والآيباد بالعرض: نفس القائمة بالأقسام والبحث. */}
+        <aside className="hidden lg:block shrink-0 w-64 border-l border-border bg-card/60">
           <nav
             aria-label="التنقّل"
-            className="sticky top-[calc(env(safe-area-inset-top)+4rem)] max-h-[calc(100dvh-env(safe-area-inset-top)-4rem)] overflow-y-auto py-3 px-2 lg:px-3 space-y-4"
+            className="sticky top-[calc(env(safe-area-inset-top)+4rem)] max-h-[calc(100dvh-env(safe-area-inset-top)-4rem)] overflow-y-auto p-3"
           >
-            {sections.map((sec, si) => (
-              <div key={sec.title} className="space-y-1">
-                <p className="hidden lg:block px-3 pb-1 text-[11px] font-bold text-muted-foreground">{sec.title}</p>
-                {si > 0 && <div className="lg:hidden mx-3 mb-2 border-t border-border" />}
-                {sec.items.map((item) => (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    end={item.end}
-                    title={item.label}
-                    className={({ isActive }) => cn(
-                      "relative flex items-center rounded-xl transition-colors",
-                      "flex-col gap-1 py-2 text-[10px] font-semibold text-center",
-                      "lg:flex-row lg:gap-3 lg:px-3 lg:py-2.5 lg:text-sm lg:font-medium lg:text-right",
-                      isActive ? "bg-primary/12 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-secondary/70",
-                    )}
-                  >
-                    <item.icon className="size-5 shrink-0" />
-                    <span className="leading-tight lg:flex-1">{item.label}</span>
-                    <CountBadge count={countOf(item)} className="absolute top-1 left-2 lg:static" />
-                  </NavLink>
-                ))}
-              </div>
-            ))}
+            <NavMenu sections={sections} countOf={countOf} compact />
           </nav>
         </aside>
 
-        <main className="flex-1 min-w-0 px-3 sm:px-4 lg:px-6 py-3 sm:py-4 pb-28 md:pb-8">
+        <main className="flex-1 min-w-0 px-3 sm:px-4 lg:px-6 py-3 sm:py-4 pb-28 lg:pb-8">
           <div className="mx-auto w-full max-w-7xl">
             <StaleGoldPriceBanner />
             <Outlet />
@@ -459,7 +326,7 @@ export default function AppLayout() {
         </main>
       </div>
 
-      <nav data-mobile-bottom-nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-card/95 backdrop-blur safe-area-pb">
+      <nav data-mobile-bottom-nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-card/95 backdrop-blur safe-area-pb">
         <div className={cn("grid", mobileBar.length >= 5 ? "grid-cols-6" : "grid-cols-5")}>
           {mobileBar.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.end}
@@ -474,7 +341,7 @@ export default function AppLayout() {
                     <item.icon className="size-[22px]" />
                     <CountBadge count={countOf(item)} className="absolute -top-1 left-1" />
                   </div>
-                  <span className="leading-none">{item.label}</span>
+                  <span className="leading-none">{BAR_LABEL[item.to] ?? item.label}</span>
                 </>
               )}
             </NavLink>
@@ -484,50 +351,22 @@ export default function AppLayout() {
             <SheetTrigger asChild>
               <button
                 type="button"
-                aria-label="المزيد"
+                aria-label="القائمة"
                 className="min-h-[64px] py-2 flex flex-col items-center justify-center gap-1 text-xs font-semibold text-muted-foreground active:bg-muted/40 select-none"
               >
                 <div className="relative flex items-center justify-center rounded-xl h-8 w-12">
-                  <MoreHorizontal className="size-[22px]" />
+                  <LayoutGrid className="size-[22px]" />
                   <CountBadge count={moreBadgeCount} className="absolute -top-1 left-1" />
                 </div>
-                <span className="leading-none">المزيد</span>
+                <span className="leading-none">القائمة</span>
               </button>
             </SheetTrigger>
-            <SheetContent side="bottom" className="rounded-t-2xl pb-8 max-h-[85dvh] overflow-y-auto">
+            <SheetContent side="bottom" className="rounded-t-2xl pb-8 h-[92dvh] overflow-y-auto">
               <SheetHeader className="text-right">
-                <SheetTitle>المزيد</SheetTitle>
+                <SheetTitle>القائمة</SheetTitle>
               </SheetHeader>
-              {/* شبكة أيقونات مرتّبة زي شاشة التلفون: أربعة في كل سطر، أيقونة صغيرة في مربع
-                  ملوّن واسمها تحتها. الأقسام الرئيسية بلون ذهبي، و«أخرى» (قليلة الاستعمال) بلون هادي. */}
-              <div className="mt-3 space-y-4">
-                {moreSections.map((sec) => (
-                  <div key={sec.title}>
-                    <p className="mb-1.5 px-1 text-xs font-bold text-muted-foreground">{sec.title}</p>
-                    <div className="grid grid-cols-4 gap-x-1 gap-y-3 rounded-2xl bg-muted/40 p-2">
-                      {sec.items.map((item) => (
-                        <NavLink
-                          key={item.to}
-                          to={item.to}
-                          onClick={() => setMoreOpen(false)}
-                          className={({ isActive }) => cn(
-                            "relative flex flex-col items-center gap-1 rounded-xl py-1.5 active:bg-muted",
-                            isActive ? "text-primary" : "text-foreground"
-                          )}
-                        >
-                          <span className={cn(
-                            "relative flex size-11 items-center justify-center rounded-2xl",
-                            sec.compact ? "bg-card border border-border" : "bg-gold-soft",
-                          )}>
-                            <item.icon className={cn("size-5", sec.compact ? "text-muted-foreground" : "text-primary")} />
-                            <CountBadge count={countOf(item)} className="absolute -top-1 -left-1" />
-                          </span>
-                          <span className="text-[11px] font-semibold leading-tight text-center line-clamp-2 px-0.5">{item.label}</span>
-                        </NavLink>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+              <div className="mt-3">
+                <NavMenu sections={sections} countOf={countOf} onNavigate={() => setMoreOpen(false)} />
               </div>
             </SheetContent>
           </Sheet>

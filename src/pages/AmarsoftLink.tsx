@@ -189,7 +189,7 @@ export default function AmarsoftLink() {
       )}
 
       {pickLinks.length > 0 && (
-        <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] md:bottom-4 z-30 px-4">
+        <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] lg:bottom-4 z-30 px-4">
           <div className="max-w-2xl mx-auto flex gap-2 rounded-2xl border bg-card p-2 shadow-lg">
             <Button size="lg" className="flex-1 h-12 text-base" disabled={link.isPending} onClick={() => linkAll(pickLinks)}>
               {link.isPending ? <Loader2 className="size-5 animate-spin" /> : `اربط كل المختارين (${pickLinks.length})`}

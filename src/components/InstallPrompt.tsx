@@ -52,7 +52,7 @@ export default function InstallPrompt() {
   if (!show) return null;
 
   return (
-    <div className="fixed inset-x-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] md:bottom-4 md:right-4 md:left-auto md:w-96 z-40">
+    <div className="fixed inset-x-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] lg:bottom-4 lg:right-4 lg:left-auto lg:w-96 z-40">
       <div className="rounded-2xl border border-primary/30 bg-card/95 backdrop-blur p-4 shadow-elevated">
         <div className="flex items-start gap-3">
           <img src="/app-icon-192.png" alt="مخرّم" width={44} height={44} className="size-11 rounded-xl shadow-gold" />
