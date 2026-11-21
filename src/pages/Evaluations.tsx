@@ -164,22 +164,8 @@ export default function Evaluations() {
                 <Kpi icon={AlertTriangle} label="يحتاج متابعة" value={String(v.rated.filter((p) => (p.final ?? 5) < 3).length)} sub="أقل من 3" tone="text-red-600" />
               </div>
 
-              {/* الناقصين */}
-              {v.missing.length > 0 && (
-                <Card className="p-3 border-amber-500/40">
-                  <h2 className="font-bold mb-1 flex items-center gap-1.5"><AlertTriangle className="size-4 text-amber-600" />ناقصين لشهر {monthLabel(month)} ({v.missing.length})</h2>
-                  <p className="text-xs text-muted-foreground mb-2">اتصل بيهم ولا ابعتلهم الرابط، ولا سجّل عنهم من «تسجيل تقييم».</p>
-                  <div className="space-y-1">
-                    {v.missing.map((p) => (
-                      <div key={p.id} className="flex justify-between gap-2 text-sm py-1 border-b last:border-0">
-                        <span className="font-semibold">{p.name} <span className="text-xs text-muted-foreground font-normal">· {p.branch_name ?? "—"}</span></span>
-                        <span className="text-xs text-amber-700 dark:text-amber-400">{p.missing.join(" + ")}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <Button size="sm" variant="outline" className="mt-2" onClick={() => setTab("record")}><Plus className="size-4" />سجّل تقييم</Button>
-                </Card>
-              )}
+              {/* مين قيّم ومين اتقيّم — جدول بسيط لكل الموظفين: ✅ صار، ❌ ناقص */}
+              <WhoEvaluated people={v.people} evals={data?.evals.filter((e) => e.month === month) ?? []} month={month} onRecord={() => setTab("record")} />
 
               {/* الترتيب */}
               <Card className="p-3">
@@ -214,6 +200,10 @@ export default function Evaluations() {
                 })}
               </Card>
 
+              {/* تفاصيل إضافية مخفية افتراضياً — الصفحة الأساسية بسيطة: مين قيّم + الترتيب. */}
+              <details className="rounded-xl border bg-card p-3">
+                <summary className="cursor-pointer font-bold">تفاصيل أكثر (الفروع، البنود، المتوسط شهر بشهر)</summary>
+                <div className="mt-3 space-y-4">
               <div className="grid sm:grid-cols-2 gap-4">
                 {/* الفروع */}
                 <Card className="p-3">
@@ -255,6 +245,8 @@ export default function Evaluations() {
                   </div>
                 </Card>
               )}
+                </div>
+              </details>
             </>
           )}
         </>
@@ -504,5 +496,92 @@ function SettingsTab({ isAdmin, staff }: { isAdmin: boolean; staff: EvalStaff[] 
         </Card>
       )}
     </div>
+  );
+}
+
+/**
+ * جدول بسيط لكل شهر: لكل موظف هل قيّم نفسه، هل مشرفه قيّمه، وهل هو قيّم مشرفه — وللمشرف كم واحد من
+ * موظفينه قيّمه وكم واحد هو قيّمهم. ✅ = صار، ❌ = ناقص، «—» = ما ينطبقش (مثلاً فرع بلا مشرف).
+ */
+function WhoEvaluated({ people, evals, month, onRecord }: { people: Person[]; evals: Evaluation[]; month: string; onRecord: () => void }) {
+  const has = (kind: Evaluation["kind"], subject: string, evaluator?: string) =>
+    evals.some((e) => e.kind === kind && e.subject_id === subject && (!evaluator || e.evaluator_id === evaluator));
+  const byBranch = new Map<string, Person[]>();
+  for (const p of people) {
+    const k = p.branch_name ?? "بدون فرع";
+    byBranch.set(k, [...(byBranch.get(k) ?? []), p]);
+  }
+  const Mark = ({ ok, na }: { ok: boolean; na?: boolean }) =>
+    na ? <span className="text-muted-foreground">—</span> : ok ? <span title="صار">✅</span> : <span title="ناقص">❌</span>;
+  const countText = (done: number, total: number) =>
+    total === 0 ? <span className="text-muted-foreground">—</span>
+      : <span className={`font-bold tabular-nums ${done === total ? "text-emerald-600" : "text-red-600"}`}>{done}/{total}</span>;
+
+  let missing = 0;
+  const rows = [...byBranch.entries()].map(([branch, list]) => {
+    const managers = list.filter((p) => p.role === "manager");
+    const staff = list.filter((p) => p.role !== "manager");
+    return {
+      branch,
+      people: [...managers, ...staff].map((p) => {
+        const self = has("self", p.id);
+        if (p.role === "manager") {
+          const team = staff;
+          const iRated = team.filter((t) => has("by_manager", t.id, p.id)).length;
+          const ratedMe = team.filter((t) => has("of_manager", p.id, t.id)).length;
+          const done = self && iRated === team.length;
+          if (!done) missing++;
+          return { p, self, cells: [countText(iRated, team.length), countText(ratedMe, team.length)], done };
+        }
+        const mgr = managers.find((m) => m.id !== p.id);
+        const byMgr = mgr ? has("by_manager", p.id) : false;
+        const ofMgr = mgr ? has("of_manager", mgr.id, p.id) : false;
+        const done = self && (!mgr || (byMgr && ofMgr));
+        if (!done) missing++;
+        return { p, self, cells: [<Mark key="a" ok={byMgr} na={!mgr} />, <Mark key="b" ok={ofMgr} na={!mgr} />], done };
+      }),
+    };
+  });
+
+  return (
+    <Card className="p-3 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-lg font-bold">مين قيّم ومين اتقيّم — {monthLabel(month)}</h2>
+        {missing > 0 ? <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700 dark:bg-red-950/40">{missing} ناقص</span>
+          : <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700 dark:bg-emerald-950/40">الكل كمّل ✅</span>}
+      </div>
+      <p className="text-xs text-muted-foreground">✅ = صار · ❌ = ناقص · «—» = ما ينطبقش. للمشرف: الرقم = كم واحد من موظفينه.</p>
+      {rows.map(({ branch, people: ps }) => (
+        <div key={branch} className="overflow-x-auto">
+          <p className="mb-1 text-sm font-bold text-primary">{branch}</p>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-[11px] text-muted-foreground">
+                <th className="text-right font-normal py-1">الاسم</th>
+                <th className="font-normal px-1">قيّم نفسه</th>
+                <th className="font-normal px-1">المشرف قيّمه<br /><span className="text-[10px]">(المشرف: قيّم موظفينه)</span></th>
+                <th className="font-normal px-1">قيّم مشرفه<br /><span className="text-[10px]">(المشرف: موظفينه قيّموه)</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {ps.map(({ p, self, cells, done }) => (
+                <tr key={p.id} className={`border-t ${done ? "" : "bg-red-50/60 dark:bg-red-950/20"}`}>
+                  <td className="py-1.5">
+                    <span className="font-semibold">{p.name}</span>
+                    <span className="block text-[11px] text-muted-foreground">{p.role === "manager" ? "مشرف" : "موظف"}</span>
+                  </td>
+                  <td className="text-center"><Mark ok={self} /></td>
+                  <td className="text-center">{cells[0]}</td>
+                  <td className="text-center">{cells[1]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+      {missing > 0 && (
+        <Button size="sm" variant="outline" onClick={onRecord}><Plus className="size-4" />سجّل تقييم عن واحد ناقص</Button>
+      )}
+    </Card>
   );
 }
