@@ -23,18 +23,22 @@ type Extra = {
   avg_age_days: number | null; old_pieces: number; aged_lines: number;
 };
 
+type Gold = { branch_code: string; sman: string; valued_grams: number; amount_lyd: number; gold_lyd: number; old_grams: number; old_amount_lyd: number; old_gold_lyd: number };
+
 /** كل المقاييس لشخص أو فرع — محسوبة من المجاميع بنفس الطريقة للجميع. */
 type M = {
   grams: number; invoices: number; pieces: number; avgInv: number; light: number; mid: number; heavy: number; lightPct: number; heavyPct: number;
   pricePerGram: number; priceIndex: number | null; discountPct: number; lowPricePct: number; lowLines: number;
   phonePct: number; newCust: number; repeatCust: number; oldPieces: number; avgAge: number | null;
   untaggedPct: number; returns: number; returnPct: number; days: number;
+  /** فوق سعر الذهب يوم البيع: د.ل لكل جرام، ونسبة مئوية — وللقطع القديمة (أكثر من 6 شهور) نسبة لحالها. */
+  abovePerGram: number | null; abovePct: number | null; oldAbovePct: number | null;
 };
 
 const n = (v: unknown) => Number(v ?? 0);
 const pct = (a: number, b: number) => (b > 0 ? (a / b) * 100 : 0);
 
-function measure(rs: Raw[], xs: Extra[]): M {
+function measure(rs: Raw[], xs: Extra[], gs: Gold[] = []): M {
   const t = (k: keyof Raw) => rs.reduce((a, r) => a + n(r[k]), 0);
   const tx = (k: keyof Extra) => xs.reduce((a, r) => a + n(r[k]), 0);
   const g = t("grams"), inv = t("invoices"), lines = t("lines");
@@ -51,14 +55,27 @@ function measure(rs: Raw[], xs: Extra[]): M {
     oldPieces: tx("old_pieces"), avgAge: al ? xs.reduce((a, x) => a + n(x.avg_age_days) * n(x.aged_lines), 0) / al : null,
     untaggedPct: pct(t("untagged_lines"), lines), returns: t("returns"), returnPct: pct(t("returns"), inv + t("returns")),
     days: t("active_days"),
+    ...(() => {
+      const vg = gs.reduce((a, x) => a + n(x.valued_grams), 0);
+      const amt = gs.reduce((a, x) => a + n(x.amount_lyd), 0);
+      const gold = gs.reduce((a, x) => a + n(x.gold_lyd), 0);
+      const oa = gs.reduce((a, x) => a + n(x.old_amount_lyd), 0);
+      const og = gs.reduce((a, x) => a + n(x.old_gold_lyd), 0);
+      return {
+        abovePerGram: vg > 0 && gold > 0 ? (amt - gold) / vg : null,
+        abovePct: gold > 0 ? (amt / gold - 1) * 100 : null,
+        oldAbovePct: og > 0 ? (oa / og - 1) * 100 : null,
+      };
+    })(),
   };
 }
 
 // ===== النقاط =====
-type ScoreKey = "grams" | "priceIndex" | "avgInv" | "discountPct" | "lowPricePct" | "phonePct" | "returnPct" | "untaggedPct";
+type ScoreKey = "grams" | "abovePct" | "priceIndex" | "avgInv" | "discountPct" | "lowPricePct" | "phonePct" | "returnPct" | "untaggedPct";
 const SCORE_PARTS: { key: ScoreKey; label: string; lowerBetter?: boolean; def: number }[] = [
-  { key: "grams", label: "الوزن المباع", def: 35 },
-  { key: "priceIndex", label: "سعر البيع", def: 20 },
+  { key: "grams", label: "الوزن المباع", def: 30 },
+  { key: "abovePct", label: "الربح فوق سعر الذهب", def: 10 },
+  { key: "priceIndex", label: "سعر البيع", def: 15 },
   { key: "avgInv", label: "وزن الفاتورة", def: 10 },
   { key: "lowPricePct", label: "قلة البيع تحت السعر", lowerBetter: true, def: 10 },
   { key: "discountPct", label: "قلة الخصم", lowerBetter: true, def: 10 },
@@ -118,6 +135,8 @@ const SECTIONS: { key: string; label: string; intro: string; cols: Col[] }[] = [
     key: "price", label: "الأسعار", intro: "هل يبيع بالسعر الصحيح ولا يكسر السعر؟",
     cols: [
       { key: "priceIndex", label: "سعر البيع", explain: "يقارن سعر الجرام عنده بسعر نفس نوع القطعة في فرعه (خاتم بخاتم، طقم بطقم). 100 = نفس الفرع، 110 = يبيع أغلى بـ10%، 90 = أرخص بـ10%.", get: (m) => m.priceIndex, fmt: (m) => f(m.priceIndex) },
+      { key: "abovePerGram", label: "فوق الذهب للجرام", explain: "كم دينار ربح على كل جرام فوق قيمة الذهب الخام يوم البيع (سعر الأونصة العالمي × الدولار في السوق الموازي). هذا الربح الحقيقي: المصنعية + هامش المحل.", get: (m) => m.abovePerGram, fmt: (m) => (m.abovePerGram === null ? "—" : `${f(m.abovePerGram)} د.ل`) },
+      { key: "abovePct", label: "% فوق الذهب", explain: "نفس الشي كنسبة: 40% يعني باع بسعر أعلى من قيمة الذهب الخام بـ40%.", get: (m) => m.abovePct, fmt: (m) => (m.abovePct === null ? "—" : `${f(m.abovePct)}%`) },
       { key: "pricePerGram", label: "سعر الجرام", explain: "قيمة المبيعات ÷ الوزن بالدينار. للمعلومة فقط — يتأثر بنوع البضاعة، فالمقارنة الصحيحة هي «سعر البيع».", get: (m) => m.pricePerGram, fmt: (m) => `${f(m.pricePerGram)} د.ل`, neutral: true },
       { key: "lowPricePct", label: "تحت السعر", explain: "نسبة القطع اللي باعها بسعر جرام أقل من المعتاد في فرعه لنفس العيار (أقل من 95%). الأقل أحسن.", get: (m) => m.lowPricePct, fmt: (m) => `${f(m.lowPricePct)}% (${m.lowLines})`, lowerBetter: true },
       { key: "discountPct", label: "الخصم", explain: "نسبة الخصم المكتوب في الفواتير من قيمة البيع. الأقل أحسن.", get: (m) => m.discountPct, fmt: (m) => `${f(m.discountPct, 1)}%`, lowerBetter: true },
@@ -129,6 +148,7 @@ const SECTIONS: { key: string; label: string; intro: string; cols: Col[] }[] = [
       { key: "phonePct", label: "رقم الزبون", explain: "نسبة الفواتير اللي فيها رقم تلفون الزبون. مهم باش نتواصلوا مع الزبون ونعرفوا مين يرجع.", get: (m) => m.phonePct, fmt: (m) => `${f(m.phonePct)}%` },
       { key: "newCust", label: "زبائن جدد", explain: "زبائن أول مرة يشروا من المحل (حسب رقم التلفون).", get: (m) => m.newCust, fmt: (m) => f(m.newCust) },
       { key: "repeatCust", label: "زبائن رجعوا", explain: "زبائن شروا قبل ورجعوا يشروا.", get: (m) => m.repeatCust, fmt: (m) => f(m.repeatCust) },
+      { key: "oldAbovePct", label: "القديمة فوق الذهب", explain: "القطع اللي قعدت أكثر من 6 شهور: باعها بكم فوق قيمة الذهب يوم البيع. لو أقل بكثير من «% فوق الذهب» يعني باعها بسعرها القديم وما حسبش غلاء الذهب.", get: (m) => m.oldAbovePct, fmt: (m) => (m.oldAbovePct === null ? "—" : `${f(m.oldAbovePct)}%`) },
       { key: "oldPieces", label: "قطع قديمة باعها", explain: "قطع قعدت في المخزون أكثر من 6 شهور وهو باعها — شطارة في تصريف البضاعة.", get: (m) => m.oldPieces, fmt: (m) => f(m.oldPieces) },
       { key: "untaggedPct", label: "بلا باركود", explain: "نسبة البيع بالكود العام (18K GEN) بدل باركود القطعة. الأقل أحسن، لأن البيع بلا باركود يخرب الجرد.", get: (m) => m.untaggedPct, fmt: (m) => `${f(m.untaggedPct)}%`, lowerBetter: true },
       { key: "returnPct", label: "المرتجعات", explain: "نسبة الفواتير اللي رجعت. الأقل أحسن.", get: (m) => m.returnPct, fmt: (m) => `${f(m.returnPct)}% (${m.returns})`, lowerBetter: true },
@@ -297,12 +317,13 @@ export default function StaffEval() {
     return { cur: daysToRange(from, to), prev: daysToRange(addDays(from, -len), addDays(from, -1)) };
   }, [period]);
   const fetchAll = async (r: { start: string; end: string }) => {
-    const [a, b] = await Promise.all([
+    const [a, b, c] = await Promise.all([
       sb.rpc("amarsoft_staff_eval", { p_start: r.start, p_end: r.end, p_branch: null }),
       sb.rpc("amarsoft_staff_eval_extra", { p_start: r.start, p_end: r.end, p_branch: null }),
+      sb.rpc("amarsoft_staff_eval_gold", { p_start: r.start, p_end: r.end, p_branch: null }),
     ]);
     if (a.error) throw a.error;
-    return { rows: (a.data ?? []) as Raw[], extra: (b.data ?? []) as Extra[] };
+    return { rows: (a.data ?? []) as Raw[], extra: (b.data ?? []) as Extra[], gold: (c.data ?? []) as Gold[] };
   };
   const q = useQuery({ queryKey: ["staff-eval", period], queryFn: () => fetchAll(ranges.cur) });
   const qPrev = useQuery({ queryKey: ["staff-eval-prev", period], queryFn: () => fetchAll(ranges.prev) });
@@ -323,18 +344,18 @@ export default function StaffEval() {
   }, [q.data]);
 
   // الأشخاص أو الفروع، مع الفترة اللي قبلها، والنقاط محسوبة بين نفس المجموعة.
-  const build = (data: { rows: Raw[]; extra: Extra[] } | undefined): { id: string; name: string; sub: string; m: M }[] => {
+  const build = (data: { rows: Raw[]; extra: Extra[]; gold: Gold[] } | undefined): { id: string; name: string; sub: string; m: M }[] => {
     if (!data) return [];
     const key = (r: { branch_code: string; sman: string }) => `${r.branch_code}|${r.sman}`;
     if (level === "branches") {
       return [...new Set(data.rows.map((r) => r.branch_code))].map((code) => {
         const rs = data.rows.filter((r) => r.branch_code === code);
-        return { id: code, name: rs[0].branch_name, sub: `${rs.length} بائع`, m: measure(rs, data.extra.filter((x) => x.branch_code === code)) };
+        return { id: code, name: rs[0].branch_name, sub: `${rs.length} بائع`, m: measure(rs, data.extra.filter((x) => x.branch_code === code), data.gold.filter((x) => x.branch_code === code)) };
       });
     }
     return data.rows.filter((r) => branch === "all" || r.branch_code === branch).map((r) => ({
       id: key(r), name: r.salesman_name, sub: r.branch_name,
-      m: measure([r], data.extra.filter((x) => key(x) === key(r))),
+      m: measure([r], data.extra.filter((x) => key(x) === key(r)), data.gold.filter((x) => key(x) === key(r))),
     }));
   };
   const who: Who[] = useMemo(() => {
@@ -409,11 +430,39 @@ export default function StaffEval() {
       ) : section ? (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">{section.intro}</p>
+          {section.key === "price" && <RatesCard />}
           <Table key={section.key} rows={who} cols={section.cols} showScore={section.key === "sales"} />
           <Explain items={section.cols.map((c) => ({ label: c.label, text: c.explain }))} />
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** سعر الذهب والدولار اليوم — اللي تنحسب عليه «فوق الذهب». */
+function RatesCard() {
+  const q = useQuery({
+    queryKey: ["market-rates-latest"],
+    queryFn: async () => {
+      const { data } = await sb.from("market_rates").select("*").order("day", { ascending: false }).limit(15);
+      return (data ?? []) as { day: string; xau_usd_oz: number | null; usd_lyd_official: number | null; usd_lyd_market: number | null; market_source: string | null }[];
+    },
+  });
+  const rows = q.data ?? [];
+  const gold = rows.find((r) => r.xau_usd_oz)?.xau_usd_oz ?? null;
+  const mk = rows.find((r) => r.usd_lyd_market);
+  const off = rows.find((r) => r.usd_lyd_official)?.usd_lyd_official ?? null;
+  if (!rows.length) return null;
+  const g24 = gold && mk?.usd_lyd_market ? (Number(gold) / 31.1035) * Number(mk.usd_lyd_market) : null;
+  return (
+    <Card className="p-3 grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-sm">
+      <div><div className="text-[11px] text-muted-foreground">أونصة الذهب</div><div className="font-bold tabular-nums">${f(gold)}</div></div>
+      <div><div className="text-[11px] text-muted-foreground">الدولار الموازي</div><div className="font-bold tabular-nums">{f(mk?.usd_lyd_market, 3)}</div><div className="text-[10px] text-muted-foreground">{mk?.day}</div></div>
+      <div><div className="text-[11px] text-muted-foreground">الدولار الرسمي</div><div className="font-bold tabular-nums">{f(off, 3)}</div></div>
+      <div><div className="text-[11px] text-muted-foreground">جرام 18 خام</div><div className="font-bold tabular-nums">{g24 ? `${f(g24 * 0.75)} د.ل` : "—"}</div></div>
+      <div><div className="text-[11px] text-muted-foreground">جرام 21 خام</div><div className="font-bold tabular-nums">{g24 ? `${f(g24 * 0.875)} د.ل` : "—"}</div></div>
+      <p className="col-span-full text-[11px] text-muted-foreground">قيمة الذهب الخام = سعر الأونصة ÷ 31.1 × الدولار الموازي × العيار. تتحدث كل ساعة. «—» في الجدول = ما فيش سعر دولار موازي مسجّل لأيام البيع (متوفر من 13 أغسطس 2026).</p>
+    </Card>
   );
 }
 
