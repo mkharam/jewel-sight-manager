@@ -4,7 +4,11 @@
 // هي نفسها قواعد قاعدة البيانات الحالية: نستدعي دوال Supabase (product_image_write_allowed /
 // product_image_delete_allowed / has_role) بجلسة المستخدم نفسه (JWT)، فيبقى من يحق له
 // الرفع والحذف كما هو تماماً — المدير في أي مكان، والموظف في مجلّده وفرعه فقط.
-// القراءة لا تمرّ من هنا: الحاوية عامة عبر رابط r2.dev.
+// القراءة: GET /o/<path> عامة بلا جلسة (الصور أصلاً عامة). رابط r2.dev محدود الطلبات (429 لما
+// تفتح شبكة صور دفعة وحدة) وCloudflare تقول إنه مش للاستعمال الفعلي — فالعرض يمرّ من هنا.
+// قراءة «تملأ نفسها»: الصورة اللي مش في R2 بعد تنجاب مرة وحدة من تخزين Supabase وتنحفظ في R2،
+// وبعدها دايماً من R2 + كاش Cloudflare. هكي ما يلزمش نقل يدوي، وتخزين Supabase يقعد كما هو
+// (الرفع ودوال التحليل ما تتغيرش)، لكن عرض الصور ما يستهلكش حصة Supabase إلا أول مرة لكل صورة.
 //
 // لا متغيّرات ولا أسرار: رابط Supabase ثابت أدناه، والمفتاح العام (publishable) يرسله التطبيق
 // في ترويسة apikey مع كل طلب كما تفعل supabase-js. الإعداد الوحيد: R2 bucket binding باسم
@@ -14,6 +18,7 @@
 //   PUT    /o/<path>   رفع صورة (Content-Type: image/*، x-upsert: true للكتابة فوق مصغّرة)
 //   DELETE /o/<path>   حذف صورة لا تشير إليها أي قطعة
 //   POST   /copy       {paths: [...]} — للمدير العام: نسخ صور من تخزين Supabase إلى R2
+//   GET    /o/<path>   عرض صورة (عام، بلا جلسة) — من R2، وإلا من Supabase مرة وتنحفظ في R2
 //   GET    /health
 
 const SUPABASE_URL = "https://iiyaytfdxfvjcvzlnlpp.supabase.co";
@@ -56,12 +61,53 @@ async function rpc(apikey, auth, fn, args) {
 const validPath = (p) => typeof p === "string" && PATH_RE.test(p) && !p.includes("..");
 const encodePath = (p) => p.split("/").map(encodeURIComponent).join("/");
 
+const imageHeaders = (type) => ({
+  "Content-Type": type || "image/jpeg",
+  "Cache-Control": CACHE_CONTROL,
+  "Access-Control-Allow-Origin": "*",
+  "Cross-Origin-Resource-Policy": "cross-origin",
+});
+
+async function serveImage(req, env, url, ctx) {
+  let path;
+  try { path = decodeURIComponent(url.pathname.slice(3)); } catch { return new Response("bad path", { status: 400 }); }
+  if (!validPath(path)) return new Response("bad path", { status: 400 });
+
+  // كاش Cloudflare أولاً (المفتاح بدون أي query مثل ?r= لإعادة المحاولة).
+  const cache = caches.default;
+  const key = new Request(`${url.origin}/o/${encodePath(path)}`, { method: "GET" });
+  const hit = await cache.match(key);
+  if (hit) return req.method === "HEAD" ? new Response(null, { headers: hit.headers }) : hit;
+
+  let body, type;
+  const obj = await env.BUCKET.get(path);
+  if (obj) {
+    body = await obj.arrayBuffer();
+    type = obj.httpMetadata?.contentType;
+  } else {
+    // مش في R2 بعد: من تخزين Supabase مرة وحدة، ونحفظها في R2 للمرات الجاية.
+    const src = await fetch(`${SUPABASE_URL}/storage/v1/object/public/product-images/${encodePath(path)}`);
+    if (!src.ok) return new Response("not found", { status: 404, headers: { "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" } });
+    body = await src.arrayBuffer();
+    type = src.headers.get("Content-Type") || "image/jpeg";
+    ctx.waitUntil(env.BUCKET.put(path, body, { httpMetadata: { contentType: type, cacheControl: CACHE_CONTROL } }));
+  }
+  const res = new Response(body, { headers: imageHeaders(type) });
+  ctx.waitUntil(cache.put(key, res.clone()));
+  return req.method === "HEAD" ? new Response(null, { headers: res.headers }) : res;
+}
+
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(req) });
 
     const url = new URL(req.url);
-    if (url.pathname === "/health") return json(req, { ok: true, bucket: !!env.BUCKET });
+    if (url.pathname === "/health") return json(req, { ok: true, bucket: !!env.BUCKET, read: true });
+
+    // عرض صورة — قبل فحص الجلسة لأن الصور عامة.
+    if ((req.method === "GET" || req.method === "HEAD") && url.pathname.startsWith("/o/")) {
+      return serveImage(req, env, url, ctx);
+    }
 
     const auth = req.headers.get("Authorization") || "";
     const apikey = req.headers.get("apikey") || "";

@@ -90,9 +90,24 @@ export const R2_PUBLIC_URL = "https://pub-41d26d25a78a436ca6fa2faf8d75af34.r2.de
 export const R2_WORKER_URL = "https://product-images.mohamedmkharm.workers.dev";
 export const IMAGES_ON_R2 = false;
 
+// عرض الصور عبر الـWorker (Cloudflare): يقرأ من R2، والصورة الناقصة يجيبها من Supabase مرة وحدة
+// ويحفظها — فعرض الكتالوج ما يستهلكش حصة نقل البيانات في Supabase. يتفعّل وحده أول ما يكون
+// الـWorker الجديد منشور (/health يرجع read: true): نفحصه في الخلفية ونحفظ النتيجة، فمن الفتحة
+// اللي بعدها تمشي الصور من Cloudflare. لو الـWorker وقف، نرجع لـSupabase تلقائياً.
+const VIA_WORKER_KEY = "images.viaWorker";
+let imagesViaWorker = (() => { try { return localStorage.getItem(VIA_WORKER_KEY) === "1"; } catch { return false; } })();
+if (typeof window !== "undefined") {
+  fetch(`${R2_WORKER_URL}/health`).then((r) => r.json()).then((j) => {
+    const ok = j?.read === true;
+    try { localStorage.setItem(VIA_WORKER_KEY, ok ? "1" : "0"); } catch { /* ignore */ }
+    if (!imagesViaWorker && ok) imagesViaWorker = true;
+    if (imagesViaWorker && !ok) imagesViaWorker = false;
+  }).catch(() => { /* الشبكة — نبقى على آخر حالة معروفة */ });
+}
+
 export function getImageUrl(path: string | null | undefined) {
   if (!path) return null;
-  if (IMAGES_ON_R2) return `${R2_PUBLIC_URL}/${path}`;
+  if (IMAGES_ON_R2 || imagesViaWorker) return `${R2_WORKER_URL}/o/${path.split("/").map(encodeURIComponent).join("/")}`;
   const base = import.meta.env.VITE_SUPABASE_URL;
   return `${base}/storage/v1/object/public/product-images/${path}`;
 }
