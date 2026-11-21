@@ -1,5 +1,6 @@
 -- «الذهب والسوق»: أسعار المنافسين (يسجّلها المدير/المشرف) + سعر الكسر في سوق طرابلس (تلقائي كل ساعة
--- من قسم «أسعار الذهب» في أخبار ليبيا — libyaakhbar.com، اللي ينقل أسعار السوق الموازي يومياً).
+-- من قسم «أسعار الذهب» في أخبار ليبيا — libyaakhbar.com، اللي ينقل أسعار السوق الموازي يومياً) + أسعار
+-- السوق اللي يسجّلها المدير من تطبيق «بكم» (الذهب الخارجي والمسبوك — ما يتنشروش مجاناً في أي مكان).
 
 -- ١) أسعار المنافسين: سعر الجرام اللي يبيع بيه محل ثاني (أو يشري بيه الكسر). يسجّله المدير العام أو
 -- المشرف أو مدير الفرع لما يسمع أو يشوف سعر. المقارنة تصير بـ«كم فوق الذهب الخام يوم السعر» حتى ما
@@ -30,8 +31,9 @@ drop policy if exists "own or admin delete competitor prices" on public.competit
 create policy "own or admin delete competitor prices" on public.competitor_prices for delete to authenticated
   using (recorded_by = auth.uid() or public.has_role(auth.uid(), 'admin'));
 
--- ٢) سعر الكسر في سوق طرابلس (اللي يدفعوه التجار في جرام الذهب المستعمل، كاش). صف لكل خبر؛ الخبر
--- اللي ما فيهش أسعار ينحفظ فارغ حتى ما نرجعوش نجيبوه.
+-- ٢) أسعار السوق: سعر الكسر في طرابلس (اللي يدفعوه التجار في جرام الذهب المستعمل، كاش) — صف لكل خبر،
+-- والخبر اللي ما فيهش أسعار ينحفظ فارغ حتى ما نرجعوش نجيبوه. ومعاه صفوف يسجّلها المدير من تطبيق «بكم»:
+-- ذهب خارجي 18/21 (سعر جرام الذهب المستورد المشغول في السوق) ومسبوك 18/24 (url = 'manual:…').
 create table if not exists public.ly_gold_market (
   url text primary key,
   observed_at timestamptz not null,
@@ -40,11 +42,24 @@ create table if not exists public.ly_gold_market (
   kasr24 numeric,
   fetched_at timestamptz not null default now()
 );
+alter table public.ly_gold_market add column if not exists kharji18 numeric;
+alter table public.ly_gold_market add column if not exists kharji21 numeric;
+alter table public.ly_gold_market add column if not exists masbook18 numeric;
+alter table public.ly_gold_market add column if not exists masbook24 numeric;
+alter table public.ly_gold_market add column if not exists source text not null default 'libyaakhbar';
+alter table public.ly_gold_market add column if not exists recorded_by uuid default auth.uid() references public.profiles(id) on delete set null;
 create index if not exists ly_gold_market_observed_idx on public.ly_gold_market (observed_at desc);
 alter table public.ly_gold_market enable row level security;
-grant select on public.ly_gold_market to authenticated;
+grant select, insert, delete on public.ly_gold_market to authenticated;
 drop policy if exists "read ly gold market" on public.ly_gold_market;
 create policy "read ly gold market" on public.ly_gold_market for select to authenticated using (true);
+drop policy if exists "leads add market prices" on public.ly_gold_market;
+create policy "leads add market prices" on public.ly_gold_market for insert to authenticated
+  with check (source = 'bekam' and url like 'manual:%' and recorded_by = auth.uid()
+    and (public.has_role(auth.uid(), 'admin') or public.has_role(auth.uid(), 'supervisor') or public.has_role(auth.uid(), 'manager')));
+drop policy if exists "own or admin delete market prices" on public.ly_gold_market;
+create policy "own or admin delete market prices" on public.ly_gold_market for delete to authenticated
+  using (source = 'bekam' and (recorded_by = auth.uid() or public.has_role(auth.uid(), 'admin')));
 
 alter table public.market_rate_requests add column if not exists url text;
 
@@ -116,7 +131,7 @@ begin
     delete from market_rate_requests where id = r.id;
   end loop;
   delete from market_rate_requests where created_at < now() - interval '1 day';
-  delete from ly_gold_market where kasr18 is null and kasr21 is null and kasr24 is null and fetched_at < now() - interval '30 days';
+  delete from ly_gold_market where source = 'libyaakhbar' and kasr18 is null and kasr21 is null and kasr24 is null and fetched_at < now() - interval '30 days';
   insert into market_rate_requests(id, kind) values (net.http_get('https://api.gold-api.com/price/XAU'), 'gold');
   insert into market_rate_requests(id, kind) values (net.http_get('https://open.er-api.com/v6/latest/USD'), 'fx');
   insert into market_rate_requests(id, kind) values (net.http_get('https://ecolibya.com/api/public/v1/indicators/LY-EXT-MKT-USDPAR/values?limit=1000', headers := '{"User-Agent":"Mozilla/5.0"}'::jsonb), 'parallel_api');
@@ -137,6 +152,10 @@ insert into public.ly_gold_market(url, observed_at, kasr18, kasr21, kasr24) valu
 ('https://www.libyaakhbar.com/business-news/2921459.html', '2026-11-19T15:49:56+02:00', 950, 1108, null),
 ('https://www.libyaakhbar.com/business-news/2921389.html', '2026-11-19T14:29:17+02:00', 948, 1106, null),
 ('https://www.libyaakhbar.com/business-news/2921149.html', '2026-11-19T01:10:42+02:00', 958, null, null)
+on conflict (url) do nothing;
+-- أسعار «بكم» اللي بعتها المدير (السبت 21 نوفمبر 6:33 م).
+insert into public.ly_gold_market(url, observed_at, kasr18, kasr21, kharji18, kharji21, masbook18, masbook24, source, recorded_by) values
+('manual:bekam-2026-11-21-1833', '2026-11-21T18:33:00+02:00', 906, 1057, 1250, 1350, 921, 1227, 'bekam', null)
 on conflict (url) do nothing;
 
 select public.market_rates_collect();

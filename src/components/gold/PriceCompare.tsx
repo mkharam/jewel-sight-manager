@@ -10,7 +10,8 @@ import { cn } from "@/lib/utils";
 import { useGoldPrices } from "@/hooks/useGoldPrices";
 import { addDays, daysToRange, sb, tripoliToday } from "@/lib/amarsoft";
 import {
-  competitorSummary, fmt, isMissingInDb, latestKasr, rawAt, signed, useCompetitorPrices, useKasr, useRateSeries,
+  competitorSummary, fmt, isMissingInDb, kharjiField, latestKasr, latestQuote, rawAt, signed, tripoliDay,
+  useCompetitorPrices, useMarketQuotes, useRateSeries,
 } from "@/lib/goldMarket";
 
 type ProfitRow = {
@@ -45,7 +46,7 @@ export default function PriceCompare() {
   const [period, setPeriod] = useState<7 | 30>(7);
   const today = tripoliToday();
   const series = useRateSeries(120);
-  const kasr = useKasr(7);
+  const kasr = useMarketQuotes(14);
   const comp = useCompetitorPrices(90);
   const { data: declared } = useGoldPrices();
 
@@ -73,20 +74,35 @@ export default function PriceCompare() {
     const oursEq = rawToday !== null && oursMargin !== null ? rawToday + oursMargin : null;
     const mine = declared?.get(`${karat}K`) ?? null;
     const k = latestKasr(kasr.data, karat);
+    // الذهب الخارجي في السوق (من «بكم»): محوّل لسعر اليوم بنفس الطريقة — كم كان فوق الخام يوم تسجيله.
+    const kh = latestQuote(kasr.data, kharjiField(karat));
+    const khRawThen = kh && series.data ? rawAt(series.data, tripoliDay(kh.at), karat) : null;
+    const kharjiEq = kh ? (khRawThen !== null && rawToday !== null ? rawToday + (kh.value - khRawThen) : kh.value) : null;
     const ladder = [
       { key: "kasr", label: "كسر طرابلس", hint: "اللي يدفعوه التجار في المستعمل", value: k?.value ?? null, ours: false },
       { key: "raw", label: "الذهب الخام", hint: "الأونصة × الدولار الموازي", value: rawToday, ours: false },
+      { key: "kharji", label: "ذهب خارجي في السوق (بكم)", hint: kh ? `مسجّل ${tripoliDay(kh.at)}، ${fmt(kh.value)} يومها` : "", value: kharjiEq, ours: false },
       { key: "comp", label: `المنافسين (${cs.count} سعر)`, hint: cs.todayMin !== null ? `من ${fmt(cs.todayMin)} لـ ${fmt(cs.todayMax)}` : "", value: cs.todayAvg, ours: false },
       { key: "ours", label: `سعرك الفعلي (فواتير ${period === 7 ? "آخر 7 أيام" : "آخر 30 يوم"})`, hint: `${fmt(total.grams)} جم · ${total.invoices} فاتورة`, value: oursEq, ours: true },
       { key: "declared", label: "سعرك المعلن (تسعير المحل)", hint: mine ? `محدّث ${mine.effective_date}` : "", value: mine?.price_per_gram ?? null, ours: true },
     ].filter((x): x is typeof x & { value: number } => x.value !== null && Number.isFinite(x.value)).sort((a, b) => a.value - b.value);
-    return { rawToday, cs, total, branches, oursMargin, oursEq, making: makingOf(total), mine, ladder };
+    return { rawToday, cs, total, branches, oursMargin, oursEq, making: makingOf(total), mine, ladder, kharjiEq };
   }, [series.data, comp.data, profit.data, declared, kasr.data, karat, period, today]);
 
   const profitMissing = !!profit.error && isMissingInDb(profit.error);
   const lo = v.ladder.length ? v.ladder[0].value : 0, hi = v.ladder.length ? v.ladder[v.ladder.length - 1].value : 1;
-  const diff = v.oursEq !== null && v.cs.todayAvg !== null ? v.oursEq - v.cs.todayAvg : null;
-  const pct = diff !== null && v.cs.todayAvg ? (diff / v.cs.todayAvg) * 100 : null;
+  // سعرك الفعلي مقارنة بمرجع: أغلى / أرخص / قريب (فرق أقل من 2%).
+  const verdicts = ([["سعر الذهب الخارجي في السوق", v.kharjiEq], ["المنافسين المسجّلين", v.cs.todayAvg]] as const)
+    .filter(([, ref]) => v.oursEq !== null && ref !== null)
+    .map(([label, ref]) => {
+      const diff = v.oursEq! - ref!, pct = (diff / ref!) * 100;
+      return {
+        label, tone: Math.abs(pct) < 2 ? "same" : diff > 0 ? "up" : "down",
+        text: Math.abs(pct) < 2 ? `سعرك قريب من ${label} (الفرق ${fmt(Math.abs(diff))} د.ل للجرام).`
+          : diff > 0 ? `سعرك أغلى من ${label} بـ ${fmt(diff)} د.ل للجرام (${fmt(pct, 1)}%).`
+          : `سعرك أرخص من ${label} بـ ${fmt(-diff)} د.ل للجرام (${fmt(-pct, 1)}%).`,
+      };
+    });
 
   return (
     <div className="mx-auto max-w-5xl space-y-3">
@@ -139,20 +155,17 @@ export default function PriceCompare() {
           </p>
         ) : null}
         <ul className="space-y-1.5 text-sm leading-relaxed">
-          {diff !== null && pct !== null ? (
-            <li className={cn("rounded-lg p-2.5 font-semibold",
-              Math.abs(pct) < 2 ? "bg-muted/50" : diff > 0 ? "bg-amber-500/10 text-amber-900 dark:text-amber-200" : "bg-sky-500/10 text-sky-900 dark:text-sky-200")}>
-              {Math.abs(pct) < 2
-                ? `سعرك قريب من المنافسين (الفرق ${fmt(Math.abs(diff))} د.ل للجرام).`
-                : diff > 0
-                  ? `سعرك أغلى من المنافسين بـ ${fmt(diff)} د.ل للجرام (${fmt(pct, 1)}%).`
-                  : `سعرك أرخص من المنافسين بـ ${fmt(-diff)} د.ل للجرام (${fmt(-pct, 1)}%).`}
+          {verdicts.map((x) => (
+            <li key={x.label} className={cn("rounded-lg p-2.5 font-semibold",
+              x.tone === "same" ? "bg-muted/50" : x.tone === "up" ? "bg-amber-500/10 text-amber-900 dark:text-amber-200" : "bg-sky-500/10 text-sky-900 dark:text-sky-200")}>
+              {x.text}
             </li>
-          ) : v.cs.count === 0 ? (
+          ))}
+          {v.cs.count === 0 && (
             <li className="rounded-lg bg-muted/50 p-2.5">
-              ما فيش أسعار منافسين مسجّلة لعيار {karat} — سجّلهم في خانة <Link to="/gold-price?tab=rivals" className="font-semibold text-primary underline">المنافسين</Link> باش نقارنو.
+              ما فيش أسعار منافسين مسجّلة لعيار {karat} — سجّلهم في خانة <Link to="/gold-price?tab=rivals" className="font-semibold text-primary underline">المنافسين</Link> باش نقارنو بمحلات معيّنة.
             </li>
-          ) : null}
+          )}
           {v.oursMargin !== null && (
             <>
               <li>• إنت تبيع فوق الذهب الخام بـ <b>{fmt(v.oursMargin)} د.ل</b> للجرام{v.oursEq ? ` (${fmt((v.oursMargin / v.oursEq) * 100, 1)}% من سعر البيع)` : ""}.</li>
@@ -174,7 +187,9 @@ export default function PriceCompare() {
           <div className="space-y-1.5">
             {v.branches.map((b) => {
               const m = marginOf(b)!, eq = v.rawToday! + m;
-              const d = v.cs.todayAvg !== null ? eq - v.cs.todayAvg : null;
+              // المرجع: سعر الذهب الخارجي في السوق لو مسجّل، وإلا متوسط المنافسين.
+              const ref = v.kharjiEq ?? v.cs.todayAvg;
+              const d = ref !== null ? eq - ref : null;
               return (
                 <div key={b.name} className="rounded-lg border p-2.5 text-sm">
                   <div className="flex items-baseline justify-between gap-2">
@@ -183,7 +198,7 @@ export default function PriceCompare() {
                   </div>
                   <p className="mt-0.5 text-[11px] text-muted-foreground tabular-nums">
                     {signed(m)} فوق الخام · صافي ربح {fmt(m - makingOf(b))} للجرام
-                    {d !== null ? <> · <b className={d >= 0 ? "text-amber-700 dark:text-amber-400" : "text-sky-700 dark:text-sky-400"}>{d >= 0 ? "أغلى" : "أرخص"} من المنافسين بـ {fmt(Math.abs(d))}</b></> : ""}
+                    {d !== null ? <> · <b className={d >= 0 ? "text-amber-700 dark:text-amber-400" : "text-sky-700 dark:text-sky-400"}>{d >= 0 ? "أغلى" : "أرخص"} من {v.kharjiEq !== null ? "السوق" : "المنافسين"} بـ {fmt(Math.abs(d))}</b></> : ""}
                   </p>
                 </div>
               );

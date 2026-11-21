@@ -16,7 +16,7 @@ import { normalizeDecimalInput } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { sb, tripoliToday } from "@/lib/amarsoft";
 import {
-  competitorSummary, fmt, isMissingInDb, latestKasr, rawAt, signed, tripoliDay, useCompetitorPrices, useKasr, useRateSeries, type Karat,
+  competitorSummary, fmt, isMissingInDb, latestKasr, rawAt, signed, tripoliDay, useCompetitorPrices, useMarketQuotes, useRateSeries, type Karat,
 } from "@/lib/goldMarket";
 
 const DAYS = 90;
@@ -39,7 +39,7 @@ export default function Competitors() {
   const confirm = useConfirm();
   const comp = useCompetitorPrices(DAYS);
   const series = useRateSeries(DAYS + 10);
-  const kasr = useKasr(7);
+  const kasr = useMarketQuotes(7);
   const { data: declared } = useGoldPrices();
 
   const [shop, setShop] = useState("");

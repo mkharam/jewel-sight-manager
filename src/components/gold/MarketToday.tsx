@@ -1,5 +1,6 @@
 // «السوق اليوم»: سعر الأونصة والدولار (موازي ورسمي) وكم تغيّروا، قيمة جرام الذهب الخام لكل عيار،
-// سعر الكسر في سوق طرابلس (تلقائي من الأخبار)، حركة آخر شهر/3 شهور، وحاسبة.
+// سعر الكسر في سوق طرابلس (تلقائي من الأخبار)، الذهب الخارجي والمسبوك (يسجّلهم المدير من «بكم»)،
+// حركة آخر شهر/3 شهور، وحاسبة.
 import { useMemo, useState } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ArrowDown, ArrowUp, Info, Loader2 } from "lucide-react";
@@ -7,9 +8,11 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { addDays, formatTripoli } from "@/lib/amarsoft";
 import {
-  PURITY, fmt, signed, isMissingInDb, kasrOf, latestKasr, tripoliDay, useKasr, useRateSeries, type Karat, type RateDay,
+  PURITY, fmt, signed, isMissingInDb, kasrOf, kharjiField, latestKasr, latestQuote, tripoliDay, useMarketQuotes, useRateSeries,
+  type Karat, type RateDay,
 } from "@/lib/goldMarket";
 import GoldCalculator from "./GoldCalculator";
+import BekamQuotes from "./BekamQuotes";
 
 /** التغيّر عن آخر سعر مختلف في آخر 7 أيام (الأونصة ما تتحركش في العطلة، والدولار مرات يثبت يومين). */
 function changeOf(series: RateDay[], pick: (x: RateDay) => number | null, d = 0) {
@@ -38,7 +41,7 @@ function Change({ c, d = 0 }: { c: { delta: number; day: string } | null; d?: nu
 
 export default function MarketToday() {
   const series = useRateSeries(100);
-  const kasr = useKasr(100);
+  const kasr = useMarketQuotes(100);
   const [range, setRange] = useState<30 | 90>(30);
   const [chartKarat, setChartKarat] = useState<"18" | "21">("18");
 
@@ -67,7 +70,9 @@ export default function MarketToday() {
     raw: today.g24 === null ? null : today.g24 * PURITY[k],
     official: today.xau && today.official ? (today.xau / 31.1035) * today.official * PURITY[k] : null,
     kasr: latestKasr(kasr.data, k),
+    kharji: latestQuote(kasr.data, kharjiField(k)),
   }));
+  const masbook = [latestQuote(kasr.data, "masbook18"), latestQuote(kasr.data, "masbook24")];
   const k18 = rows[0];
   const gap = k18.kasr && k18.raw ? k18.kasr.value - k18.raw : null;
 
@@ -106,7 +111,7 @@ export default function MarketToday() {
                 <th className="px-1.5 py-2 text-right">العيار</th>
                 <th className="px-1.5 py-2 text-primary">خام (موازي)</th>
                 <th className="px-1.5 py-2">كسر طرابلس</th>
-                <th className="px-1.5 py-2">خام (رسمي)</th>
+                <th className="px-1.5 py-2">خارجي (السوق)</th>
               </tr>
             </thead>
             <tbody>
@@ -115,7 +120,7 @@ export default function MarketToday() {
                   <td className="px-1.5 py-2.5 text-right font-bold">{r.k}</td>
                   <td className="px-1.5 py-2.5 text-base font-extrabold text-primary">{fmt(r.raw)}</td>
                   <td className="px-1.5 py-2.5 font-semibold">{r.kasr ? fmt(r.kasr.value) : "—"}</td>
-                  <td className="px-1.5 py-2.5 text-muted-foreground">{fmt(r.official)}</td>
+                  <td className="px-1.5 py-2.5 font-semibold">{r.kharji ? fmt(r.kharji.value) : "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -131,10 +136,14 @@ export default function MarketToday() {
               {gap !== null && k18.raw ? <> الكسر {gap < 0 ? "أقل" : "أعلى"} من الخام بـ {fmt(Math.abs(gap))} د.ل ({fmt(Math.abs(gap / k18.raw) * 100, 1)}%).</> : null}
             </p>
             {kasrMissing && <p className="text-amber-700 dark:text-amber-400">سعر الكسر يبدا يظهر بعد ما تشغّل ملف التحديث RUN_ONCE_2026-11-22.sql.</p>}
-            <p><b className="text-foreground">خام (رسمي)</b>: لو حسبناه بدولار المصرف — للمقارنة بس.</p>
+            <p><b className="text-foreground">خارجي (السوق)</b>: سعر جرام الذهب المستورد المشغول في السوق — من تطبيق «بكم» (تسجّله تحت).
+              {masbook[0] || masbook[1] ? <> المسبوك: 18 = {fmt(masbook[0]?.value)} · 24 = {fmt(masbook[1]?.value)}.</> : null}</p>
+            <p>لو حسبنا الخام بدولار المصرف الرسمي: 18 = {fmt(rows[0].official)} · 21 = {fmt(rows[1].official)} · 24 = {fmt(rows[2].official)} — للمقارنة بس.</p>
           </div>
         </div>
       </Card>
+
+      <BekamQuotes rows={kasr.data} g24={today.g24} error={kasr.error} />
 
       <Card className="space-y-2 p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">

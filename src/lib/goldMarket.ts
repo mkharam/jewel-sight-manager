@@ -53,31 +53,46 @@ export function useRateSeries(days: number) {
   });
 }
 
-export type KasrRow = { url: string; observed_at: string; kasr18: number | null; kasr21: number | null; kasr24: number | null };
-export const kasrOf = (r: KasrRow, k: Karat) => n(k === "18" ? r.kasr18 : k === "21" ? r.kasr21 : r.kasr24);
+/** أسعار السوق: الكسر (تلقائي من الأخبار) + الذهب الخارجي والمسبوك (يسجّلها المدير من تطبيق «بكم»). */
+export type MarketRow = {
+  url: string; observed_at: string; source: string; recorded_by?: string | null;
+  kasr18: number | null; kasr21: number | null; kasr24: number | null;
+  kharji18?: number | null; kharji21?: number | null; masbook18?: number | null; masbook24?: number | null;
+};
+export type QuoteField = "kasr18" | "kasr21" | "kasr24" | "kharji18" | "kharji21" | "masbook18" | "masbook24";
+const QUOTE_FIELDS: QuoteField[] = ["kasr18", "kasr21", "kasr24", "kharji18", "kharji21", "masbook18", "masbook24"];
+export const kasrField = (k: Karat): QuoteField => (k === "18" ? "kasr18" : k === "21" ? "kasr21" : "kasr24");
+export const kharjiField = (k: Karat): QuoteField | null => (k === "18" ? "kharji18" : k === "21" ? "kharji21" : null);
+export const quoteOf = (r: MarketRow, f: QuoteField) => n(r[f]);
+export const kasrOf = (r: MarketRow, k: Karat) => quoteOf(r, kasrField(k));
 
-/** سعر الكسر في سوق طرابلس (أحدث أول). */
-export function useKasr(days: number) {
+/** أسعار السوق (أحدث أول). لو ملف التحديث القديم بس اللي تشغّل (بلا أعمدة «بكم») نجيبو الكسر وحده. */
+export function useMarketQuotes(days: number) {
   return useQuery({
     queryKey: ["ly-gold-market", days],
-    staleTime: 10 * 60_000,
+    staleTime: 5 * 60_000,
     retry: false,
     queryFn: async () => {
       const since = new Date(Date.now() - days * 86_400_000).toISOString();
-      const { data, error } = await sb.from("ly_gold_market")
-        .select("url, observed_at, kasr18, kasr21, kasr24")
+      const q = (cols: string) => sb.from("ly_gold_market").select(cols)
         .gte("observed_at", since).order("observed_at", { ascending: false }).limit(400);
+      let { data, error } = await q("url, observed_at, source, recorded_by, kasr18, kasr21, kasr24, kharji18, kharji21, masbook18, masbook24");
+      if (error && (error.code === "42703" || /column/i.test(error.message ?? ""))) {
+        ({ data, error } = await q("url, observed_at, kasr18, kasr21, kasr24"));
+      }
       if (error) throw error;
-      return ((data ?? []) as KasrRow[]).filter((r) => r.kasr18 !== null || r.kasr21 !== null || r.kasr24 !== null);
+      return ((data ?? []) as MarketRow[]).filter((r) => QUOTE_FIELDS.some((f) => quoteOf(r, f) !== null));
     },
   });
 }
 
-/** أحدث سعر كسر لعيار. */
-export function latestKasr(rows: KasrRow[] | undefined, k: Karat) {
-  const r = rows?.find((x) => kasrOf(x, k) !== null);
-  return r ? { value: kasrOf(r, k)!, at: r.observed_at, url: r.url } : null;
+/** أحدث قيمة لسعر من أسعار السوق. */
+export function latestQuote(rows: MarketRow[] | undefined, f: QuoteField | null) {
+  if (!f) return null;
+  const r = rows?.find((x) => quoteOf(x, f) !== null);
+  return r ? { value: quoteOf(r, f)!, at: r.observed_at, source: r.source ?? "libyaakhbar" } : null;
 }
+export const latestKasr = (rows: MarketRow[] | undefined, k: Karat) => latestQuote(rows, kasrField(k));
 
 export type CompetitorRow = {
   id: string; created_at: string; shop: string; area: string | null; karat: Karat; kind: "sale" | "scrap";
