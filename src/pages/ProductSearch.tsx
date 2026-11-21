@@ -345,13 +345,15 @@ export default function ProductSearch() {
     queryKey: ["products", debounced, similarIds, similarIds ? 0 : pages],
     queryFn: async () => {
       const SELECT =
-        "id,name,sku,barcode_value,karat,gold_color,weight_grams,ring_size,sale_price,promo_price,quantity,status,branch_id,search_tags,description,category_id,created_at,branch:branches(name),category:categories(name),images:product_images(storage_path,thumb_path,is_primary)";
+        "id,name,sku,barcode_value,karat,gold_color,weight_grams,ring_size,sale_price,promo_price,quantity,status,branch_id,search_tags,description,category_id,created_at,cataloged_at,branch:branches(name),category:categories(name),images:product_images(storage_path,thumb_path,is_primary)";
       const sortAsc = debounced.sortDir === "asc";
       const byWeight = debounced.sortDir === "heavy" || debounced.sortDir === "light";
       // ترتيب الاستعلام: بالوزن (القطع بلا وزن في الآخر) أو بتاريخ الإضافة.
       const ordered = (q: any) => byWeight
-        ? q.order("weight_grams", { ascending: debounced.sortDir === "light", nullsFirst: false }).order("created_at", { ascending: false })
-        : q.order("created_at", { ascending: sortAsc });
+        ? q.order("weight_grams", { ascending: debounced.sortDir === "light", nullsFirst: false }).order("cataloged_at", { ascending: false })
+        // «الأحدث» = آخر قطعة دخلت الكتالوج باسم حقيقي (cataloged_at)، لا تاريخ رفع الصورة — قطعة
+        // رُفعت من شهور وسُمّيت اليوم تطلع فوق.
+        : q.order("cataloged_at", { ascending: sortAsc, nullsFirst: false });
       const weightSort = (list: any[]) => byWeight
         ? [...list].sort((a, b) => {
             const wa = a.weight_grams ?? null, wb = b.weight_grams ?? null;
@@ -431,11 +433,11 @@ export default function ProductSearch() {
         const [hitRes, poolRes, semanticResults] = await Promise.all([
           applyFilters(supabase.from("products").select(SELECT))
             .or(orParts.join(","))
-            .order("created_at", { ascending: sortAsc })
+            .order("cataloged_at", { ascending: sortAsc })
             .limit(byWeight ? 400 : 200),
           // مجموعة احتياطية للمطابقة التقريبية (حروف ناقصة/كتابة ليبية)
           applyFilters(supabase.from("products").select(SELECT))
-            .order("created_at", { ascending: sortAsc })
+            .order("cataloged_at", { ascending: sortAsc })
             .limit(800),
           semanticPromise,
         ]);
@@ -466,8 +468,8 @@ export default function ProductSearch() {
           .filter((x) => x.s > 0)
           .sort((a, b) => {
             if (b.s !== a.s) return b.s - a.s;
-            const ta = new Date(a.p.created_at ?? 0).getTime();
-            const tb = new Date(b.p.created_at ?? 0).getTime();
+            const ta = new Date(a.p.cataloged_at ?? a.p.created_at ?? 0).getTime();
+            const tb = new Date(b.p.cataloged_at ?? b.p.created_at ?? 0).getTime();
             return sortAsc ? ta - tb : tb - ta;
           });
 
