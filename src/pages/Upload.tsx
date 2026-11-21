@@ -130,7 +130,7 @@ export default function Upload() {
             اختياري.
           </p>
         </div>
-        <Link to="/upload/review">
+        <Link to="/pieces?tab=unnamed">
           <Button variant="outline" className="shrink-0 relative">
             <ImageOff className="size-4 ml-1" />
             مراجعة غير المسمّاة

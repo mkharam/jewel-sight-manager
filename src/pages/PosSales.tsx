@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import InvoiceChanges from "@/components/amarsoft/InvoiceChanges";
-import SalesAnalytics from "@/components/amarsoft/SalesAnalytics";
 import DocLog from "@/components/amarsoft/DocLog";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Loader2, Receipt, Users } from "lucide-react";
@@ -33,10 +32,10 @@ type Invoice = {
 };
 type Salesman = { branch_code: string; sman: string; name: string | null; is_active: boolean; profile_id: string | null };
 
+// الأرباح وسعر الغرام انتقلوا لصفحة وحدة «الأسعار والأرباح» (/reports?tab=gram) بسعر ذهب تلقائي.
 const TABS = [
   { key: "invoices", label: "الفواتير" },
-  { key: "profit", label: "الأرباح" },
-  { key: "log", label: "السجل" },
+  { key: "log", label: "الممسوح والمعدّل" },
 ] as const;
 const PAGE = 50;
 const NONE = "__none__";
@@ -74,9 +73,7 @@ export default function PosSales() {
   const [branch, setBranch] = useState(params.get("branch") ?? ALL);
   const [sman, setSman] = useState(initialSman);
   const [search, setSearch] = useState(initialQ);
-  const [tab, setTab] = useState<"invoices" | "profit" | "log">(
-    params.get("tab") === "log" ? "log" : params.get("tab") === "profit" ? "profit" : "invoices",
-  );
+  const [tab, setTab] = useState<"invoices" | "log">(params.get("tab") === "log" ? "log" : "invoices");
   const [open, setOpen] = useState<Invoice | null>(null);
   const [smenOpen, setSmenOpen] = useState(false);
 
@@ -193,7 +190,7 @@ export default function PosSales() {
         <Button variant="outline" size="sm" onClick={() => setSmenOpen(true)}><Users className="size-4 ml-1" />البائعون</Button>
       </div>
 
-      <div className="grid grid-cols-3 gap-1.5">
+      <div className="grid grid-cols-2 gap-1.5">
         {TABS.map((t) => (
           <Button key={t.key} size="lg" variant={tab === t.key ? "default" : "outline"} onClick={() => setTab(t.key)} className="text-base">{t.label}</Button>
         ))}
@@ -208,7 +205,7 @@ export default function PosSales() {
         ))}
       </div>
 
-      {tab === "profit" ? <SalesAnalytics /> : tab === "log" ? (
+      {tab === "log" ? (
         <div className="space-y-4">
           <InvoiceChanges />
           <details>

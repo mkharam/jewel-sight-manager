@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowRight, Loader2, RotateCw, Save, Sparkles, ExternalLink, Trash2, ArrowUpDown, CheckCheck } from "lucide-react";
+import { Loader2, RotateCw, Save, Sparkles, ExternalLink, Trash2, ArrowUpDown, CheckCheck } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
 import { KARAT_OPTIONS, getImageUrl, getThumbUrl } from "@/lib/constants";
@@ -305,10 +305,6 @@ export default function ReviewUnnamed() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-4">
-      <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
-        <ArrowRight className="size-4 ml-1" /> رجوع
-      </Button>
-
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Sparkles className="size-6 text-primary" />
@@ -319,7 +315,7 @@ export default function ReviewUnnamed() {
             القطع التي صوّرتها للتو. احذف أي صورة تجربة أو غير مطلوبة الآن — قبل أن يحلّلها النظام ويضيفها
             تلقائياً للكتالوج بلا مراجعة. للباقي: تأكّد من الاسم ثم اضغط "حفظ"، أو اتركها لتُحلَّل تلقائياً
             وراجعها لاحقاً من{" "}
-            <button className="underline font-semibold" onClick={() => navigate("/upload/review", { replace: true })}>
+            <button className="underline font-semibold" onClick={() => navigate("/pieces?tab=unnamed", { replace: true })}>
               كل القطع غير المسمّاة
             </button>
             .
@@ -358,7 +354,7 @@ export default function ReviewUnnamed() {
               : "لا توجد قطع بانتظار المراجعة — كل شيء تم تسميته 🎉"}
           </p>
           {isSessionReview && (
-            <Button variant="link" onClick={() => navigate("/upload/review", { replace: true })}>
+            <Button variant="link" onClick={() => navigate("/pieces?tab=unnamed", { replace: true })}>
               عرض كل القطع غير المسمّاة
             </Button>
           )}

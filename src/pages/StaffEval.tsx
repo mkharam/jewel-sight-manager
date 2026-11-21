@@ -3,13 +3,13 @@
 // النقاط: كل مقياس يُقيَّم بترتيب البائع بين زملائه (الأحسن 100، الأضعف 0، الوسط 50)،
 // ثم مجموع موزون حسب أهمية كل مقياس. هكي النقاط عادلة ولا تتأثر بحجم الأرقام.
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Loader2, ClipboardList, SlidersHorizontal, Info } from "lucide-react";
+import { Loader2, ClipboardList, SlidersHorizontal, Info } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { sb, periodDays, daysToRange, addDays, type Period } from "@/lib/amarsoft";
+import MarketRatesCard from "@/components/MarketRatesCard";
 
 type Raw = {
   branch_code: string; branch_name: string; sman: string; salesman_name: string;
@@ -375,7 +375,6 @@ export default function StaffEval() {
   return (
     <div className="mx-auto max-w-6xl space-y-4" dir="rtl">
       <div className="flex items-center gap-2">
-        <Link to="/leaderboard" aria-label="رجوع"><ArrowRight className="size-5" /></Link>
         <ClipboardList className="size-6 text-primary" />
         <h1 className="text-xl sm:text-2xl font-bold">تقييم البائعين والفروع</h1>
       </div>
@@ -430,39 +429,12 @@ export default function StaffEval() {
       ) : section ? (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">{section.intro}</p>
-          {section.key === "price" && <RatesCard />}
+          {section.key === "price" && <MarketRatesCard />}
           <Table key={section.key} rows={who} cols={section.cols} showScore={section.key === "sales"} />
           <Explain items={section.cols.map((c) => ({ label: c.label, text: c.explain }))} />
         </div>
       ) : null}
     </div>
-  );
-}
-
-/** سعر الذهب والدولار اليوم — اللي تنحسب عليه «فوق الذهب». */
-function RatesCard() {
-  const q = useQuery({
-    queryKey: ["market-rates-latest"],
-    queryFn: async () => {
-      const { data } = await sb.from("market_rates").select("*").order("day", { ascending: false }).limit(15);
-      return (data ?? []) as { day: string; xau_usd_oz: number | null; usd_lyd_official: number | null; usd_lyd_market: number | null; market_source: string | null }[];
-    },
-  });
-  const rows = q.data ?? [];
-  const gold = rows.find((r) => r.xau_usd_oz)?.xau_usd_oz ?? null;
-  const mk = rows.find((r) => r.usd_lyd_market);
-  const off = rows.find((r) => r.usd_lyd_official)?.usd_lyd_official ?? null;
-  if (!rows.length) return null;
-  const g24 = gold && mk?.usd_lyd_market ? (Number(gold) / 31.1035) * Number(mk.usd_lyd_market) : null;
-  return (
-    <Card className="p-3 grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-sm">
-      <div><div className="text-[11px] text-muted-foreground">أونصة الذهب</div><div className="font-bold tabular-nums">${f(gold)}</div></div>
-      <div><div className="text-[11px] text-muted-foreground">الدولار الموازي</div><div className="font-bold tabular-nums">{f(mk?.usd_lyd_market, 3)}</div><div className="text-[10px] text-muted-foreground">{mk?.day}</div></div>
-      <div><div className="text-[11px] text-muted-foreground">الدولار الرسمي</div><div className="font-bold tabular-nums">{f(off, 3)}</div></div>
-      <div><div className="text-[11px] text-muted-foreground">جرام 18 خام</div><div className="font-bold tabular-nums">{g24 ? `${f(g24 * 0.75)} د.ل` : "—"}</div></div>
-      <div><div className="text-[11px] text-muted-foreground">جرام 21 خام</div><div className="font-bold tabular-nums">{g24 ? `${f(g24 * 0.875)} د.ل` : "—"}</div></div>
-      <p className="col-span-full text-[11px] text-muted-foreground">قيمة الذهب الخام = سعر الأونصة ÷ 31.1 × الدولار الموازي × العيار. تتحدث كل ساعة. «—» في الجدول = ما فيش سعر دولار موازي مسجّل لأيام البيع (متوفر من 13 أغسطس 2026).</p>
-    </Card>
   );
 }
 

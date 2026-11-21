@@ -33,7 +33,7 @@ export default function MissingWeightsBanner() {
 
   return (
     <Link
-      to="/weights"
+      to="/pieces?tab=weights"
       className="flex items-center gap-3 rounded-xl border border-warning/40 bg-warning/10 hover:bg-warning/15 active:bg-warning/20 transition-colors p-3.5"
     >
       <div className="size-10 rounded-full bg-warning/20 flex items-center justify-center shrink-0">

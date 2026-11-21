@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useSearchParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
@@ -9,6 +9,7 @@ import AppLayout from "@/components/AppLayout";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RequireRole from "@/components/RequireRole";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import RedirectKeep from "@/components/RedirectKeep";
 import { ConfirmDialogProvider } from "@/components/ConfirmDialogProvider";
 import { AuthProvider } from "@/hooks/useAuth";
 import Auth from "@/pages/Auth";
@@ -21,22 +22,19 @@ const ProductForm = lazy(() => import("@/pages/ProductForm"));
 const Inquiries = lazy(() => import("@/pages/Inquiries"));
 const StaffChat = lazy(() => import("@/pages/StaffChat"));
 const Upload = lazy(() => import("@/pages/Upload"));
-const ReviewUnnamed = lazy(() => import("@/pages/ReviewUnnamed"));
-const MissingWeights = lazy(() => import("@/pages/MissingWeights"));
-const IncompleteSets = lazy(() => import("@/pages/IncompleteSets"));
+const PiecesHub = lazy(() => import("@/pages/PiecesHub"));
+const CountHub = lazy(() => import("@/pages/CountHub"));
+const StockHub = lazy(() => import("@/pages/StockHub"));
+const EvaluationHub = lazy(() => import("@/pages/EvaluationHub"));
 const TeamHub = lazy(() => import("@/pages/TeamHub"));
 const ReportsHub = lazy(() => import("@/pages/ReportsHub"));
 const Transfers = lazy(() => import("@/pages/Transfers"));
 const Reorders = lazy(() => import("@/pages/Reorders"));
 const GoldPrice = lazy(() => import("@/pages/GoldPrice"));
-const StockTake = lazy(() => import("@/pages/StockTake"));
 const PosSales = lazy(() => import("@/pages/PosSales"));
-const PosStock = lazy(() => import("@/pages/PosStock"));
-const PosCount = lazy(() => import("@/pages/PosCount"));
 const AmarsoftHub = lazy(() => import("@/pages/AmarsoftHub"));
 const Branches = lazy(() => import("@/pages/Branches"));
 const Leaderboard = lazy(() => import("@/pages/Leaderboard"));
-const StaffEval = lazy(() => import("@/pages/StaffEval"));
 const Repairs = lazy(() => import("@/pages/Repairs"));
 const DailyClosing = lazy(() => import("@/pages/DailyClosing"));
 const Reservations = lazy(() => import("@/pages/Reservations"));
@@ -49,7 +47,6 @@ const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 const SaleReceipt = lazy(() => import("@/pages/SaleReceipt"));
 const AmarsoftSuppliers = lazy(() => import("@/pages/AmarsoftSuppliers"));
 const Watches = lazy(() => import("@/pages/Watches"));
-const AmarsoftLink = lazy(() => import("@/pages/AmarsoftLink"));
 const Evaluations = lazy(() => import("@/pages/Evaluations"));
 const EvaluatePublic = lazy(() => import("@/pages/EvaluatePublic"));
 const Loyalty = lazy(() => import("@/pages/Loyalty"));
@@ -76,6 +73,12 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+// خانة «الأرباح» القديمة في الفواتير صارت جزء من «الأسعار والأرباح» في التقارير.
+function PosSalesRoute() {
+  const [params] = useSearchParams();
+  return params.get("tab") === "profit" ? <Navigate to="/reports?tab=gram" replace /> : <PosSales />;
+}
 
 const App = () => (
   <ErrorBoundary>
@@ -116,33 +119,40 @@ const App = () => (
                 <Route path="/notifications" element={<Notifications />} />
                 <Route path="/upload" element={<Upload />} />
                 <Route path="/live-add" element={<LiveAdd />} />
-                <Route path="/upload/review" element={<ReviewUnnamed />} />
-                <Route path="/weights" element={<MissingWeights />} />
-                <Route path="/sets" element={<IncompleteSets />} />
+                {/* «قطع تحتاج متابعة»: بلا اسم، بلا وزن، أطقم ناقصة، ربط أمارسوفت — صفحة وحدة بخانات. */}
+                <Route path="/pieces" element={<PiecesHub />} />
+                <Route path="/upload/review" element={<RedirectKeep to="/pieces?tab=unnamed" />} />
+                <Route path="/weights" element={<RedirectKeep to="/pieces?tab=weights" />} />
+                <Route path="/sets" element={<RedirectKeep to="/pieces?tab=sets" />} />
+                <Route path="/amarsoft-link" element={<RedirectKeep to="/pieces?tab=link" />} />
                 <Route path="/import" element={<Navigate to="/upload" replace />} />
                 <Route path="/tray" element={<Navigate to="/upload" replace />} />
                 {/* الفريق والتقارير: كل وحدة صفحة بخانات. الروابط القديمة تفتح على خانتها. */}
                 <Route path="/staff" element={<RequireRole allow={["admin"]}><TeamHub /></RequireRole>} />
                 <Route path="/reports" element={<RequireRole allow={["admin"]}><ReportsHub /></RequireRole>} />
-                <Route path="/reports/app" element={<Navigate to="/reports?tab=stock" replace />} />
+                <Route path="/reports/app" element={<Navigate to="/stock?tab=app" replace />} />
                 <Route path="/daily-summary" element={<Navigate to="/reports?tab=daily" replace />} />
                 <Route path="/transfers" element={<Transfers />} />
                 <Route path="/reorders" element={<Reorders />} />
                 <Route path="/gold-price" element={<RequireRole allow={["admin", "manager", "supervisor"]}><GoldPrice /></RequireRole>} />
-                <Route path="/stock-take" element={<RequireRole allow={["admin", "supervisor"]}><StockTake /></RequireRole>} />
+                {/* «الجرد» و«المخزون»: كل وحدة صفحة بخانات (أمارسوفت + التطبيق). */}
+                <Route path="/count" element={<RequireRole allow={["admin", "manager", "supervisor"]}><CountHub /></RequireRole>} />
+                <Route path="/stock" element={<RequireRole allow={["admin", "manager", "supervisor"]}><StockHub /></RequireRole>} />
+                <Route path="/stock-take" element={<RedirectKeep to="/count?tab=app" />} />
                 <Route path="/sales" element={<Navigate to="/reports?tab=sales" replace />} />
-                <Route path="/pos-sales" element={<RequireRole allow={["admin"]}><PosSales /></RequireRole>} />
-                <Route path="/pos-stock" element={<RequireRole allow={["admin", "manager", "supervisor"]}><PosStock /></RequireRole>} />
-                <Route path="/pos-count" element={<RequireRole allow={["admin", "manager", "supervisor"]}><PosCount /></RequireRole>} />
+                <Route path="/pos-sales" element={<RequireRole allow={["admin"]}><PosSalesRoute /></RequireRole>} />
+                <Route path="/pos-stock" element={<RedirectKeep to="/stock?tab=amarsoft" />} />
+                <Route path="/pos-count" element={<RedirectKeep to="/count?tab=scan" />} />
                 <Route path="/amarsoft" element={<RequireRole allow={["admin", "manager", "supervisor"]}><AmarsoftHub /></RequireRole>} />
                 <Route path="/branches" element={<Navigate to="/reports?tab=branches" replace />} />
                 <Route path="/branches/:code" element={<RequireRole allow={["admin"]}><Branches /></RequireRole>} />
                 <Route path="/suppliers" element={<RequireRole allow={["admin"]}><AmarsoftSuppliers /></RequireRole>} />
                 <Route path="/leaderboard" element={<Leaderboard />} />
-                <Route path="/staff-eval" element={<RequireRole allow={["admin"]}><StaffEval /></RequireRole>} />
+                {/* «التقييم» للمدير العام: الأرقام، التقييم الشهري، المتصدرون. */}
+                <Route path="/evaluation" element={<RequireRole allow={["admin"]}><EvaluationHub /></RequireRole>} />
+                <Route path="/staff-eval" element={<RedirectKeep to="/evaluation?tab=numbers" />} />
                 <Route path="/reservations" element={<Reservations />} />
                 <Route path="/watches" element={<Watches />} />
-                <Route path="/amarsoft-link" element={<RequireRole allow={["admin"]}><AmarsoftLink /></RequireRole>} />
                 <Route path="/gram-price" element={<Navigate to="/reports?tab=gram" replace />} />
                 <Route path="/accountant" element={<Navigate to="/reports?tab=accountant" replace />} />
                 {/* المدير العام ومسؤول التقييم (أيمن) — الصلاحية في قاعدة البيانات (is_eval_admin). */}

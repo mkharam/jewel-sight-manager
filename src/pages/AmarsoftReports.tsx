@@ -545,7 +545,7 @@ export default function AmarsoftReports() {
             <Card className="p-3">
               <div className="flex justify-between items-center mb-1">
                 <h2 className="text-lg font-bold">أحسن البائعين</h2>
-                <Link to="/staff?tab=leaderboard" className="text-sm font-semibold text-primary">الكل ←</Link>
+                <Link to="/evaluation?tab=leaderboard" className="text-sm font-semibold text-primary">الكل ←</Link>
               </div>
               {v.leaders.map((l, i) => (
                 <div key={`${l.branch_name}-${l.sman}`} className="flex justify-between items-center py-1.5 border-b last:border-0 text-sm">
@@ -560,7 +560,7 @@ export default function AmarsoftReports() {
           <Card className="p-3 space-y-2">
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-bold">المخزون الآن</h2>
-              <Link to="/pos-stock" className="text-sm font-semibold text-primary">المخزون ←</Link>
+              <Link to="/stock" className="text-sm font-semibold text-primary">المخزون ←</Link>
             </div>
             <div className="text-xl font-bold">{n0(v.stock.pcs)} قطعة · {formatGrams(Math.round(v.stock.grams))}</div>
             <Hint>هذا الموجود في الفروع توا (مش في الفترة المختارة).</Hint>
@@ -578,7 +578,7 @@ export default function AmarsoftReports() {
             )}
           </Card>
 
-          <Link to="/reports?tab=stock" className="block text-center text-sm text-muted-foreground underline py-2">
+          <Link to="/stock?tab=app" className="block text-center text-sm text-muted-foreground underline py-2">
             تقارير التطبيق القديمة (المصاريف، الأسعار، التحويلات، الصيانة)
           </Link>
           </>}

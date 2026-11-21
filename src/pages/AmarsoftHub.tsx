@@ -1,7 +1,7 @@
 // صفحة أمارسوفت: كل ما يأتي من نظام المحل في مكان واحد، أيقونات مقسّمة على أقسام واضحة.
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, Boxes, Building2, ClipboardCheck, Coins, History, Link2, Receipt, TrendingUp, Trophy, Truck, Wallet, type LucideIcon } from "lucide-react";
+import { BarChart3, Boxes, Building2, ClipboardCheck, Coins, History, Link2, Receipt, Trophy, Truck, Wallet, type LucideIcon } from "lucide-react";
 import { useAuth, hasRole } from "@/hooks/useAuth";
 import { sb, formatTripoli, daysToRange, tripoliToday } from "@/lib/amarsoft";
 
@@ -12,9 +12,9 @@ const SECTIONS: Section[] = [
   {
     title: "الأرقام والحسابات",
     tiles: [
-      { to: "/reports", label: "التقارير", hint: "كل الفروع ومقارنتها", icon: BarChart3, admin: true },
+      { to: "/reports", label: "نظرة عامة", hint: "كل الفروع ومقارنتها", icon: BarChart3, admin: true },
       { to: "/reports?tab=branches", label: "الفروع", hint: "كل فرع بروحه، يوم بيوم", icon: Building2, admin: true },
-      { to: "/reports?tab=gram", label: "سعر الغرام", hint: "بكم يبيع كل فرع الغرام", icon: Coins, admin: true },
+      { to: "/reports?tab=gram", label: "الأسعار والأرباح", hint: "سعر الغرام والربح فوق الذهب", icon: Coins, admin: true },
       { to: "/reports?tab=accountant", label: "المحاسب", hint: "نقدي ومصرف وآجل", icon: Wallet, admin: true },
     ],
   },
@@ -22,18 +22,17 @@ const SECTIONS: Section[] = [
     title: "المبيعات",
     tiles: [
       { to: "/pos-sales", label: "الفواتير", hint: "كل فواتير البيع", icon: Receipt, admin: true },
-      { to: "/pos-sales?tab=profit", label: "الأرباح", hint: "سعر الغرام والمصنعية", icon: TrendingUp, admin: true },
       { to: "/pos-sales?tab=log", label: "الممسوح والمعدّل", hint: "شن تبدّل في الفواتير", icon: History, admin: true },
-      { to: "/leaderboard", label: "المتصدرون", hint: "مبيعات كل موظف", icon: Trophy },
+      { to: "/leaderboard", label: "المتصدرون", hint: "ترتيب البائعين بالوزن", icon: Trophy },
     ],
   },
   {
     title: "البضاعة",
     tiles: [
-      { to: "/pos-stock", label: "المخزون", hint: "القطع في كل فرع", icon: Boxes },
-      { to: "/pos-count", label: "الجرد", hint: "امسح القطع وقارن", icon: ClipboardCheck },
+      { to: "/stock", label: "المخزون", hint: "القطع في كل فرع", icon: Boxes },
+      { to: "/count", label: "الجرد", hint: "امسح القطع وقارن", icon: ClipboardCheck },
       { to: "/suppliers", label: "الموردون", hint: "شن دخل وشن تباع", icon: Truck, admin: true },
-      { to: "/amarsoft-link", label: "ربط القطع", hint: "قطع التطبيق برقم أمارسوفت", icon: Link2, admin: true },
+      { to: "/pieces?tab=link", label: "ربط القطع", hint: "قطع التطبيق برقم أمارسوفت", icon: Link2, admin: true },
     ],
   },
 ];

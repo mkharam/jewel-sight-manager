@@ -1,18 +1,19 @@
-// «الفريق» للمدير العام: الموظفون والتقييم والمتصدرون في صفحة وحدة بدل ثلاث أزرار في «المزيد».
-// الموظف ومسؤول التقييم يبقوا يفتحوا /leaderboard و /evaluations كيف قبل.
-import { lazy } from "react";
-import PageTabs, { type PageTab } from "@/components/PageTabs";
+// «الموظفون» للمدير العام. التقييم والمتصدرون انتقلوا لصفحة «التقييم» (/evaluation)؛ الروابط
+// القديمة (/staff?tab=evaluations و /staff?tab=leaderboard) تفتح على خانتها هناك.
+import { lazy, Suspense } from "react";
+import { Navigate, useSearchParams } from "react-router-dom";
+import { Loader2 } from "lucide-react";
 
 const Staff = lazy(() => import("@/pages/Staff"));
-const Evaluations = lazy(() => import("@/pages/Evaluations"));
-const Leaderboard = lazy(() => import("@/pages/Leaderboard"));
-
-const TABS: PageTab[] = [
-  { key: "staff", label: "الموظفون", render: () => <Staff /> },
-  { key: "evaluations", label: "التقييم", render: () => <Evaluations /> },
-  { key: "leaderboard", label: "المتصدرون", render: () => <Leaderboard /> },
-];
 
 export default function TeamHub() {
-  return <PageTabs tabs={TABS} />;
+  const [params] = useSearchParams();
+  const tab = params.get("tab");
+  if (tab === "evaluations") return <Navigate to="/evaluation?tab=monthly" replace />;
+  if (tab === "leaderboard") return <Navigate to="/evaluation?tab=leaderboard" replace />;
+  return (
+    <Suspense fallback={<div className="flex justify-center py-24"><Loader2 className="size-6 animate-spin text-primary" /></div>}>
+      <Staff />
+    </Suspense>
+  );
 }

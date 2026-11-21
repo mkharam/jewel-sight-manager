@@ -1,4 +1,5 @@
-// سعر الغرام في الفروع: مش المتوسط بس — بكم يتباع الغرام عادة (الوسط)، وبين قداش وقداش أغلب البيع،
+// الأسعار والأرباح: فوق — الربح الحقيقي لكل فرع (فوق سعر الذهب يوم البيع، تلقائي — كان في خانة «الأرباح»
+// في الفواتير بسعر ذهب يتكتب باليد). تحت — سعر الغرام في الفروع: مش المتوسط بس — بكم يتباع الغرام عادة (الوسط)، وبين قداش وقداش أغلب البيع،
 // وكيف تبدّل شهر بشهر (ولا أسبوع بأسبوع)، وكم غرام انباع في كل سعر، وأرخص البيعات باش تتراجع.
 // كل الأرقام من سطور فواتير أمارسوفت: سعر السطر = مبلغه ÷ وزنه.
 import { useMemo, useState } from "react";
@@ -10,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { sb, formatLD, formatGrams, tripoliToday } from "@/lib/amarsoft";
+import ProfitSection from "@/components/amarsoft/ProfitSection";
 
 type Row = { branch_code: string; branch_name: string; lines: number; grams: number; sales_dirhams: number; avg: number; p10: number; median: number; p90: number };
 type Total = Row & { invoices: number; min: number; max: number; p25: number; p75: number };
@@ -73,8 +75,8 @@ export default function GramPrice() {
   return (
     <div className="max-w-3xl mx-auto space-y-4">
       <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2"><Coins className="size-7 text-primary" />سعر الغرام في الفروع</h1>
-        <p className="text-sm text-muted-foreground">بكم يبيع كل فرع الغرام فعلاً، من فواتير أمارسوفت.</p>
+        <h1 className="text-2xl font-bold flex items-center gap-2"><Coins className="size-7 text-primary" />الأسعار والأرباح</h1>
+        <p className="text-sm text-muted-foreground">بكم يبيع كل فرع الغرام فعلاً، وكم يربح فوق سعر الذهب — من فواتير أمارسوفت.</p>
       </div>
 
       <div className="grid grid-cols-4 gap-1.5">
@@ -96,6 +98,9 @@ export default function GramPrice() {
         <Button variant={bucket === "month" ? "secondary" : "ghost"} onClick={() => setBucket("month")}>شهر بشهر</Button>
         <Button variant={bucket === "week" ? "secondary" : "ghost"} onClick={() => setBucket("week")}>أسبوع بأسبوع</Button>
       </div>
+
+      {/* الربح الحقيقي — نفس الفترة والعيار المختارين فوق. */}
+      <ProfitSection from={from} to={to} karat={karat} />
 
       {isLoading || !v || !data ? (
         <div className="flex justify-center py-16"><Loader2 className="size-6 animate-spin text-primary" /></div>

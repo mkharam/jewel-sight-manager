@@ -29,7 +29,7 @@ export default function NavMenu({ sections, countOf, onNavigate, compact = false
 }) {
   const { pathname, search } = useLocation();
   const [q, setQ] = useState("");
-  const current = sections.find((s) => s.items.some((i) => isActiveItem(i, pathname, search)));
+  const current = sections.find((s) => s.items.some((i) => isActiveItem(i, pathname, search) || (!i.searchOnly && i.to.split("?")[0] === pathname && pathname !== "/")));
   const [open, setOpen] = useState<Set<string>>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(OPEN_KEY) ?? "null");
@@ -57,7 +57,10 @@ export default function NavMenu({ sections, countOf, onNavigate, compact = false
   const results = useMemo(() => searchNav(sections, q), [sections, q]);
 
   const Row = ({ item, section, showSection }: { item: NavItem; section: NavSection; showSection?: boolean }) => {
-    const active = isActiveItem(item, pathname, search);
+    // الصفحة الأم تتلوّن حتى لو أنت في خانة داخلها (مثلاً «قطع تحتاج متابعة» وأنت في «بلا وزن»).
+    const active = isActiveItem(item, pathname, search)
+      || (!item.searchOnly && !item.to.includes("?") && item.to !== "/" && item.to === pathname
+        && !sections.some((sec) => sec.items.some((o) => o !== item && !o.searchOnly && isActiveItem(o, pathname, search))));
     return (
       <NavLink
         to={item.to}
@@ -128,7 +131,9 @@ export default function NavMenu({ sections, countOf, onNavigate, compact = false
           <div className="space-y-2">
             {sections.map((s) => {
               const isOpen = open.has(s.key);
-              const total = s.items.reduce((n, i) => n + countOf(i), 0);
+              // الخانات اللي داخل الصفحات (searchOnly) ما تتكررش في القائمة — تطلع في البحث بس.
+              const items = s.items.filter((i) => !i.searchOnly);
+              const total = items.reduce((n, i) => n + countOf(i), 0);
               return (
                 <div key={s.key} className={cn("overflow-hidden rounded-2xl border bg-card", current?.key === s.key && "border-primary/40")}>
                   <button onClick={() => toggle(s.key)} className={cn("flex w-full items-center gap-3 text-right active:bg-secondary/60", compact ? "px-2.5 py-2" : "px-3 py-3")} aria-expanded={isOpen}>
@@ -140,12 +145,12 @@ export default function NavMenu({ sections, countOf, onNavigate, compact = false
                       {!compact && !isOpen && <span className="block truncate text-xs text-muted-foreground">{s.hint}</span>}
                     </span>
                     {!isOpen && <Badge n={total} />}
-                    <span className="text-xs text-muted-foreground tabular-nums">{s.items.length}</span>
+                    <span className="text-xs text-muted-foreground tabular-nums">{items.length}</span>
                     <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", isOpen && "rotate-180")} />
                   </button>
                   {isOpen && (
                     <div className={cn("space-y-0.5 border-t", compact ? "p-1" : "p-1.5")}>
-                      {s.items.map((item) => <Row key={item.to} item={item} section={s} />)}
+                      {items.map((item) => <Row key={item.to} item={item} section={s} />)}
                     </div>
                   )}
                 </div>

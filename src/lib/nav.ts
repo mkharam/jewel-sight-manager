@@ -18,6 +18,9 @@ export type NavItem = {
   /** كلمات إضافية للبحث في القائمة. */
   keywords?: string;
   end?: boolean;
+  /** خانة داخل صفحة: ما تظهرش في القائمة نفسها (الصفحة الأم تكفي)، لكن تطلع في البحث وفي «آخر صفحات»
+   *  واسمها يظهر في الرأس لما تكون فيها. */
+  searchOnly?: boolean;
 };
 export type NavSectionKey = "sell" | "goods" | "money" | "team" | "more";
 export type NavSection = { key: NavSectionKey; title: string; hint: string; icon: LucideIcon; tone: string; items: NavItem[] };
@@ -46,41 +49,41 @@ export const NAV: NavSection[] = [
     ],
   },
   {
-    key: "goods", title: "البضاعة", hint: "رفع القطع، الأوزان، التحويلات، الصيانة، الجرد", icon: Gem,
+    key: "goods", title: "البضاعة", hint: "رفع القطع، القطع الناقصة، التحويلات، المخزون، الجرد", icon: Gem,
     tone: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
     items: [
       { to: "/upload", label: "رفع قطع", hint: "تصوير وإضافة قطع جديدة", icon: Upload, roles: ALL, badgeKey: "uploads", keywords: "تصوير اضافة كاميرا جلسة" },
-      { to: "/upload/review", label: "قطع بلا اسم", hint: "قطع تستنى التحليل والتسمية", icon: Tags, roles: ALL },
-      { to: "/weights", label: "قطع بلا وزن", hint: "قطع ناقصها الوزن", icon: Scale, roles: ALL, badgeKey: "weights" },
-      { to: "/sets", label: "الأطقم الناقصة", hint: "أطقم بيعت منها قطعة", icon: Layers, roles: ALL, keywords: "طقم طاقم" },
+      { to: "/pieces", label: "قطع تحتاج متابعة", hint: "بلا اسم، بلا وزن، أطقم ناقصة، ربط أمارسوفت", icon: Tags, roles: ALL, badgeKey: "weights", keywords: "ناقص مراجعة" },
+      { to: "/pieces?tab=unnamed", label: "قطع بلا اسم", hint: "تستنى التحليل والتسمية", icon: Tags, roles: ALL, searchOnly: true },
+      { to: "/pieces?tab=weights", label: "قطع بلا وزن", hint: "ناقصها الوزن", icon: Scale, roles: ALL, searchOnly: true, keywords: "ميزان" },
+      { to: "/pieces?tab=sets", label: "الأطقم الناقصة", hint: "أطقم بيعت منها قطعة", icon: Layers, roles: ALL, searchOnly: true, keywords: "طقم طاقم" },
+      { to: "/pieces?tab=link", label: "ربط القطع بأمارسوفت", hint: "قطع التطبيق بلا رقم أمارسوفت", icon: Link2, roles: A, searchOnly: true, keywords: "باركود تاق" },
       { to: "/admin/products", label: "إدارة القطع", hint: "تعديل وأرشفة القطع بالجملة", icon: ListChecks, roles: AS },
       { to: "/transfers", label: "التحويلات", hint: "نقل قطع بين الفروع", icon: ArrowLeftRight, roles: ALL, badgeKey: "transfers" },
       { to: "/reorders", label: "إعادة الطلب", hint: "طلب قطعة نفدت من المورد", icon: PackagePlus, roles: ALL, badgeKey: "reorders" },
       { to: "/watches", label: "الساعات", hint: "مخزون الساعات", icon: Watch, roles: ALL },
       { to: "/admin/repairs", label: "الصيانة", hint: "قطع الزبائن عند الفني", icon: Wrench, roles: AMS, keywords: "تصليح" },
-      { to: "/stock-take", label: "جرد التطبيق", hint: "جرد القطع اللي في التطبيق", icon: ClipboardCheck, roles: AS },
-      { to: "/pos-stock", label: "مخزون أمارسوفت", hint: "القطع في كل فرع حسب أمارسوفت", icon: Boxes, roles: AMS },
-      { to: "/pos-count", label: "جرد أمارسوفت", hint: "امسح القطع وقارن بأمارسوفت", icon: ScanLine, roles: AMS },
-      { to: "/amarsoft-link", label: "ربط القطع بأمارسوفت", hint: "قطع التطبيق برقم أمارسوفت", icon: Link2, roles: A },
+      { to: "/stock", label: "المخزون", hint: "شن موجود في كل فرع (أمارسوفت)", icon: Boxes, roles: AMS },
+      { to: "/stock?tab=app", label: "تقرير مخزون التطبيق", hint: "المخزون والحركة شهر بشهر", icon: ClipboardCheck, roles: A, searchOnly: true, keywords: "جرد شهري" },
+      { to: "/count", label: "الجرد", hint: "امسح القطع وقارن بالمخزون", icon: ScanLine, roles: AMS, keywords: "مسح باركود" },
+      { to: "/count?tab=app", label: "جرد قطع التطبيق", hint: "القطع المسجّلة في التطبيق", icon: ClipboardCheck, roles: AS, searchOnly: true },
     ],
   },
   {
-    key: "money", title: "المبيعات والفلوس", hint: "التقارير، الفواتير، الأرباح، الإقفال", icon: PieChart,
+    key: "money", title: "المبيعات والفلوس", hint: "التقارير، الأسعار والأرباح، الفواتير، الإقفال", icon: PieChart,
     tone: "bg-sky-500/15 text-sky-700 dark:text-sky-400",
     items: [
-      { to: "/amarsoft", label: "أمارسوفت", hint: "كل صفحات أمارسوفت في مكان واحد", icon: Boxes, roles: AMS },
-      { to: "/reports", label: "التقارير", hint: "كل الفروع ومقارنتها", icon: BarChart3, roles: A },
-      { to: "/reports?tab=branches", label: "الفروع", hint: "كل فرع بروحه، يوم بيوم", icon: Building2, roles: A },
+      { to: "/reports", label: "التقارير", hint: "كل الفروع ومقارنتها والتنبيهات", icon: BarChart3, roles: A },
       { to: "/reports?tab=daily", label: "ملخّص اليوم", hint: "شن صار اليوم في كل الفروع", icon: CalendarDays, roles: A },
+      { to: "/reports?tab=branches", label: "الفروع", hint: "كل فرع بروحه، يوم بيوم", icon: Building2, roles: A },
+      { to: "/reports?tab=gram", label: "الأسعار والأرباح", hint: "سعر الغرام والربح فوق سعر الذهب", icon: Coins, roles: A, keywords: "سعر الغرام ربح مصنعية" },
       { to: "/reports?tab=accountant", label: "المحاسب", hint: "نقدي ومصرف وآجل", icon: Wallet, roles: A },
-      { to: "/reports?tab=gram", label: "سعر الغرام", hint: "بكم يبيع كل فرع الغرام", icon: Coins, roles: A },
-      { to: "/reports?tab=sales", label: "مبيعات التطبيق", hint: "المبيعات المسجّلة في التطبيق", icon: TrendingUp, roles: A },
-      { to: "/reports?tab=stock", label: "الجرد الشهري", hint: "تقرير المخزون الشهري", icon: ClipboardCheck, roles: A },
-      { to: "/pos-sales", label: "الفواتير", hint: "كل فواتير البيع", icon: Receipt, roles: A },
-      { to: "/pos-sales?tab=profit", label: "الأرباح", hint: "سعر الغرام والمصنعية", icon: TrendingUp, roles: A },
+      { to: "/reports?tab=sales", label: "البيع من التطبيق", hint: "المبيعات المسجّلة من التطبيق", icon: TrendingUp, roles: A, searchOnly: true },
+      { to: "/pos-sales", label: "الفواتير", hint: "كل فواتير البيع من أمارسوفت", icon: Receipt, roles: A },
       { to: "/pos-sales?tab=log", label: "الممسوح والمعدّل", hint: "شن تبدّل في الفواتير", icon: History, roles: A },
+      { to: "/amarsoft", label: "أمارسوفت", hint: "كل صفحات أمارسوفت في مكان واحد", icon: Boxes, roles: AMS },
       { to: "/closing", label: "إقفال اليوم", hint: "تسليم الخزينة آخر اليوم", icon: Landmark, roles: AM },
-      { to: "/suppliers", label: "الموردون", hint: "شن دخل منهم وشن تباع", icon: Truck, roles: A },
+      { to: "/suppliers", label: "الموردون", hint: "شن دخل منهم وشن تباع وحساباتهم", icon: Truck, roles: A },
     ],
   },
   {
@@ -88,11 +91,13 @@ export const NAV: NavSection[] = [
     tone: "bg-violet-500/15 text-violet-700 dark:text-violet-400",
     items: [
       { to: "/chat", label: "المحادثة", hint: "محادثة الفريق", icon: MessagesSquare, roles: ALL, badgeKey: "chat" },
-      { to: "/staff", label: "الموظفون", hint: "الحسابات والفروع والرواتب", icon: UserCog, roles: A },
-      { to: "/staff-eval", label: "تقييم البائعين", hint: "الأرقام: الوزن، السعر، الخصم، النقاط", icon: BarChart3, roles: A },
-      { to: "/staff?tab=evaluations", label: "التقييم الشهري", hint: "مين قيّم ومين اتقيّم، والترتيب", icon: ClipboardList, roles: A },
+      { to: "/staff", label: "الموظفون", hint: "الحسابات والصلاحيات والفروع", icon: UserCog, roles: A, keywords: "صلاحيات رواتب حساب" },
+      { to: "/evaluation", label: "التقييم", hint: "الأرقام، التقييم الشهري، المتصدرون", icon: ClipboardList, roles: A },
+      { to: "/evaluation?tab=numbers", label: "أرقام البائعين والفروع", hint: "الوزن، السعر فوق الذهب، الخصم، النقاط", icon: BarChart3, roles: A, searchOnly: true, keywords: "تقييم البائعين نقاط" },
+      { to: "/evaluation?tab=monthly", label: "التقييم الشهري", hint: "مين قيّم ومين اتقيّم", icon: ClipboardList, roles: A, searchOnly: true, keywords: "استمارة" },
+      { to: "/evaluation?tab=leaderboard", label: "المتصدرون", hint: "ترتيب البائعين بالوزن", icon: Trophy, roles: A, searchOnly: true },
       { to: "/evaluations", label: "التقييم الشهري", hint: "مين قيّم ومين اتقيّم، والترتيب", icon: ClipboardList, roles: ["evalRecorder"] },
-      { to: "/leaderboard", label: "المتصدرون", hint: "ترتيب البائعين بالوزن", icon: Trophy, roles: ALL },
+      { to: "/leaderboard", label: "المتصدرون", hint: "ترتيب البائعين بالوزن", icon: Trophy, roles: ["supervisor", "manager", "staff"] },
     ],
   },
   {

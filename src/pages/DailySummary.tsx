@@ -154,7 +154,7 @@ export default function DailySummary() {
           </Link>
         )}
         {!!missingWeights && (
-          <Link to="/weights">
+          <Link to="/pieces?tab=weights">
             <Card className="p-3 hover:bg-muted/40 transition-colors h-full border-warning/40 bg-warning/10">
               <Scale className="size-4 text-warning-foreground mb-1.5" />
               <p className="text-xl font-bold leading-none">{missingWeights}</p>
