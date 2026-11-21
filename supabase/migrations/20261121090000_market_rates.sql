@@ -22,6 +22,8 @@ create or replace function public.usd_lyd_on(p_day date) returns numeric
 language sql stable set search_path = public as $$
   select coalesce(
     (select usd_lyd_market from market_rates where day <= p_day and usd_lyd_market is not null order by day desc limit 1),
+    -- يوم قبل أول سعر موازي مسجّل: أقرب سعر موازي بعده (أقرب للواقع من الرسمي).
+    (select usd_lyd_market from market_rates where usd_lyd_market is not null order by day asc limit 1),
     (select usd_lyd_official from market_rates where day <= p_day and usd_lyd_official is not null order by day desc limit 1));
 $$;
 
