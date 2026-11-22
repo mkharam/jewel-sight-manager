@@ -1,6 +1,6 @@
 -- انسخ كل هذا الملف والصقه في Supabase ← SQL Editor ← New query ← Run (مرة وحدة — ولو تعاود تشغّله ما يضرش).
 -- ١) الأرباح الحقيقية بسعر الذهب التلقائي.  ٢) تنظيف سجل المهام المجدولة.
--- ٣) «الذهب والسوق»: أسعار المنافسين، سعر الكسر في سوق طرابلس تلقائي كل ساعة، وأسعار «بكم».
+-- ٣) «الذهب والسوق»: أسعار المنافسين، وأسعار السوق من «بكم» (كسر، خارجي، مسبوك).
 -- ٤) «تسجيل الزبائن»: كل فرع وبائع يسجّل اسم ورقم الزبون في الفواتير ولا لا (يدخل في التقييم).
 -- الأرباح الحقيقية لكل فرع وعيار (للمدير العام فقط): قيمة البيع − قيمة الذهب الخام يوم البيع
 -- (الأونصة ÷ 31.1035 × الدولار الموازي، من market_rates) − مصنعية المورّد (تكلفة القطعة في مخزون
@@ -188,7 +188,8 @@ begin
   insert into market_rate_requests(id, kind) values (net.http_get('https://open.er-api.com/v6/latest/USD'), 'fx');
   insert into market_rate_requests(id, kind) values (net.http_get('https://ecolibya.com/api/public/v1/indicators/LY-EXT-MKT-USDPAR/values?limit=1000', headers := '{"User-Agent":"Mozilla/5.0"}'::jsonb), 'parallel_api');
   insert into market_rate_requests(id, kind) values (net.http_get('https://www.eanlibya.com/exchangerate/', headers := '{"User-Agent":"Mozilla/5.0"}'::jsonb), 'parallel');
-  insert into market_rate_requests(id, kind) values (net.http_get('https://www.libyaakhbar.com/latestnews/gold-prices', headers := '{"User-Agent":"Mozilla/5.0"}'::jsonb, timeout_milliseconds := 20000), 'ly_gold_list');
+  -- أخبار ليبيا ترفض طلبات سيرفر Supabase (حماية Cloudflare ضد البرامج) — فما نطلبوهاش. سعر الكسر
+  -- يجي من تسجيل المدير من تطبيق «بكم»، والأسطر اللي فوق تبقى لو المصدر انفتح يوم.
 end $$;
 revoke all on function public.market_rates_collect() from public, anon, authenticated;
 

@@ -131,11 +131,11 @@ export default function MarketToday() {
           <div className="space-y-1">
             <p><b className="text-foreground">خام (موازي)</b>: قيمة الذهب الصافي بدولار السوق = الأونصة ÷ 31.1 × الدولار × العيار. هذا الأساس اللي نحسبو عليه الربح.</p>
             <p>
-              <b className="text-foreground">كسر طرابلس</b>: اللي يدفعوه التجار في جرام الذهب المستعمل (كاش)، يتجاب وحده من أخبار السوق.
+              <b className="text-foreground">كسر طرابلس</b>: اللي يدفعوه التجار في جرام الذهب المستعمل (كاش) — من آخر أسعار سجّلتها من «بكم».
               {k18.kasr && <> آخر سعر: {formatTripoli(k18.kasr.at)}.</>}
               {gap !== null && k18.raw ? <> الكسر {gap < 0 ? "أقل" : "أعلى"} من الخام بـ {fmt(Math.abs(gap))} د.ل ({fmt(Math.abs(gap / k18.raw) * 100, 1)}%).</> : null}
             </p>
-            {kasrMissing && <p className="text-amber-700 dark:text-amber-400">سعر الكسر يبدا يظهر بعد ما تشغّل ملف التحديث RUN_ONCE_2026-11-22.sql.</p>}
+            {kasrMissing && <p className="text-amber-700 dark:text-amber-400">أسعار السوق تبدا تظهر بعد ما تشغّل ملف التحديث RUN_ONCE_2026-11-22.sql.</p>}
             <p><b className="text-foreground">خارجي (السوق)</b>: سعر جرام الذهب المستورد المشغول في السوق — من تطبيق «بكم» (تسجّله تحت).
               {masbook[0] || masbook[1] ? <> المسبوك: 18 = {fmt(masbook[0]?.value)} · 24 = {fmt(masbook[1]?.value)}.</> : null}</p>
             <p>لو حسبنا الخام بدولار المصرف الرسمي: 18 = {fmt(rows[0].official)} · 21 = {fmt(rows[1].official)} · 24 = {fmt(rows[2].official)} — للمقارنة بس.</p>

@@ -1,6 +1,6 @@
 // أسعار السوق من تطبيق «بكم»: الذهب الخارجي (سعر جرام الذهب المستورد المشغول في السوق) والمسبوك
 // ما يتنشروش مجاناً في أي موقع، و«بكم» اشتراك مدفوع — فالمدير يشوفهم في التطبيق ويسجّلهم هنا في دقيقة.
-// الكسر يتجاب وحده من الأخبار، بس لو كتبته هنا يتسجّل برضو (الأحدث هو اللي يبان).
+// الكسر برضو من هنا: مواقع الأخبار الليبية ترفض طلبات السيرفر (حماية Cloudflare)، فما فيش مصدر تلقائي.
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, Save, Trash2 } from "lucide-react";
@@ -69,7 +69,7 @@ export default function BekamQuotes({ rows, g24, error }: { rows: MarketRow[] | 
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h2 className="text-lg font-bold">أسعار السوق من «بكم»</h2>
-          <p className="text-xs text-muted-foreground">الذهب الخارجي والمسبوك ما يتنشروش مجاناً — لما تشوفهم في تطبيق بكم سجّلهم هنا.</p>
+          <p className="text-xs text-muted-foreground">الكسر والخارجي والمسبوك — لما تشوفهم في تطبيق بكم سجّلهم هنا (دقيقة وحدة)، وكل الصفحة تتحسب عليهم.</p>
         </div>
         <Button size="sm" variant={open ? "secondary" : "default"} className="shrink-0" onClick={() => setOpen((o) => !o)}>
           {open ? "إخفاء" : "سجّل أسعار اليوم"}

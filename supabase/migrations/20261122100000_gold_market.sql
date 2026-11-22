@@ -136,7 +136,8 @@ begin
   insert into market_rate_requests(id, kind) values (net.http_get('https://open.er-api.com/v6/latest/USD'), 'fx');
   insert into market_rate_requests(id, kind) values (net.http_get('https://ecolibya.com/api/public/v1/indicators/LY-EXT-MKT-USDPAR/values?limit=1000', headers := '{"User-Agent":"Mozilla/5.0"}'::jsonb), 'parallel_api');
   insert into market_rate_requests(id, kind) values (net.http_get('https://www.eanlibya.com/exchangerate/', headers := '{"User-Agent":"Mozilla/5.0"}'::jsonb), 'parallel');
-  insert into market_rate_requests(id, kind) values (net.http_get('https://www.libyaakhbar.com/latestnews/gold-prices', headers := '{"User-Agent":"Mozilla/5.0"}'::jsonb, timeout_milliseconds := 20000), 'ly_gold_list');
+  -- أخبار ليبيا ترفض طلبات سيرفر Supabase (حماية Cloudflare ضد البرامج) — فما نطلبوهاش. سعر الكسر
+  -- يجي من تسجيل المدير من تطبيق «بكم»، والأسطر اللي فوق تبقى لو المصدر انفتح يوم.
 end $$;
 revoke all on function public.market_rates_collect() from public, anon, authenticated;
 
