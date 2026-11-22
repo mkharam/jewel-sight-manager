@@ -9,7 +9,7 @@ export default function EvaluatePublic() {
     <div dir="rtl" className="min-h-dvh bg-background">
       <div className="brand-silk px-4 pt-[calc(env(safe-area-inset-top)+1.25rem)] pb-5 text-center">
         <ClipboardList className="size-9 mx-auto text-primary" />
-        <h1 className="text-2xl font-bold text-gold-gradient mt-1">تقييم الشهر</h1>
+        <h1 className="text-2xl font-bold text-gold-gradient mt-1">التقييم</h1>
         <p className="text-sm text-muted-foreground">مخرّم للذهب والمجوهرات</p>
       </div>
       <div className="max-w-lg mx-auto p-4 pb-[calc(env(safe-area-inset-bottom)+2rem)]">

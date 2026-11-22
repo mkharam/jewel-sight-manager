@@ -109,7 +109,7 @@ const App = () => (
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/auth" element={<Auth />} />
-              {/* رابط التقييم الشهري: يفتح بلا تسجيل دخول، بالرمز السري. */}
+              {/* رابط التقييم (المشرف كل يوم، الموظفين مرتين في الشهر): يفتح بلا تسجيل دخول، بالرمز السري. */}
               <Route path="/evaluate/:token" element={<EvaluatePublic />} />
               {/* بطاقة الولاء للزبون: بلا تسجيل دخول، بالرمز في الرابط. */}
               <Route path="/card/:code" element={<LoyaltyCard />} />
@@ -157,7 +157,7 @@ const App = () => (
                 <Route path="/branches/:code" element={<RequireRole allow={["admin"]}><Branches /></RequireRole>} />
                 <Route path="/suppliers" element={<Navigate to="/amarsoft?tab=suppliers" replace />} />
                 <Route path="/leaderboard" element={<Leaderboard />} />
-                {/* «التقييم» للمدير العام: الأرقام، التقييم الشهري، المتصدرون. */}
+                {/* «التقييم» للمدير العام: الأرقام، تقييم الموظفين، المتصدرون. */}
                 <Route path="/evaluation" element={<RequireRole allow={["admin"]}><EvaluationHub /></RequireRole>} />
                 <Route path="/staff-eval" element={<RedirectKeep to="/evaluation?tab=numbers" />} />
                 <Route path="/reservations" element={<Reservations />} />

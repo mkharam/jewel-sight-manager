@@ -1,17 +1,25 @@
-// استمارة التقييم الشهري — نفسها في الرابط اللي يتبعت للموظفين (token) وفي التطبيق لمسؤول التقييم
-// (أيمن) اللي يسجّل نيابة عن اللي ما يعرفوش يبلّغوا. الخطوات: موظف ولا مشرف ← مين أنت ← البنود.
-//  * الموظف: يقيّم نفسه (لازم)، ويقيّم مشرف فرعه (اختياري).
-//  * المشرف: يقيّم كل موظف في فرعه، ويقيّم نفسه.
+// استمارة التقييم — نفسها في الرابط اللي يتبعت للموظفين (token) وفي التطبيق لمسؤول التقييم (أيمن) اللي
+// يسجّل نيابة عن اللي ما يعرفوش يبلّغوا. الخطوات: موظف ولا مشرف ← مين أنت ← البنود.
+//  * المشرف: يقيّم كل موظف في فرعه كل يوم (اليوم، ولا أمس/قبل أمس لو نسي)، ويقيّم نفسه مرتين في الشهر.
+//  * الموظف: مرتين في الشهر (1–15 و16–آخر الشهر): يقيّم نفسه (لازم)، ويقيّم مشرف فرعه (اختياري).
+// «نفس آخر تقييم» يعبّي البنود من آخر مرة على نفس الجهاز — المشرف يبدّل بس اللي تغيّر اليوم.
 import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { CheckCircle2, ChevronDown, ChevronLeft, Loader2, UserCheck, Users } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CheckCircle2, ChevronDown, ChevronLeft, Copy, Loader2, UserCheck, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import {
-  db, EMPLOYEE_CRITERIA, GM_CRITERIA, MANAGER_CRITERIA, SCALE, defaultMonth, monthLabel, shiftMonth,
-  type EvalStaff, type Kind, type Role,
+  db, EMPLOYEE_CRITERIA, GM_CRITERIA, MANAGER_CRITERIA, SCALE, addDaysYmd, dayLabel, defaultMonth, halfLabel, halfStart, monthLabel,
+  prevHalfDay, shiftMonth, type EvalStaff, type Kind, type Role,
 } from "@/lib/evaluation";
+
+// آخر تقييم لكل (اللي يقيّم، النوع، اللي يتقيّم) على هذا الجهاز — لزر «نفس آخر تقييم».
+const LAST_KEY = "eval.last.v1";
+type Saved = Record<string, Record<string, number>>;
+const readLast = (): Saved => { try { return JSON.parse(localStorage.getItem(LAST_KEY) ?? "{}"); } catch { return {}; } };
+const writeLast = (patch: Saved) => { try { localStorage.setItem(LAST_KEY, JSON.stringify({ ...readLast(), ...patch })); } catch { /* ignore */ } };
 
 /** تذكير قبل التقييم: أمانة. آية النساء 135، وحديث «لا إيمان لمن لا أمانة له» (رواه أحمد). */
 function TrustNote() {
@@ -32,7 +40,8 @@ function TrustNote() {
 }
 
 type Entry = { scores: Record<string, number>; strengths: string; improvements: string; notes: string };
-type Card_ = { key: string; kind: Kind; subject: EvalStaff | null; title: string; criteria: readonly { key: string; label: string }[]; required: boolean };
+type Card_ = { key: string; kind: Kind; subject: EvalStaff | null; title: string; criteria: readonly { key: string; label: string }[]; required: boolean; done?: boolean; note?: string };
+type Status = { rated_day: string[]; half_done: { kind: Kind; subject: string }[] };
 const blank = (): Entry => ({ scores: {}, strengths: "", improvements: "", notes: "" });
 
 /** gm: تقييم المدير العام لموظف ولا مشرف (بنود GM_CRITERIA) — من لوحة التقييم بس. */
@@ -46,13 +55,16 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
       return data as { staff: EvalStaff[]; today: string; gm_id: string | null };
     },
   });
+  const qc = useQueryClient();
   const [role, setRole] = useState<Role | null>(null);
   const [me, setMe] = useState<EvalStaff | null>(null);
   const [month, setMonth] = useState<string | null>(null);
+  const [pickedDay, setPickedDay] = useState<string | null>(null);
   const [entries, setEntries] = useState<Record<string, Entry>>({});
   const [open, setOpen] = useState<string | null>(null);
   const [done, setDone] = useState<number | null>(null);
 
+  // تقييم المدير العام (موقّف حالياً) يبقى شهري.
   const months = useMemo(() => {
     if (!data) return [];
     const d = defaultMonth(data.today);
@@ -60,6 +72,30 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
   }, [data]);
   const curMonth = month ?? (data ? defaultMonth(data.today) : null);
   const gmId = data?.gm_id ?? null;
+  const today = data?.today ?? "";
+  // اليوم اللي يتقيّم: المشرف يختار يوم (لين 3 أيام لورا)، الموظف يختار النص (الحالي ولا اللي فات في أول 3 أيام).
+  const day = gm ? (curMonth ?? today) : pickedDay ?? today;
+  const isManager = me?.role === "manager";
+  const dayChoices = useMemo(() => (today ? [today, addDaysYmd(today, -1), addDaysYmd(today, -2)] : []), [today]);
+  const halfChoices = useMemo(() => {
+    if (!today) return [];
+    const d = Number(today.slice(8, 10));
+    return (d <= 3 || (d >= 16 && d <= 18)) ? [today, prevHalfDay(today)] : [today];
+  }, [today]);
+
+  // شن سلّم قبل في نفس اليوم/النص (نعم/لا بس) — باش يعرف شن باقي.
+  const status = useQuery({
+    queryKey: ["eval-status", token ?? "recorder", me?.id, day],
+    enabled: !!me && !gm && !!day,
+    queryFn: async () => {
+      const { data, error } = await db.rpc("eval_status", { p_token: token ?? null, p_evaluator: me!.id, p_day: day });
+      if (error) return { rated_day: [], half_done: [] } as Status; // قبل ما يتحدّث السيرفر
+      return (data ?? { rated_day: [], half_done: [] }) as Status;
+    },
+  });
+  const ratedToday = new Set(status.data?.rated_day ?? []);
+  const halfDone = (kind: Kind, subject?: string) => (status.data?.half_done ?? []).some((h) => h.kind === kind && (!subject || h.subject === subject));
+  const periodText = gm ? `شهر ${monthLabel(curMonth ?? today)}` : isManager ? `يوم ${dayLabel(day, today)}` : halfLabel(day);
 
   // البطاقات حسب الدور: نفسه دايماً، وموظفين فرعه (للمشرف) ولا مشرف فرعه (للموظف).
   const cards = useMemo<Card_[]>(() => {
@@ -69,22 +105,30 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
     }
     const sameBranch = data.staff.filter((s) => s.id !== me.id && s.branch_id === me.branch_id);
     if (me.role === "manager") {
+      const selfDone = halfDone("self");
       return [
         ...sameBranch.filter((s) => s.role === "employee").map((s) => ({
           key: `by_manager:${s.id}`, kind: "by_manager" as Kind, subject: s, title: `قيّم ${s.name}`, criteria: EMPLOYEE_CRITERIA, required: false,
+          done: ratedToday.has(s.id), note: ratedToday.has(s.id) ? `قيّمته ${dayLabel(day, today)} — تقدر تعدّل` : undefined,
         })),
-        { key: "self", kind: "self", subject: null, title: "قيّم نفسك", criteria: MANAGER_CRITERIA, required: true },
+        { key: "self", kind: "self", subject: null, title: "قيّم نفسك (مرتين في الشهر)", criteria: MANAGER_CRITERIA, required: false,
+          done: selfDone, note: selfDone ? `سلّمته — ${halfLabel(day)} — تقدر تعدّل` : halfLabel(day) },
       ];
     }
+    const selfDone = halfDone("self");
     return [
-      { key: "self", kind: "self", subject: null, title: "قيّم نفسك", criteria: EMPLOYEE_CRITERIA, required: true },
+      { key: "self", kind: "self", subject: null, title: "قيّم نفسك", criteria: EMPLOYEE_CRITERIA, required: !selfDone,
+        done: selfDone, note: selfDone ? "سلّمته لهذا النص — تقدر تعدّل" : undefined },
       ...sameBranch.filter((s) => s.role === "manager").map((s) => ({
         key: `of_manager:${s.id}`, kind: "of_manager" as Kind, subject: s, title: `قيّم مشرفك ${s.name} (اختياري)`, criteria: MANAGER_CRITERIA, required: false,
+        done: halfDone("of_manager", s.id), note: halfDone("of_manager", s.id) ? "سلّمته لهذا النص — تقدر تعدّل" : undefined,
       })),
     ];
-  }, [me, data, gm]);
+  }, [me, data, gm, status.data, day, today]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const entry = (k: string) => entries[k] ?? blank();
+  const lastKey = (c: Card_) => `${gm ? gmId : me?.id}|${c.kind}|${c.subject?.id ?? me?.id}`;
+  const saved = useMemo(readLast, [done, me?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const setEntry = (k: string, patch: Partial<Entry>) => setEntries((s) => ({ ...s, [k]: { ...entry(k), ...patch } }));
   const answered = (c: Card_) => c.criteria.filter((x) => entry(c.key).scores[x.key]).length;
   const problems = cards.filter((c) => (c.required && answered(c) < c.criteria.length) || (!c.required && answered(c) > 0 && answered(c) < c.criteria.length));
@@ -98,11 +142,12 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
       // في تقييم المدير العام: اللي يقيّم = صف المدير العام، واللي يتقيّم = الاسم المختار.
       const evaluator = gm ? gmId : me!.id;
       if (!evaluator) throw new Error("صف المدير العام مش موجود في قائمة التقييم");
-      const { data, error } = await db.rpc("eval_submit", { p_token: token ?? null, p: { month: curMonth, evaluator_id: evaluator, entries: list } });
+      const { data, error } = await db.rpc("eval_submit", { p_token: token ?? null, p: { day, evaluator_id: evaluator, entries: list } });
       if (error) throw error;
+      writeLast(Object.fromEntries(cards.filter((c) => answered(c) > 0).map((c) => [lastKey(c), entry(c.key).scores])));
       return data as number;
     },
-    onSuccess: (n) => setDone(n),
+    onSuccess: (n) => { setDone(n); qc.invalidateQueries({ queryKey: ["eval-status"] }); },
   });
 
   if (isLoading) return <div className="flex justify-center py-20"><Loader2 className="size-7 animate-spin text-primary" /></div>;
@@ -113,7 +158,8 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
       <Card className="p-8 text-center space-y-3">
         <CheckCircle2 className="size-14 mx-auto text-emerald-600" />
         <p className="text-xl font-bold">تم إرسال التقييم{recorder || gm ? "" : `، شكراً ${me?.name}`}</p>
-        <p className="text-sm text-muted-foreground">{n(done)} تقييم لشهر {monthLabel(curMonth!)}{gm ? ` لـ ${me?.name}` : recorder ? ` باسم ${me?.name}` : ""}</p>
+        <p className="text-sm text-muted-foreground">{n(done)} تقييم — {periodText}{gm ? ` لـ ${me?.name}` : recorder ? ` باسم ${me?.name}` : ""}</p>
+        {isManager && !recorder && !gm && <p className="text-sm">نشوفوك بكرة إن شاء الله 🌙</p>}
         <Button variant="outline" onClick={() => { setDone(null); setMe(null); setRole(null); setEntries({}); }}>
           {recorder || gm ? "قيّم شخص ثاني" : "رجوع"}
         </Button>
@@ -124,15 +170,36 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
   return (
     <div className="space-y-4">
       <TrustNote />
-      {/* الشهر */}
-      <div>
-        <p className="text-sm font-semibold mb-1.5">تقييم شهر</p>
-        <div className="flex gap-1.5 flex-wrap">
-          {months.map((m) => (
-            <Button key={m} size="sm" variant={curMonth === m ? "default" : "outline"} onClick={() => setMonth(m)}>{monthLabel(m)}</Button>
-          ))}
+      {/* الفترة: المدير العام شهري؛ بعد ما يختار اسمه — المشرف يوم، والموظف نص شهر. */}
+      {gm ? (
+        <div>
+          <p className="text-sm font-semibold mb-1.5">تقييم شهر</p>
+          <div className="flex gap-1.5 flex-wrap">
+            {months.map((m) => (
+              <Button key={m} size="sm" variant={curMonth === m ? "default" : "outline"} onClick={() => setMonth(m)}>{monthLabel(m)}</Button>
+            ))}
+          </div>
         </div>
-      </div>
+      ) : !me ? (
+        <p className="rounded-xl bg-muted/50 p-3 text-sm leading-relaxed">
+          <b>المشرف</b>: يقيّم موظفينه <b>كل يوم</b>. <b>الموظف</b>: يقيّم نفسه ومشرفه <b>مرتين في الشهر</b> (من 1 لـ 15، ومن 16 لآخر الشهر).
+        </p>
+      ) : recorder ? (
+        <div>
+          <p className="text-sm font-semibold mb-1.5">{isManager ? "تقييم يوم" : "تقييم"}: <span className="text-primary">{isManager ? dayLabel(day, today) : halfLabel(day)}</span></p>
+          <Input type="date" dir="ltr" max={today} value={day} onChange={(e) => e.target.value && e.target.value <= today && setPickedDay(e.target.value)} className="h-11" />
+        </div>
+      ) : (
+        <div>
+          <p className="text-sm font-semibold mb-1.5">{isManager ? "تقييم يوم:" : "التقييم لـ:"}</p>
+          <div className="flex gap-1.5 flex-wrap">
+            {(isManager ? dayChoices : halfChoices).map((d) => {
+              const on = isManager ? day === d : halfStart(day) === halfStart(d);
+              return <Button key={d} size="sm" variant={on ? "default" : "outline"} onClick={() => setPickedDay(d)}>{isManager ? dayLabel(d, today) : halfLabel(d)}</Button>;
+            })}
+          </div>
+        </div>
+      )}
 
       {/* موظف ولا مشرف */}
       {!me && (
@@ -189,7 +256,10 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
             return (
               <Card key={c.key} className="overflow-hidden">
                 <button className="w-full flex items-center justify-between p-3 text-right" onClick={() => setOpen(isOpen ? "__none" : c.key)}>
-                  <span className="font-bold">{c.title}</span>
+                  <span className="min-w-0">
+                    <span className="block font-bold">{c.done && <CheckCircle2 className="ml-1 inline size-4 text-emerald-600" />}{c.title}</span>
+                    {c.note && <span className="block text-[11px] text-muted-foreground">{c.note}</span>}
+                  </span>
                   <span className="flex items-center gap-2 text-xs">
                     <span className={a === c.criteria.length ? "text-emerald-600 font-bold" : "text-muted-foreground"}>{a}/{c.criteria.length}</span>
                     <ChevronDown className={`size-4 transition-transform ${isOpen ? "rotate-180" : ""}`} />
@@ -197,6 +267,11 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
                 </button>
                 {isOpen && (
                   <div className="px-3 pb-3 space-y-3">
+                    {a === 0 && saved[lastKey(c)] && (
+                      <Button size="sm" variant="outline" className="w-full" onClick={() => setEntry(c.key, { scores: { ...saved[lastKey(c)] } })}>
+                        <Copy className="size-4" />نفس آخر تقييم — بدّل بس اللي تغيّر
+                      </Button>
+                    )}
                     {c.criteria.map((cr) => (
                       <div key={cr.key}>
                         <p className="text-sm font-semibold mb-1">{cr.label}</p>

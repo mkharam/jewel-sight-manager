@@ -1,4 +1,5 @@
 // لوحة التقييمات — للمدير العام ومسؤول التقييم (أيمن). ثلاث خانات:
+// الإيقاع: المشرف يقيّم موظفينه كل يوم، والموظفين (ونفس المشرف لنفسه) مرتين في الشهر.
 //  * اللوحة: كل شهر — كم واحد اتقيّم، المتوسط، الأحسن واللي يحتاج متابعة، الناقصين، الترتيب، الفروع،
 //    أضعف البنود، وتفاصيل كل شخص (بنوده، تقييمه لنفسه مقابل تقييم مشرفه، ملاحظاته، وتطوّره شهر بشهر).
 //  * تسجيل تقييم: نفس استمارة الرابط، لأيمن يسجّل عن اللي ما يعرفوش يبلّغوا.
@@ -17,8 +18,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import EvaluationForm from "@/components/EvaluationForm";
 import { businessToday } from "@/lib/dates";
 import {
-  ALL_CRITERIA, EMPLOYEE_CRITERIA, GM_CRITERIA, GM_EVAL_ENABLED, MANAGER_CRITERIA, KIND_LABEL, db, defaultMonth, grade, monthLabel, shiftMonth,
-  type EvalStaff, type Evaluation, useIsEvalAdmin,
+  ALL_CRITERIA, EMPLOYEE_CRITERIA, GM_CRITERIA, GM_EVAL_ENABLED, MANAGER_CRITERIA, KIND_LABEL, db, dayLabel, defaultMonth, grade, halfLabel,
+  monthLabel, shiftMonth, type EvalStaff, type Evaluation, useIsEvalAdmin,
 } from "@/lib/evaluation";
 
 type Tab = "board" | "record" | "settings";
@@ -162,12 +163,12 @@ export default function Evaluations() {
               </div>
 
               {/* مين قيّم ومين اتقيّم — جدول بسيط لكل الموظفين: ✅ صار، ❌ ناقص */}
-              <WhoEvaluated people={v.people} evals={data?.evals.filter((e) => e.month === month) ?? []} month={month} onRecord={() => setTab("record")} />
+              <WhoEvaluated people={v.people} evals={data?.evals.filter((e) => e.month === month) ?? []} month={month} today={businessToday()} onRecord={() => setTab("record")} />
 
               {/* الترتيب */}
               <Card className="p-3">
                 <h2 className="text-lg font-bold mb-1">الترتيب</h2>
-                <p className="text-xs text-muted-foreground mb-2">الدرجة = متوسط {GM_EVAL_ENABLED ? "تقييم المدير العام وتقييم المشرف" : "تقييم المشرف"} (وللمشرف تقييم موظفينه)، ولو ما فيش، تقييمه لنفسه. اضغط على أي اسم للتفاصيل.</p>
+                <p className="text-xs text-muted-foreground mb-2">الدرجة = متوسط {GM_EVAL_ENABLED ? "تقييم المدير العام وتقييم المشرف اليومي" : "تقييم المشرف اليومي"} في الشهر (وللمشرف تقييم موظفينه)، ولو ما فيش، تقييمه لنفسه. اضغط على أي اسم للتفاصيل.</p>
                 {!v.rated.length ? <p className="text-center text-muted-foreground py-6">ما فيش تقييمات لهذا الشهر لين توا.</p> : v.rated.map((p, i) => {
                   const g = grade(p.final);
                   const d = p.prev != null && p.final != null ? p.final - p.prev : null;
@@ -275,7 +276,11 @@ function PersonDetail({ p, month, staff, scoreOf }: {
   const criteria = p.role === "manager" ? MANAGER_CRITERIA : EMPLOYEE_CRITERIA;
   const others = p.evals.filter((e) => e.kind !== "self" && e.kind !== "by_gm");
   const gmEvals = p.evals.filter((e) => e.kind === "by_gm");
-  const self = p.evals.find((e) => e.kind === "self");
+  const selfs = p.evals.filter((e) => e.kind === "self");
+  const daily = others.filter((e) => e.kind === "by_manager");
+  const notes = [...p.evals].filter((e) => e.strengths || e.improvements || e.notes)
+    .sort((a, b) => (b.period ?? b.month).localeCompare(a.period ?? a.month)).slice(0, 20);
+  const when = (e: Evaluation) => (e.kind === "by_manager" ? dayLabel(e.period ?? e.month, "") : e.kind === "by_gm" ? monthLabel(e.month) : halfLabel(e.period ?? e.month));
   const crit = (k: string, es: Evaluation[]) => {
     const xs = es.map((e) => e.scores?.[k]).filter((x) => x != null).map(Number);
     return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
@@ -326,7 +331,7 @@ function PersonDetail({ p, month, staff, scoreOf }: {
           <span className="text-[11px] text-muted-foreground text-center">{p.role === "manager" ? "الموظفين" : "المشرف"}</span>
           <span className="text-[11px] text-muted-foreground text-center">نفسه</span>
           {criteria.map((c) => {
-            const o = crit(c.key, others), s = crit(c.key, self ? [self] : []);
+            const o = crit(c.key, others), s = crit(c.key, selfs);
             return [
               <span key={c.key} className="truncate">{c.label}</span>,
               <span key={c.key + "o"} className={`text-center font-bold ${grade(o).text}`}>{f1(o)}</span>,
@@ -355,16 +360,18 @@ function PersonDetail({ p, month, staff, scoreOf }: {
         </Card>
       )}
 
-      {p.evals.length > 0 && (
+      {p.role !== "manager" && (
+        <p className="text-xs text-muted-foreground">قيّمه المشرف {daily.length} يوم في {monthLabel(month)}{daily.length ? ` — المتوسط ${f1(avg(daily.map((e) => e.overall)))}` : ""}.</p>
+      )}
+      {notes.length > 0 && (
         <Card className="p-3 space-y-3">
           <h3 className="font-bold">الملاحظات</h3>
-          {p.evals.map((e) => (
+          {notes.map((e) => (
             <div key={e.id} className="text-sm border-b last:border-0 pb-2">
-              <p className="text-xs text-muted-foreground">{KIND_LABEL[e.kind]}{e.kind !== "self" ? ` · من ${nameOf(e.evaluator_id)}` : ""} · {f1(e.overall)}{e.source === "recorder" ? " · سجّلها المسؤول" : ""}</p>
+              <p className="text-xs text-muted-foreground">{KIND_LABEL[e.kind]}{e.kind !== "self" ? ` · من ${nameOf(e.evaluator_id)}` : ""} · {when(e)} · {f1(e.overall)}{e.source === "recorder" ? " · سجّلها المسؤول" : ""}</p>
               {e.strengths && <p><b className="text-emerald-600">قوة: </b>{e.strengths}</p>}
               {e.improvements && <p><b className="text-amber-600">يتحسّن: </b>{e.improvements}</p>}
               {e.notes && <p className="text-muted-foreground">{e.notes}</p>}
-              {!e.strengths && !e.improvements && !e.notes && <p className="text-muted-foreground text-xs">بدون ملاحظات</p>}
             </div>
           ))}
         </Card>
@@ -438,12 +445,12 @@ function SettingsTab({ isAdmin, staff }: { isAdmin: boolean; staff: EvalStaff[] 
     <div className="space-y-4">
       <Card className="p-3 space-y-2">
         <h2 className="font-bold">رابط التقييم</h2>
-        <p className="text-xs text-muted-foreground">ابعته للموظفين والمشرفين آخر كل شهر. يفتح بلا تسجيل دخول: يختار موظف ولا مشرف، ثم اسمه، ويعبّي التقييم.</p>
+        <p className="text-xs text-muted-foreground">نفس الرابط للكل، يفتح بلا تسجيل دخول: يختار موظف ولا مشرف، ثم اسمه، ويعبّي التقييم. <b>المشرف كل يوم</b> يقيّم موظفينه، و<b>الموظفين مرتين في الشهر</b> (من 1 لـ 15، ومن 16 لآخر الشهر).</p>
         <Input readOnly value={link} dir="ltr" className="text-xs" onFocus={(e) => e.target.select()} />
         <div className="grid grid-cols-2 gap-2">
           <Button variant="outline" disabled={!link} onClick={() => { void navigator.clipboard.writeText(link); toast.success("انسخ الرابط"); }}><Copy className="size-4" />نسخ</Button>
           <Button asChild variant="outline" disabled={!link}>
-            <a href={`https://wa.me/?text=${encodeURIComponent(`تقييم الشهر — عبّي التقييم من هنا:\n${link}`)}`} target="_blank" rel="noreferrer"><MessageCircle className="size-4" />واتساب</a>
+            <a href={`https://wa.me/?text=${encodeURIComponent(`رابط التقييم — المشرف يعبّيه كل يوم، والموظفين مرتين في الشهر (1–15 و16–آخر الشهر):\n${link}`)}`} target="_blank" rel="noreferrer"><MessageCircle className="size-4" />واتساب</a>
           </Button>
         </div>
         {isAdmin && <Button variant="ghost" size="sm" className="text-destructive" disabled={regen.isPending} onClick={() => regen.mutate()}>تبديل الرابط (لو انتشر لناس برا)</Button>}
@@ -497,22 +504,36 @@ function SettingsTab({ isAdmin, staff }: { isAdmin: boolean; staff: EvalStaff[] 
 }
 
 /**
- * جدول بسيط لكل شهر: لكل موظف هل قيّم نفسه، هل مشرفه قيّمه، وهل هو قيّم مشرفه — وللمشرف كم واحد من
- * موظفينه قيّمه وكم واحد هو قيّمهم. ✅ = صار، ❌ = ناقص، «—» = ما ينطبقش (مثلاً فرع بلا مشرف).
+ * مين قيّم ومين اتقيّم في الشهر — على الإيقاع الجديد:
+ *  • المشرف: كم يوم قيّم موظفينه (من الأيام اللي فاتت في الشهر)، واليوم قيّم كم واحد، وتقييمه لنفسه في كل نص.
+ *  • الموظف: كم يوم قيّمه مشرفه، وفي كل نص: قيّم نفسه؟ قيّم مشرفه؟
+ * ✅ = صار · ❌ = ناقص · ⏳ = النص ما بداش · «—» = ما ينطبقش (مثلاً فرع بلا مشرف).
  */
-function WhoEvaluated({ people, evals, month, onRecord }: { people: Person[]; evals: Evaluation[]; month: string; onRecord: () => void }) {
-  const has = (kind: Evaluation["kind"], subject: string, evaluator?: string) =>
-    evals.some((e) => e.kind === kind && e.subject_id === subject && (!evaluator || e.evaluator_id === evaluator));
+function WhoEvaluated({ people, evals, month, today, onRecord }: { people: Person[]; evals: Evaluation[]; month: string; today: string; onRecord: () => void }) {
+  const dim = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
+  const isCur = today.slice(0, 7) === month.slice(0, 7);
+  const elapsed = isCur ? Number(today.slice(8, 10)) : today > month ? dim : 0;
+  const halves = [
+    { key: month, label: "1–15", started: elapsed >= 1 },
+    { key: `${month.slice(0, 7)}-16`, label: `16–${dim}`, started: elapsed >= 16 },
+  ];
+  const per = (e: Evaluation) => e.period ?? e.month;
+  const has = (kind: Evaluation["kind"], subject: string, period: string, evaluator?: string) =>
+    evals.some((e) => e.kind === kind && e.subject_id === subject && per(e) === period && (!evaluator || e.evaluator_id === evaluator));
+  const daysBy = (evaluator: string) => new Set(evals.filter((e) => e.kind === "by_manager" && e.evaluator_id === evaluator).map(per)).size;
+  const daysOf = (subject: string) => new Set(evals.filter((e) => e.kind === "by_manager" && e.subject_id === subject).map(per)).size;
   const byBranch = new Map<string, Person[]>();
   for (const p of people) {
     const k = p.branch_name ?? "بدون فرع";
     byBranch.set(k, [...(byBranch.get(k) ?? []), p]);
   }
-  const Mark = ({ ok, na }: { ok: boolean; na?: boolean }) =>
-    na ? <span className="text-muted-foreground">—</span> : ok ? <span title="صار">✅</span> : <span title="ناقص">❌</span>;
-  const countText = (done: number, total: number) =>
-    total === 0 ? <span className="text-muted-foreground">—</span>
-      : <span className={`font-bold tabular-nums ${done === total ? "text-emerald-600" : "text-red-600"}`}>{done}/{total}</span>;
+  const Mark = ({ ok, na, wait }: { ok: boolean; na?: boolean; wait?: boolean }) =>
+    na ? <span className="text-muted-foreground">—</span> : wait ? <span title="ما بداش">⏳</span> : ok ? <span title="صار">✅</span> : <span title="ناقص">❌</span>;
+  const Days = ({ n }: { n: number }) => {
+    if (!elapsed) return <span className="text-muted-foreground">—</span>;
+    const r = n / elapsed;
+    return <span className={`font-bold tabular-nums ${r >= 0.85 ? "text-emerald-600" : r >= 0.5 ? "text-amber-600" : "text-red-600"}`}>{n}/{elapsed}</span>;
+  };
 
   let missing = 0;
   const rows = [...byBranch.entries()].map(([branch, list]) => {
@@ -521,21 +542,44 @@ function WhoEvaluated({ people, evals, month, onRecord }: { people: Person[]; ev
     return {
       branch,
       people: [...managers, ...staff].map((p) => {
-        const self = has("self", p.id);
         if (p.role === "manager") {
-          const team = staff;
-          const iRated = team.filter((t) => has("by_manager", t.id, p.id)).length;
-          const ratedMe = team.filter((t) => has("of_manager", p.id, t.id)).length;
-          const done = self && iRated === team.length;
+          const todayN = isCur ? staff.filter((t) => has("by_manager", t.id, today, p.id)).length : null;
+          const selfMiss = halves.some((h) => h.started && !has("self", p.id, h.key));
+          const done = !selfMiss && (todayN === null || todayN === staff.length);
           if (!done) missing++;
-          return { p, self, cells: [countText(iRated, team.length), countText(ratedMe, team.length)], done };
+          return {
+            p, done,
+            daily: (
+              <span className="block leading-tight">
+                <Days n={daysBy(p.id)} />
+                {todayN !== null && staff.length > 0 && (
+                  <span className={`block text-[10px] ${todayN === staff.length ? "text-emerald-600" : "text-red-600"}`}>اليوم {todayN}/{staff.length}</span>
+                )}
+              </span>
+            ),
+            halves: halves.map((h) => (
+              <span key={h.key} className="block leading-tight">
+                <Mark ok={has("self", p.id, h.key)} wait={!h.started} />
+                {h.started && staff.length > 0 && (
+                  <span className="block text-[10px] text-muted-foreground">قيّموه {staff.filter((t) => has("of_manager", p.id, h.key, t.id)).length}/{staff.length}</span>
+                )}
+              </span>
+            )),
+          };
         }
         const mgr = managers.find((m) => m.id !== p.id);
-        const byMgr = mgr ? has("by_manager", p.id) : false;
-        const ofMgr = mgr ? has("of_manager", mgr.id, p.id) : false;
-        const done = self && (!mgr || (byMgr && ofMgr));
-        if (!done) missing++;
-        return { p, self, cells: [<Mark key="a" ok={byMgr} na={!mgr} />, <Mark key="b" ok={ofMgr} na={!mgr} />], done };
+        const selfMiss = halves.some((h) => h.started && !has("self", p.id, h.key));
+        if (selfMiss) missing++;
+        return {
+          p, done: !selfMiss,
+          daily: mgr ? <Days n={daysOf(p.id)} /> : <span className="text-muted-foreground">—</span>,
+          halves: halves.map((h) => (
+            <span key={h.key} className="inline-flex items-center gap-1 whitespace-nowrap">
+              <Mark ok={has("self", p.id, h.key)} wait={!h.started} />
+              {mgr && h.started && <span className="text-[10px] text-muted-foreground">مشرفه <Mark ok={has("of_manager", mgr.id, h.key, p.id)} /></span>}
+            </span>
+          )),
+        };
       }),
     };
   });
@@ -547,7 +591,10 @@ function WhoEvaluated({ people, evals, month, onRecord }: { people: Person[]; ev
         {missing > 0 ? <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700 dark:bg-red-950/40">{missing} ناقص</span>
           : <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700 dark:bg-emerald-950/40">الكل كمّل ✅</span>}
       </div>
-      <p className="text-xs text-muted-foreground">✅ = صار · ❌ = ناقص · «—» = ما ينطبقش. للمشرف: الرقم = كم واحد من موظفينه.</p>
+      <p className="text-xs text-muted-foreground leading-relaxed">
+        <b>يومي</b>: للمشرف كم يوم قيّم موظفينه من {elapsed || "—"} يوم فاتت (وتحتها اليوم قيّم كم واحد)، وللموظف كم يوم قيّمه مشرفه.
+        <b> النص</b>: قيّم نفسه؟ (وللموظف: قيّم مشرفه؟ وللمشرف: كم واحد من موظفينه قيّموه). ✅ صار · ❌ ناقص · ⏳ ما بداش · «—» ما ينطبقش.
+      </p>
       {rows.map(({ branch, people: ps }) => (
         <div key={branch} className="overflow-x-auto">
           <p className="mb-1 text-sm font-bold text-primary">{branch}</p>
@@ -555,21 +602,19 @@ function WhoEvaluated({ people, evals, month, onRecord }: { people: Person[]; ev
             <thead>
               <tr className="text-[11px] text-muted-foreground">
                 <th className="text-right font-normal py-1">الاسم</th>
-                <th className="font-normal px-1">قيّم نفسه</th>
-                <th className="font-normal px-1">المشرف قيّمه<br /><span className="text-[10px]">(المشرف: قيّم موظفينه)</span></th>
-                <th className="font-normal px-1">قيّم مشرفه<br /><span className="text-[10px]">(المشرف: موظفينه قيّموه)</span></th>
+                <th className="font-normal px-1">يومي</th>
+                {halves.map((h) => <th key={h.key} className="font-normal px-1">النص {h.label}</th>)}
               </tr>
             </thead>
             <tbody>
-              {ps.map(({ p, self, cells, done }) => (
+              {ps.map(({ p, daily, halves: hs, done }) => (
                 <tr key={p.id} className={`border-t ${done ? "" : "bg-red-50/60 dark:bg-red-950/20"}`}>
                   <td className="py-1.5">
                     <span className="font-semibold">{p.name}</span>
                     <span className="block text-[11px] text-muted-foreground">{p.role === "manager" ? "مشرف" : "موظف"}</span>
                   </td>
-                  <td className="text-center"><Mark ok={self} /></td>
-                  <td className="text-center">{cells[0]}</td>
-                  <td className="text-center">{cells[1]}</td>
+                  <td className="text-center">{daily}</td>
+                  {hs.map((c, i) => <td key={i} className="text-center">{c}</td>)}
                 </tr>
               ))}
             </tbody>

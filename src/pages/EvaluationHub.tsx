@@ -11,8 +11,8 @@ const Leaderboard = lazy(() => import("@/pages/Leaderboard"));
 const TABS: PageTab[] = [
   { key: "numbers", label: "أرقام البائعين والفروع", render: () => <StaffEval />,
     hint: "من فواتير أمارسوفت: الوزن، السعر فوق الذهب، الخصم، الزبائن، والنقاط من 100." },
-  { key: "monthly", label: "التقييم الشهري", render: () => <Evaluations />,
-    hint: "استمارات التقييم: الموظف لنفسه، المشرف لموظفينه، والموظفين لمشرفهم — ومين ناقص." },
+  { key: "monthly", label: "تقييم الموظفين", render: () => <Evaluations />,
+    hint: "المشرف يقيّم موظفينه كل يوم، والموظفين يقيّموا نفسهم ومشرفهم مرتين في الشهر — ومين ناقص." },
   { key: "leaderboard", label: "المتصدرون", render: () => <Leaderboard />,
     hint: "الترتيب بالوزن — نفس اللي يشوفه الموظفين (بلا أرقام عندهم)." },
 ];
