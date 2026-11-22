@@ -142,7 +142,8 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
       // في تقييم المدير العام: اللي يقيّم = صف المدير العام، واللي يتقيّم = الاسم المختار.
       const evaluator = gm ? gmId : me!.id;
       if (!evaluator) throw new Error("صف المدير العام مش موجود في قائمة التقييم");
-      const { data, error } = await db.rpc("eval_submit", { p_token: token ?? null, p: { day, evaluator_id: evaluator, entries: list } });
+      // month برضو: لين يتشغّل ملف التحديث، السيرفر القديم يحفظ شهري بدل ما يرفض.
+      const { data, error } = await db.rpc("eval_submit", { p_token: token ?? null, p: { day, month: `${day.slice(0, 7)}-01`, evaluator_id: evaluator, entries: list } });
       if (error) throw error;
       writeLast(Object.fromEntries(cards.filter((c) => answered(c) > 0).map((c) => [lastKey(c), entry(c.key).scores])));
       return data as number;
