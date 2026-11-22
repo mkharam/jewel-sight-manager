@@ -1,4 +1,4 @@
--- التقييم: المشرف يقيّم موظفينه كل يوم، والموظفين (تقييمهم لنفسهم ولمشرفهم) مرتين في الشهر:
+-- التقييم: المشرف يقيّم موظفينه كل يوم (ولو الموظف غايب يسجّله غايب مع السبب)، والموظفين (تقييمهم لنفسهم ولمشرفهم) مرتين في الشهر:
 -- من 1 لـ 15، ومن 16 لآخر الشهر. تقييم المشرف لنفسه برضو مرتين في الشهر. المدير العام شهري.
 --  * period = اليوم (تقييم المشرف اليومي)، ولا أول النص (1 ولا 16)، ولا أول الشهر (المدير العام).
 --  * month يبقى = أول شهر الفترة — اللوحة الشهرية تخدم زي ما هي.
@@ -8,6 +8,10 @@ alter table public.staff_evaluations alter column period set not null;
 alter table public.staff_evaluations drop constraint if exists staff_evaluations_month_kind_evaluator_id_subject_id_key;
 create unique index if not exists staff_evaluations_period_key on public.staff_evaluations (period, kind, evaluator_id, subject_id);
 create index if not exists staff_evaluations_period_idx on public.staff_evaluations (period);
+
+-- الغياب: المشرف يسجّل الموظف «غايب» في يومه مع السبب — يتحسب تقييم اليوم تم، بلا درجات.
+alter table public.staff_evaluations add column if not exists absent boolean not null default false;
+alter table public.staff_evaluations add column if not exists absence_reason text;
 
 -- أمان: الشهر دايماً من الفترة.
 create or replace function public.staff_evaluations_period() returns trigger language plpgsql as $$
@@ -20,7 +24,8 @@ drop trigger if exists staff_evaluations_period on public.staff_evaluations;
 create trigger staff_evaluations_period before insert or update on public.staff_evaluations
   for each row execute function public.staff_evaluations_period();
 
--- إرسال التقييم: p = { day: 'YYYY-MM-DD', evaluator_id, entries: [{ kind, subject_id, scores, strengths, improvements, notes }] }
+-- إرسال التقييم: p = { day: 'YYYY-MM-DD', evaluator_id, entries: [{ kind, subject_id, scores, strengths, improvements, notes, absent, absence_reason }] }
+-- absent (لتقييم المشرف اليومي بس): الموظف غايب — لازم سبب، والدرجات فاضية.
 -- (النسخ القديمة تبعت month بدل day — تتقبل). من الرابط: اليوم ولا آخر 3 أيام؛ المسؤول من التطبيق: لين سنة.
 create or replace function public.eval_submit(p_token text, p jsonb)
 returns integer language plpgsql security definer set search_path = public as $$
@@ -33,6 +38,7 @@ declare
   v_evaluator uuid := (p->>'evaluator_id')::uuid;
   e jsonb;
   v_avg numeric;
+  v_absent boolean;
   n int := 0;
 begin
   if not is_rec and (p_token is null or p_token <> (select link_token from eval_config)) then
@@ -51,18 +57,30 @@ begin
     if e->>'kind' = 'by_gm' and (not is_rec or not exists (select 1 from eval_staff where id = v_evaluator and role = 'gm')) then
       raise exception 'تقييم المدير العام من لوحة التقييم بس';
     end if;
-    select round(avg(v::numeric), 2) into v_avg
-    from jsonb_each_text(coalesce(e->'scores', '{}')) as s(k, v) where v ~ '^[1-5]$';
-    if v_avg is null then continue; end if;
+    v_absent := e->>'kind' = 'by_manager' and coalesce((e->>'absent')::boolean, false);
+    if v_absent then
+      if nullif(btrim(coalesce(e->>'absence_reason', '')), '') is null then
+        raise exception 'اكتب سبب الغياب';
+      end if;
+      v_avg := null;
+    else
+      select round(avg(v::numeric), 2) into v_avg
+      from jsonb_each_text(coalesce(e->'scores', '{}')) as s(k, v) where v ~ '^[1-5]$';
+      if v_avg is null then continue; end if;
+    end if;
     v_period := case e->>'kind' when 'by_manager' then v_day when 'by_gm' then date_trunc('month', v_day)::date else v_half end;
-    insert into staff_evaluations (period, month, kind, evaluator_id, subject_id, scores, overall, strengths, improvements, notes, source, entered_by)
+    insert into staff_evaluations (period, month, kind, evaluator_id, subject_id, scores, overall, strengths, improvements, notes,
+                                   absent, absence_reason, source, entered_by)
     values (v_period, date_trunc('month', v_period)::date, e->>'kind', v_evaluator,
             case when e->>'kind' = 'self' then v_evaluator else (e->>'subject_id')::uuid end,
-            e->'scores', v_avg, nullif(e->>'strengths', ''), nullif(e->>'improvements', ''), nullif(e->>'notes', ''),
+            case when v_absent then '{}'::jsonb else e->'scores' end, v_avg,
+            nullif(e->>'strengths', ''), nullif(e->>'improvements', ''), nullif(e->>'notes', ''),
+            v_absent, case when v_absent then left(btrim(e->>'absence_reason'), 300) end,
             case when is_rec and p_token is null then 'recorder' else 'link' end, auth.uid())
     on conflict (period, kind, evaluator_id, subject_id) do update
       set scores = excluded.scores, overall = excluded.overall, strengths = excluded.strengths,
-          improvements = excluded.improvements, notes = excluded.notes, source = excluded.source,
+          improvements = excluded.improvements, notes = excluded.notes, absent = excluded.absent,
+          absence_reason = excluded.absence_reason, source = excluded.source,
           entered_by = excluded.entered_by, updated_at = now();
     n := n + 1;
   end loop;
@@ -71,13 +89,15 @@ end $$;
 revoke all on function public.eval_submit(text, jsonb) from public;
 grant execute on function public.eval_submit(text, jsonb) to anon, authenticated;
 
--- شن سلّم اللي يقيّم: مين قيّم في اليوم (للمشرف)، وهل قيّم نفسه/مشرفه في نص الشهر — نعم/لا بس، بلا درجات.
+-- شن سلّم اللي يقيّم: مين قيّم في اليوم (للمشرف، ومين سجّله غايب)، وهل قيّم نفسه/مشرفه في نص الشهر — بلا درجات.
 create or replace function public.eval_status(p_token text, p_evaluator uuid, p_day date)
 returns jsonb language sql stable security definer set search_path = public as $$
   select case when (p_token is not null and p_token = (select link_token from eval_config)) or public.is_eval_admin(auth.uid()) then
     jsonb_build_object(
       'rated_day', coalesce((select jsonb_agg(subject_id) from staff_evaluations
                              where kind = 'by_manager' and evaluator_id = p_evaluator and period = p_day), '[]'::jsonb),
+      'absent_day', coalesce((select jsonb_agg(subject_id) from staff_evaluations
+                             where kind = 'by_manager' and evaluator_id = p_evaluator and period = p_day and absent), '[]'::jsonb),
       'half_done', coalesce((select jsonb_agg(jsonb_build_object('kind', kind, 'subject', subject_id)) from staff_evaluations
                              where kind in ('self', 'of_manager') and evaluator_id = p_evaluator
                                and period = case when extract(day from p_day) <= 15 then date_trunc('month', p_day)::date

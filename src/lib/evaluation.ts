@@ -15,7 +15,12 @@ export type Evaluation = {
   id: string; month: string; period: string; kind: Kind; evaluator_id: string; subject_id: string; scores: Record<string, number>;
   overall: number | null; strengths: string | null; improvements: string | null; notes: string | null;
   source: "link" | "recorder"; entered_by: string | null; created_at: string; updated_at: string;
+  /** تقييم المشرف اليومي: الموظف كان غايب (بلا درجات) والسبب. */
+  absent?: boolean; absence_reason?: string | null;
 };
+
+/** أسباب جاهزة للغياب — والمشرف يقدر يكتب سبب ثاني. */
+export const ABSENCE_REASONS = ["مرض", "إجازة بإذن", "غياب بدون إذن", "ظرف طارئ"] as const;
 
 /** بنود تقييم الموظف (يقيّمها المشرف، والموظف يقيّم بيها نفسه). */
 export const EMPLOYEE_CRITERIA = [

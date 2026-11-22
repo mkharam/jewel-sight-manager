@@ -5,13 +5,13 @@
 // «نفس آخر تقييم» يعبّي البنود من آخر مرة على نفس الجهاز — المشرف يبدّل بس اللي تغيّر اليوم.
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, ChevronDown, ChevronLeft, Copy, Loader2, UserCheck, Users } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronLeft, Copy, Loader2, UserCheck, UserX, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import {
-  db, EMPLOYEE_CRITERIA, GM_CRITERIA, MANAGER_CRITERIA, SCALE, addDaysYmd, dayLabel, defaultMonth, halfLabel, halfStart, monthLabel,
+  db, ABSENCE_REASONS, EMPLOYEE_CRITERIA, GM_CRITERIA, MANAGER_CRITERIA, SCALE, addDaysYmd, dayLabel, defaultMonth, halfLabel, halfStart, monthLabel,
   prevHalfDay, shiftMonth, type EvalStaff, type Kind, type Role,
 } from "@/lib/evaluation";
 
@@ -39,9 +39,9 @@ function TrustNote() {
   );
 }
 
-type Entry = { scores: Record<string, number>; strengths: string; improvements: string; notes: string };
+type Entry = { scores: Record<string, number>; strengths: string; improvements: string; notes: string; absent?: boolean; reason?: string };
 type Card_ = { key: string; kind: Kind; subject: EvalStaff | null; title: string; criteria: readonly { key: string; label: string }[]; required: boolean; done?: boolean; note?: string };
-type Status = { rated_day: string[]; half_done: { kind: Kind; subject: string }[] };
+type Status = { rated_day: string[]; absent_day?: string[]; half_done: { kind: Kind; subject: string }[] };
 const blank = (): Entry => ({ scores: {}, strengths: "", improvements: "", notes: "" });
 
 /** gm: تقييم المدير العام لموظف ولا مشرف (بنود GM_CRITERIA) — من لوحة التقييم بس. */
@@ -94,6 +94,7 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
     },
   });
   const ratedToday = new Set(status.data?.rated_day ?? []);
+  const absentToday = new Set(status.data?.absent_day ?? []);
   const halfDone = (kind: Kind, subject?: string) => (status.data?.half_done ?? []).some((h) => h.kind === kind && (!subject || h.subject === subject));
   const periodText = gm ? `شهر ${monthLabel(curMonth ?? today)}` : isManager ? `يوم ${dayLabel(day, today)}` : halfLabel(day);
 
@@ -109,7 +110,8 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
       return [
         ...sameBranch.filter((s) => s.role === "employee").map((s) => ({
           key: `by_manager:${s.id}`, kind: "by_manager" as Kind, subject: s, title: `قيّم ${s.name}`, criteria: EMPLOYEE_CRITERIA, required: false,
-          done: ratedToday.has(s.id), note: ratedToday.has(s.id) ? `قيّمته ${dayLabel(day, today)} — تقدر تعدّل` : undefined,
+          done: ratedToday.has(s.id),
+          note: absentToday.has(s.id) ? `سجّلته غايب ${dayLabel(day, today)} — تقدر تعدّل` : ratedToday.has(s.id) ? `قيّمته ${dayLabel(day, today)} — تقدر تعدّل` : undefined,
         })),
         { key: "self", kind: "self", subject: null, title: "قيّم نفسك (مرتين في الشهر)", criteria: MANAGER_CRITERIA, required: false,
           done: selfDone, note: selfDone ? `سلّمته — ${halfLabel(day)} — تقدر تعدّل` : halfLabel(day) },
@@ -131,21 +133,27 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
   const saved = useMemo(readLast, [done, me?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const setEntry = (k: string, patch: Partial<Entry>) => setEntries((s) => ({ ...s, [k]: { ...entry(k), ...patch } }));
   const answered = (c: Card_) => c.criteria.filter((x) => entry(c.key).scores[x.key]).length;
-  const problems = cards.filter((c) => (c.required && answered(c) < c.criteria.length) || (!c.required && answered(c) > 0 && answered(c) < c.criteria.length));
+  // الغايب: البطاقة كاملة لما يتكتب السبب (بلا بنود).
+  const isAbsent = (c: Card_) => c.kind === "by_manager" && !!entry(c.key).absent;
+  const filled = (c: Card_) => (isAbsent(c) ? (entry(c.key).reason?.trim() ? c.criteria.length : 0) : answered(c));
+  const problems = cards.filter((c) => (isAbsent(c) && !entry(c.key).reason?.trim())
+    || (c.required && filled(c) < c.criteria.length) || (!c.required && filled(c) > 0 && filled(c) < c.criteria.length));
 
   const submit = useMutation({
     mutationFn: async () => {
-      const list = cards.filter((c) => answered(c) > 0).map((c) => ({
-        kind: c.kind, subject_id: c.subject?.id ?? me!.id, scores: entry(c.key).scores,
-        strengths: entry(c.key).strengths, improvements: entry(c.key).improvements, notes: entry(c.key).notes,
-      }));
+      const list = cards.filter((c) => filled(c) > 0).map((c) => (isAbsent(c)
+        ? { kind: c.kind, subject_id: c.subject!.id, absent: true, absence_reason: entry(c.key).reason!.trim(), scores: {} }
+        : {
+          kind: c.kind, subject_id: c.subject?.id ?? me!.id, scores: entry(c.key).scores,
+          strengths: entry(c.key).strengths, improvements: entry(c.key).improvements, notes: entry(c.key).notes,
+        }));
       // في تقييم المدير العام: اللي يقيّم = صف المدير العام، واللي يتقيّم = الاسم المختار.
       const evaluator = gm ? gmId : me!.id;
       if (!evaluator) throw new Error("صف المدير العام مش موجود في قائمة التقييم");
       // month برضو: لين يتشغّل ملف التحديث، السيرفر القديم يحفظ شهري بدل ما يرفض.
       const { data, error } = await db.rpc("eval_submit", { p_token: token ?? null, p: { day, month: `${day.slice(0, 7)}-01`, evaluator_id: evaluator, entries: list } });
       if (error) throw error;
-      writeLast(Object.fromEntries(cards.filter((c) => answered(c) > 0).map((c) => [lastKey(c), entry(c.key).scores])));
+      writeLast(Object.fromEntries(cards.filter((c) => !isAbsent(c) && answered(c) > 0).map((c) => [lastKey(c), entry(c.key).scores])));
       return data as number;
     },
     onSuccess: (n) => { setDone(n); qc.invalidateQueries({ queryKey: ["eval-status"] }); },
@@ -262,12 +270,37 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
                     {c.note && <span className="block text-[11px] text-muted-foreground">{c.note}</span>}
                   </span>
                   <span className="flex items-center gap-2 text-xs">
-                    <span className={a === c.criteria.length ? "text-emerald-600 font-bold" : "text-muted-foreground"}>{a}/{c.criteria.length}</span>
+                    {isAbsent(c)
+                      ? <span className="rounded-full bg-destructive/15 px-2 py-0.5 font-bold text-destructive">غايب</span>
+                      : <span className={a === c.criteria.length ? "text-emerald-600 font-bold" : "text-muted-foreground"}>{a}/{c.criteria.length}</span>}
                     <ChevronDown className={`size-4 transition-transform ${isOpen ? "rotate-180" : ""}`} />
                   </span>
                 </button>
                 {isOpen && (
                   <div className="px-3 pb-3 space-y-3">
+                    {c.kind === "by_manager" && (
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <Button size="sm" variant={isAbsent(c) ? "outline" : "default"} onClick={() => setEntry(c.key, { absent: false })}>
+                          <UserCheck className="size-4" />حاضر — قيّمه
+                        </Button>
+                        <Button size="sm" variant={isAbsent(c) ? "destructive" : "outline"} onClick={() => setEntry(c.key, { absent: true })}>
+                          <UserX className="size-4" />غايب
+                        </Button>
+                      </div>
+                    )}
+                    {isAbsent(c) ? (
+                      <div className="space-y-2 rounded-xl border border-destructive/40 bg-destructive/5 p-2.5">
+                        <p className="text-sm font-semibold">سبب الغياب</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {ABSENCE_REASONS.map((r) => (
+                            <Button key={r} size="sm" variant={entry(c.key).reason === r ? "default" : "outline"} onClick={() => setEntry(c.key, { reason: r })}>{r}</Button>
+                          ))}
+                        </div>
+                        <Textarea placeholder="ولا اكتب السبب (مثلاً: عنده ظرف عائلي، اتصل الصبح)" value={ABSENCE_REASONS.includes(entry(c.key).reason as (typeof ABSENCE_REASONS)[number]) ? "" : entry(c.key).reason ?? ""}
+                          onChange={(e) => setEntry(c.key, { reason: e.target.value })} rows={2} />
+                        <p className="text-[11px] text-muted-foreground">الغايب يتسجّل في يومه، وما ينحسبش في درجته — ويطلع في نتيجة الشهر.</p>
+                      </div>
+                    ) : (<>
                     {a === 0 && saved[lastKey(c)] && (
                       <Button size="sm" variant="outline" className="w-full" onClick={() => setEntry(c.key, { scores: { ...saved[lastKey(c)] } })}>
                         <Copy className="size-4" />نفس آخر تقييم — بدّل بس اللي تغيّر
@@ -293,6 +326,7 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
                     <Textarea placeholder="نقاط القوة" value={entry(c.key).strengths} onChange={(e) => setEntry(c.key, { strengths: e.target.value })} rows={2} />
                     <Textarea placeholder="شن يحتاج يتحسّن" value={entry(c.key).improvements} onChange={(e) => setEntry(c.key, { improvements: e.target.value })} rows={2} />
                     <Textarea placeholder="ملاحظات (اختياري)" value={entry(c.key).notes} onChange={(e) => setEntry(c.key, { notes: e.target.value })} rows={2} />
+                    </>)}
                   </div>
                 )}
               </Card>
@@ -300,7 +334,10 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
           })}
 
           {problems.length > 0 && (
-            <p className="text-sm text-amber-700 dark:text-amber-400">كمّل كل البنود في: {problems.map((p) => p.title).join("، ")}</p>
+            <p className="text-sm text-amber-700 dark:text-amber-400">
+              {problems.filter(isAbsent).length > 0 && <>اكتب سبب غياب: {problems.filter(isAbsent).map((p) => p.subject?.name).join("، ")}. </>}
+              {problems.filter((p) => !isAbsent(p)).length > 0 && <>كمّل كل البنود في: {problems.filter((p) => !isAbsent(p)).map((p) => p.title).join("، ")}</>}
+            </p>
           )}
           {submit.isError && <p className="text-sm text-destructive">{(submit.error as Error).message}</p>}
           <Button size="lg" className="w-full h-14 text-lg" disabled={problems.length > 0 || submit.isPending} onClick={() => submit.mutate()}>

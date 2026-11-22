@@ -26,6 +26,8 @@ type Tab = "board" | "record" | "settings";
 type Person = EvalStaff & {
   final: number | null; self: number | null; others: number | null; gm: number | null; prev: number | null;
   evals: Evaluation[]; missing: string[];
+  /** تقييم المشرف اليومي: أيام حضر فيها، والأيام اللي سجّله فيها غايب (بسببها). */
+  presentDays: number; absences: Evaluation[];
 };
 
 const avg = (xs: (number | null | undefined)[]) => {
@@ -71,7 +73,10 @@ export default function Evaluations() {
       const others = avg(es.filter((e) => e.kind !== "self").map((e) => e.overall));
       const self = avg(es.filter((e) => e.kind === "self").map((e) => e.overall));
       const gm = avg(es.filter((e) => e.kind === "by_gm").map((e) => e.overall));
-      return { others, self, gm, final: others ?? self, evals: es };
+      const daily = es.filter((e) => e.kind === "by_manager");
+      const absences = daily.filter((e) => e.absent).sort((a, b) => (a.period ?? a.month).localeCompare(b.period ?? b.month));
+      const presentDays = new Set(daily.filter((e) => !e.absent).map((e) => e.period ?? e.month)).size;
+      return { others, self, gm, final: others ?? self, evals: es, absences, presentDays };
     };
     const people: Person[] = active.map((s) => {
       const cur = scoreOf(s, month);
@@ -167,7 +172,17 @@ export default function Evaluations() {
 
               {/* الترتيب */}
               <Card className="p-3">
-                <h2 className="text-lg font-bold mb-1">الترتيب</h2>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <h2 className="text-lg font-bold">نتيجة الشهر — {monthLabel(month)}</h2>
+                  {v.rated.length > 0 && (
+                    <span className="flex gap-1">
+                      <Button size="sm" variant="outline" className="h-8 px-2" onClick={() => { void navigator.clipboard.writeText(summaryText(v.rated, month)); toast.success("انسخت النتيجة"); }}><Copy className="size-4" /></Button>
+                      <Button asChild size="sm" variant="outline" className="h-8 px-2">
+                        <a href={`https://wa.me/?text=${encodeURIComponent(summaryText(v.rated, month))}`} target="_blank" rel="noreferrer"><MessageCircle className="size-4" /></a>
+                      </Button>
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-muted-foreground mb-2">الدرجة = متوسط {GM_EVAL_ENABLED ? "تقييم المدير العام وتقييم المشرف اليومي" : "تقييم المشرف اليومي"} في الشهر (وللمشرف تقييم موظفينه)، ولو ما فيش، تقييمه لنفسه. اضغط على أي اسم للتفاصيل.</p>
                 {!v.rated.length ? <p className="text-center text-muted-foreground py-6">ما فيش تقييمات لهذا الشهر لين توا.</p> : v.rated.map((p, i) => {
                   const g = grade(p.final);
@@ -179,7 +194,7 @@ export default function Evaluations() {
                           <span className={`size-7 shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${i < 3 ? "bg-gold-gradient text-primary-foreground" : "bg-muted"}`}>{i + 1}</span>
                           <span className="min-w-0">
                             <span className="block font-bold truncate">{p.name}</span>
-                            <span className="block text-[11px] text-muted-foreground truncate">{p.role === "manager" ? "مشرف" : "موظف"} · {p.branch_name ?? "—"}{p.gm != null ? ` · المدير العام ${f1(p.gm)}` : ""}{p.self != null && p.others != null ? ` · قيّم نفسه ${f1(p.self)}` : ""}</span>
+                            <span className="block text-[11px] text-muted-foreground truncate">{p.role === "manager" ? "مشرف" : "موظف"} · {p.branch_name ?? "—"}{p.gm != null ? ` · المدير العام ${f1(p.gm)}` : ""}{p.self != null && p.others != null ? ` · قيّم نفسه ${f1(p.self)}` : ""}{p.absences.length ? ` · غاب ${p.absences.length} يوم` : ""}</span>
                           </span>
                         </span>
                         <span className="shrink-0 text-left">
@@ -257,6 +272,20 @@ export default function Evaluations() {
       </Sheet>
     </div>
   );
+}
+
+/** نتيجة الشهر كنص (واتساب/نسخ): كل فرع، كل واحد بدرجته وغيابه، واللي يحتاج متابعة. */
+function summaryText(rated: Person[], month: string) {
+  const lines = [`نتيجة تقييم ${monthLabel(month)}`];
+  const byBranch = new Map<string, Person[]>();
+  for (const p of rated) byBranch.set(p.branch_name ?? "بدون فرع", [...(byBranch.get(p.branch_name ?? "بدون فرع") ?? []), p]);
+  for (const [b, ps] of byBranch) {
+    lines.push("", `${b}:`);
+    ps.forEach((p, i) => lines.push(`${i + 1}. ${p.name}${p.role === "manager" ? " (مشرف)" : ""} — ${f1(p.final)} ${grade(p.final).label}${p.absences.length ? ` · غاب ${p.absences.length} يوم` : ""}`));
+  }
+  const low = rated.filter((p) => (p.final ?? 5) < 3);
+  if (low.length) lines.push("", `يحتاج متابعة: ${low.map((p) => p.name).join("، ")}`);
+  return lines.join("\n");
 }
 
 function Kpi({ icon: Icon, label, value, sub, tone }: { icon: typeof Star; label: string; value: string; sub?: string; tone?: string }) {
@@ -361,7 +390,21 @@ function PersonDetail({ p, month, staff, scoreOf }: {
       )}
 
       {p.role !== "manager" && (
-        <p className="text-xs text-muted-foreground">قيّمه المشرف {daily.length} يوم في {monthLabel(month)}{daily.length ? ` — المتوسط ${f1(avg(daily.map((e) => e.overall)))}` : ""}.</p>
+        <p className="text-xs text-muted-foreground">
+          قيّمه المشرف {p.presentDays} يوم حاضر في {monthLabel(month)}{p.presentDays ? ` — المتوسط ${f1(avg(daily.map((e) => e.overall)))}` : ""}
+          {p.absences.length ? ` · وغاب ${p.absences.length} يوم` : ""}.
+        </p>
+      )}
+      {p.absences.length > 0 && (
+        <Card className="p-3 space-y-1.5">
+          <h3 className="font-bold">الغياب ({p.absences.length} يوم)</h3>
+          {p.absences.map((e) => (
+            <div key={e.id} className="flex items-start justify-between gap-2 border-b pb-1.5 text-sm last:border-0">
+              <span className="text-muted-foreground">{when(e)}</span>
+              <span className="text-left font-semibold">{e.absence_reason ?? "—"}</span>
+            </div>
+          ))}
+        </Card>
       )}
       {notes.length > 0 && (
         <Card className="p-3 space-y-3">
@@ -572,7 +615,12 @@ function WhoEvaluated({ people, evals, month, today, onRecord }: { people: Perso
         if (selfMiss) missing++;
         return {
           p, done: !selfMiss,
-          daily: mgr ? <Days n={daysOf(p.id)} /> : <span className="text-muted-foreground">—</span>,
+          daily: mgr ? (
+            <span className="block leading-tight">
+              <Days n={daysOf(p.id)} />
+              {p.absences.length > 0 && <span className="block text-[10px] text-red-600">غاب {p.absences.length}</span>}
+            </span>
+          ) : <span className="text-muted-foreground">—</span>,
           halves: halves.map((h) => (
             <span key={h.key} className="inline-flex items-center gap-1 whitespace-nowrap">
               <Mark ok={has("self", p.id, h.key)} wait={!h.started} />
