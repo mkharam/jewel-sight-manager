@@ -24,12 +24,16 @@ type Extra = {
 };
 
 type Gold = { branch_code: string; sman: string; valued_grams: number; amount_lyd: number; gold_lyd: number; old_grams: number; old_amount_lyd: number; old_gold_lyd: number };
+/** تسجيل الزبون في فواتير البيع: اسم حقيقي، ورقم موبايل صحيح (amarsoft_customer_capture). */
+type Capture = { branch_code: string; sman: string; invoices: number; with_name: number; with_phone: number; with_both: number };
 
 /** كل المقاييس لشخص أو فرع — محسوبة من المجاميع بنفس الطريقة للجميع. */
 type M = {
   grams: number; invoices: number; pieces: number; avgInv: number; light: number; mid: number; heavy: number; lightPct: number; heavyPct: number;
   pricePerGram: number; priceIndex: number | null; discountPct: number; lowPricePct: number; lowLines: number;
   phonePct: number; newCust: number; repeatCust: number; oldPieces: number; avgAge: number | null;
+  /** % فواتير فيها اسم الزبون، وفيها الاسم والرقم مع بعض (null لو ملف التحديث ما تشغّلش). */
+  namePct: number | null; custPct: number | null;
   untaggedPct: number; returns: number; returnPct: number; days: number;
   /** فوق سعر الذهب يوم البيع: د.ل لكل جرام، ونسبة مئوية — وللقطع القديمة (أكثر من 6 شهور) نسبة لحالها. */
   abovePerGram: number | null; abovePct: number | null; oldAbovePct: number | null;
@@ -38,7 +42,7 @@ type M = {
 const n = (v: unknown) => Number(v ?? 0);
 const pct = (a: number, b: number) => (b > 0 ? (a / b) * 100 : 0);
 
-function measure(rs: Raw[], xs: Extra[], gs: Gold[] = []): M {
+function measure(rs: Raw[], xs: Extra[], gs: Gold[] = [], cs: Capture[] = []): M {
   const t = (k: keyof Raw) => rs.reduce((a, r) => a + n(r[k]), 0);
   const tx = (k: keyof Extra) => xs.reduce((a, r) => a + n(r[k]), 0);
   const g = t("grams"), inv = t("invoices"), lines = t("lines");
@@ -51,7 +55,13 @@ function measure(rs: Raw[], xs: Extra[], gs: Gold[] = []): M {
     priceIndex: tg ? xs.reduce((a, x) => a + n(x.price_index) * n(x.typed_grams), 0) / tg : null,
     discountPct: pct(t("discount"), t("amount") + t("discount")),
     lowLines: t("low_price_lines"), lowPricePct: pct(t("low_price_lines"), lines),
-    phonePct: pct(tx("phone_invoices"), inv), newCust: tx("new_customers"), repeatCust: tx("repeat_customers"),
+    newCust: tx("new_customers"), repeatCust: tx("repeat_customers"),
+    ...(() => {
+      const ci = cs.reduce((a, c) => a + n(c.invoices), 0);
+      if (!ci) return { phonePct: pct(tx("phone_invoices"), inv), namePct: null, custPct: null };
+      const c = (k: keyof Capture) => cs.reduce((a, x) => a + n(x[k]), 0);
+      return { phonePct: pct(c("with_phone"), ci), namePct: pct(c("with_name"), ci), custPct: pct(c("with_both"), ci) };
+    })(),
     oldPieces: tx("old_pieces"), avgAge: al ? xs.reduce((a, x) => a + n(x.avg_age_days) * n(x.aged_lines), 0) / al : null,
     untaggedPct: pct(t("untagged_lines"), lines), returns: t("returns"), returnPct: pct(t("returns"), inv + t("returns")),
     days: t("active_days"),
@@ -71,7 +81,7 @@ function measure(rs: Raw[], xs: Extra[], gs: Gold[] = []): M {
 }
 
 // ===== النقاط =====
-type ScoreKey = "grams" | "abovePct" | "priceIndex" | "avgInv" | "discountPct" | "lowPricePct" | "phonePct" | "returnPct" | "untaggedPct";
+type ScoreKey = "grams" | "abovePct" | "priceIndex" | "avgInv" | "discountPct" | "lowPricePct" | "custPct" | "returnPct" | "untaggedPct";
 const SCORE_PARTS: { key: ScoreKey; label: string; lowerBetter?: boolean; def: number }[] = [
   { key: "grams", label: "الوزن المباع", def: 30 },
   { key: "abovePct", label: "الربح فوق سعر الذهب", def: 10 },
@@ -79,14 +89,20 @@ const SCORE_PARTS: { key: ScoreKey; label: string; lowerBetter?: boolean; def: n
   { key: "avgInv", label: "وزن الفاتورة", def: 10 },
   { key: "lowPricePct", label: "قلة البيع تحت السعر", lowerBetter: true, def: 10 },
   { key: "discountPct", label: "قلة الخصم", lowerBetter: true, def: 10 },
-  { key: "phonePct", label: "تسجيل رقم الزبون", def: 5 },
+  { key: "custPct", label: "تسجيل اسم ورقم الزبون", def: 5 },
   { key: "returnPct", label: "قلة المرتجعات", lowerBetter: true, def: 5 },
   { key: "untaggedPct", label: "قلة البيع بلا باركود", lowerBetter: true, def: 5 },
 ];
 const WEIGHTS_KEY = "staffEval.weights.v2";
 const defaults = () => Object.fromEntries(SCORE_PARTS.map((p) => [p.key, p.def])) as Record<ScoreKey, number>;
 const loadWeights = (): Record<ScoreKey, number> => {
-  try { return { ...defaults(), ...JSON.parse(localStorage.getItem(WEIGHTS_KEY) ?? "{}") }; } catch { return defaults(); }
+  try {
+    const saved = JSON.parse(localStorage.getItem(WEIGHTS_KEY) ?? "{}");
+    // «رقم الزبون» صار «اسم ورقم الزبون» — نفس الوزن اللي حطيته.
+    if (saved.phonePct !== undefined && saved.custPct === undefined) saved.custPct = saved.phonePct;
+    delete saved.phonePct;
+    return { ...defaults(), ...saved };
+  } catch { return defaults(); }
 };
 
 /** نقاط كل واحد من 100: ترتيبه بين زملائه في كل مقياس (الأحسن 100، الأضعف 0)، مجموع موزون. */
@@ -98,7 +114,8 @@ function scoreAll(list: M[], w: Record<ScoreKey, number>): number[] {
     const wt = w[p.key] ?? 0;
     if (!wt) continue;
     wsum += wt;
-    const vals = list.map((m) => m[p.key]);
+    // «اسم ورقم الزبون» قبل ما يتشغّل ملف التحديث: نحسبو بالرقم بس زي قبل.
+    const vals = list.map((m) => (p.key === "custPct" ? m.custPct ?? m.phonePct : m[p.key]));
     list.forEach((m, i) => {
       const v = vals[i];
       if (v === null || v === undefined) { out[i] += 50 * wt; return; }
@@ -145,7 +162,9 @@ const SECTIONS: { key: string; label: string; intro: string; cols: Col[] }[] = [
   {
     key: "care", label: "الزبائن والبضاعة", intro: "الاهتمام بالزبون، تصريف البضاعة القديمة، والالتزام بالنظام.",
     cols: [
-      { key: "phonePct", label: "رقم الزبون", explain: "نسبة الفواتير اللي فيها رقم تلفون الزبون. مهم باش نتواصلوا مع الزبون ونعرفوا مين يرجع.", get: (m) => m.phonePct, fmt: (m) => `${f(m.phonePct)}%` },
+      { key: "custPct", label: "اسم ورقم الزبون", explain: "نسبة الفواتير اللي فيها اسم الزبون الحقيقي ورقم تلفونه مع بعض. هذا اللي يدخل في النقاط — باش نتواصلوا مع الزبون ونعرفوا مين يرجع.", get: (m) => m.custPct ?? m.phonePct, fmt: (m) => `${f(m.custPct ?? m.phonePct)}%` },
+      { key: "namePct", label: "اسم الزبون", explain: "نسبة الفواتير اللي فيها اسم الزبون (مش «ذهب مسبوك» ولا حرف واحد).", get: (m) => m.namePct, fmt: (m) => (m.namePct === null ? "—" : `${f(m.namePct)}%`) },
+      { key: "phonePct", label: "رقم الزبون", explain: "نسبة الفواتير اللي فيها رقم موبايل صحيح للزبون.", get: (m) => m.phonePct, fmt: (m) => `${f(m.phonePct)}%` },
       { key: "newCust", label: "زبائن جدد", explain: "زبائن أول مرة يشروا من المحل (حسب رقم التلفون).", get: (m) => m.newCust, fmt: (m) => f(m.newCust) },
       { key: "repeatCust", label: "زبائن رجعوا", explain: "زبائن شروا قبل ورجعوا يشروا.", get: (m) => m.repeatCust, fmt: (m) => f(m.repeatCust) },
       { key: "oldAbovePct", label: "القديمة فوق الذهب", explain: "القطع اللي قعدت أكثر من 6 شهور: باعها بكم فوق قيمة الذهب يوم البيع. لو أقل بكثير من «% فوق الذهب» يعني باعها بسعرها القديم وما حسبش غلاء الذهب.", get: (m) => m.oldAbovePct, fmt: (m) => (m.oldAbovePct === null ? "—" : `${f(m.oldAbovePct)}%`) },
@@ -260,7 +279,7 @@ function Overview({ rows }: { rows: Who[] }) {
     if (r.m.priceIndex !== null && r.m.priceIndex <= 93) out.push("يبيع أرخص من فرعه");
     if (r.m.lowPricePct > 25) out.push("يكسر السعر كثير");
     if (r.m.discountPct > 3) out.push("يعطي خصومات كثيرة");
-    if (r.m.invoices >= 5 && r.m.phonePct < 10) out.push("ما يسجلش رقم الزبون");
+    if (r.m.invoices >= 5 && (r.m.custPct ?? r.m.phonePct) < 10) out.push("ما يسجلش اسم ورقم الزبون");
     if (r.prev && r.prev.grams > 0) {
       const ch = ((r.m.grams - r.prev.grams) / r.prev.grams) * 100;
       if (ch >= 15) out.push(`تحسّن عن الفترة اللي قبلها (+${f(ch)}%)`);
@@ -317,13 +336,14 @@ export default function StaffEval() {
     return { cur: daysToRange(from, to), prev: daysToRange(addDays(from, -len), addDays(from, -1)) };
   }, [period]);
   const fetchAll = async (r: { start: string; end: string }) => {
-    const [a, b, c] = await Promise.all([
+    const [a, b, c, d] = await Promise.all([
       sb.rpc("amarsoft_staff_eval", { p_start: r.start, p_end: r.end, p_branch: null }),
       sb.rpc("amarsoft_staff_eval_extra", { p_start: r.start, p_end: r.end, p_branch: null }),
       sb.rpc("amarsoft_staff_eval_gold", { p_start: r.start, p_end: r.end, p_branch: null }),
+      sb.rpc("amarsoft_customer_capture", { p_start: r.start, p_end: r.end }),
     ]);
     if (a.error) throw a.error;
-    return { rows: (a.data ?? []) as Raw[], extra: (b.data ?? []) as Extra[], gold: (c.data ?? []) as Gold[] };
+    return { rows: (a.data ?? []) as Raw[], extra: (b.data ?? []) as Extra[], gold: (c.data ?? []) as Gold[], capture: (d.data ?? []) as Capture[] };
   };
   const q = useQuery({ queryKey: ["staff-eval", period], queryFn: () => fetchAll(ranges.cur) });
   const qPrev = useQuery({ queryKey: ["staff-eval-prev", period], queryFn: () => fetchAll(ranges.prev) });
@@ -344,18 +364,19 @@ export default function StaffEval() {
   }, [q.data]);
 
   // الأشخاص أو الفروع، مع الفترة اللي قبلها، والنقاط محسوبة بين نفس المجموعة.
-  const build = (data: { rows: Raw[]; extra: Extra[]; gold: Gold[] } | undefined): { id: string; name: string; sub: string; m: M }[] => {
+  const build = (data: { rows: Raw[]; extra: Extra[]; gold: Gold[]; capture: Capture[] } | undefined): { id: string; name: string; sub: string; m: M }[] => {
     if (!data) return [];
     const key = (r: { branch_code: string; sman: string }) => `${r.branch_code}|${r.sman}`;
     if (level === "branches") {
       return [...new Set(data.rows.map((r) => r.branch_code))].map((code) => {
         const rs = data.rows.filter((r) => r.branch_code === code);
-        return { id: code, name: rs[0].branch_name, sub: `${rs.length} بائع`, m: measure(rs, data.extra.filter((x) => x.branch_code === code), data.gold.filter((x) => x.branch_code === code)) };
+        const keys = new Set(rs.map(key));
+        return { id: code, name: rs[0].branch_name, sub: `${rs.length} بائع`, m: measure(rs, data.extra.filter((x) => x.branch_code === code), data.gold.filter((x) => x.branch_code === code), data.capture.filter((x) => keys.has(key(x)))) };
       });
     }
     return data.rows.filter((r) => branch === "all" || r.branch_code === branch).map((r) => ({
       id: key(r), name: r.salesman_name, sub: r.branch_name,
-      m: measure([r], data.extra.filter((x) => key(x) === key(r)), data.gold.filter((x) => key(x) === key(r))),
+      m: measure([r], data.extra.filter((x) => key(x) === key(r)), data.gold.filter((x) => key(x) === key(r)), data.capture.filter((x) => key(x) === key(r))),
     }));
   };
   const who: Who[] = useMemo(() => {

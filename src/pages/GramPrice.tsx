@@ -231,7 +231,7 @@ export default function GramPrice() {
               <h2 className="text-lg font-bold">أرخص البيعات — راجعهم</h2>
               <p className="text-xs text-muted-foreground mb-1">ممكن تكون بيع للسبك ولا غلط في الإدخال. اضغط تفتح الفاتورة.</p>
               {data.lowest.map((l) => (
-                <Link key={`${l.branch_code}-${l.invoice_no}-${l.grams}`} to={`/pos-sales?q=${encodeURIComponent(l.invoice_no)}&branch=${l.branch_code}`}
+                <Link key={`${l.branch_code}-${l.invoice_no}-${l.grams}`} to={`/amarsoft?tab=invoices&q=${encodeURIComponent(l.invoice_no)}&branch=${l.branch_code}`}
                   className="flex justify-between items-center gap-2 py-2 border-b last:border-0 text-sm active:bg-muted/40">
                   <span className="min-w-0">
                     <span className="block font-bold truncate">{l.descr ?? "—"} · {formatGrams(l.grams)}</span>

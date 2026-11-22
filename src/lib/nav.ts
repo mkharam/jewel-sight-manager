@@ -5,7 +5,7 @@ import {
   Search, MessageCircle, MessagesSquare, Upload, Users, ArrowLeftRight, BarChart3, Coins, ClipboardCheck, PackagePlus,
   Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Truck, UserCog, Watch, ClipboardList,
   Award, Layers, Scale, Building2, Wallet, TrendingUp, History, Link2, CalendarDays, CreditCard, ShoppingBag, Gem,
-  PieChart, Bell, Tags, ScanLine, Store, type LucideIcon,
+  PieChart, Bell, Tags, ScanLine, Store, UserCheck, type LucideIcon,
 } from "lucide-react";
 
 export type Role = "admin" | "supervisor" | "manager" | "staff" | "evalRecorder";
@@ -73,20 +73,21 @@ export const NAV: NavSection[] = [
     ],
   },
   {
-    key: "money", title: "المبيعات والفلوس", hint: "التقارير، الأسعار والأرباح، الفواتير، الإقفال", icon: PieChart,
+    key: "money", title: "المبيعات والفلوس", hint: "أمارسوفت (التقارير والفواتير والأرباح) والإقفال", icon: PieChart,
     tone: "bg-sky-500/15 text-sky-700 dark:text-sky-400",
     items: [
-      { to: "/reports", label: "التقارير", hint: "كل الفروع ومقارنتها والتنبيهات", icon: BarChart3, roles: A },
-      { to: "/reports?tab=daily", label: "ملخّص اليوم", hint: "شن صار اليوم في كل الفروع", icon: CalendarDays, roles: A },
-      { to: "/reports?tab=branches", label: "الفروع", hint: "كل فرع بروحه، يوم بيوم", icon: Building2, roles: A },
-      { to: "/reports?tab=gram", label: "الأسعار والأرباح", hint: "سعر الغرام والربح فوق سعر الذهب", icon: Coins, roles: A, keywords: "سعر الغرام ربح مصنعية" },
-      { to: "/reports?tab=accountant", label: "المحاسب", hint: "نقدي ومصرف وآجل", icon: Wallet, roles: A },
-      { to: "/reports?tab=sales", label: "البيع من التطبيق", hint: "المبيعات المسجّلة من التطبيق", icon: TrendingUp, roles: A, searchOnly: true },
-      { to: "/pos-sales", label: "الفواتير", hint: "كل فواتير البيع من أمارسوفت", icon: Receipt, roles: A },
-      { to: "/pos-sales?tab=log", label: "الممسوح والمعدّل", hint: "شن تبدّل في الفواتير", icon: History, roles: A },
-      { to: "/amarsoft", label: "أمارسوفت", hint: "كل صفحات أمارسوفت في مكان واحد", icon: Boxes, roles: AMS },
+      { to: "/amarsoft", label: "أمارسوفت", hint: "التقارير، الفروع، الفواتير، الأرباح، المحاسب، الموردون", icon: Boxes, roles: A },
+      { to: "/amarsoft?tab=overview", label: "نظرة عامة", hint: "كل الفروع ومقارنتها والتنبيهات", icon: BarChart3, roles: A, searchOnly: true },
+      { to: "/amarsoft?tab=branches", label: "الفروع", hint: "كل فرع بروحه، يوم بيوم", icon: Building2, roles: A, searchOnly: true },
+      { to: "/amarsoft?tab=invoices", label: "الفواتير", hint: "كل فواتير البيع من أمارسوفت", icon: Receipt, roles: A, searchOnly: true },
+      { to: "/amarsoft?tab=log", label: "الممسوح والمعدّل", hint: "شن تبدّل في الفواتير", icon: History, roles: A, searchOnly: true },
+      { to: "/amarsoft?tab=customers", label: "تسجيل الزبائن", hint: "اسم ورقم الزبون في الفواتير", icon: UserCheck, roles: A, searchOnly: true },
+      { to: "/amarsoft?tab=gram", label: "الأسعار والأرباح", hint: "سعر الغرام والربح فوق سعر الذهب", icon: Coins, roles: A, searchOnly: true },
+      { to: "/amarsoft?tab=accountant", label: "المحاسب", hint: "نقدي ومصرف وآجل", icon: Wallet, roles: A, searchOnly: true },
+      { to: "/amarsoft?tab=suppliers", label: "الموردون", hint: "شن دخل منهم وشن تباع وحساباتهم", icon: Truck, roles: A, searchOnly: true },
+      { to: "/amarsoft?tab=daily", label: "ملخّص اليوم", hint: "شن صار اليوم في كل الفروع", icon: CalendarDays, roles: A, searchOnly: true },
+      { to: "/amarsoft?tab=appsales", label: "البيع من التطبيق", hint: "المبيعات المسجّلة من التطبيق", icon: TrendingUp, roles: A, searchOnly: true },
       { to: "/closing", label: "إقفال اليوم", hint: "تسليم الخزينة آخر اليوم", icon: Landmark, roles: AM },
-      { to: "/suppliers", label: "الموردون", hint: "شن دخل منهم وشن تباع وحساباتهم", icon: Truck, roles: A },
     ],
   },
   {
@@ -148,30 +149,4 @@ export function currentPage(sections: NavSection[], pathname: string, search: st
   if (pathname === "/live-add") return { label: "إضافة مباشرة" };
   if (pathname.startsWith("/branches/")) return { label: "فرع" };
   return null;
-}
-
-// ===== آخر الصفحات المفتوحة =====
-const RECENT_KEY = "nav.recent";
-export function readRecent(): string[] {
-  try { return JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]"); } catch { return []; }
-}
-export function pushRecent(to: string) {
-  try {
-    const list = [to, ...readRecent().filter((x) => x !== to)].slice(0, 6);
-    localStorage.setItem(RECENT_KEY, JSON.stringify(list));
-  } catch { /* ignore */ }
-}
-
-/** بحث في القائمة: يطابق الاسم والوصف والكلمات، بتطبيع بسيط للحروف العربية. */
-const norm = (s: string) => s.toLowerCase().replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/\s+/g, " ").trim();
-export function searchNav(sections: NavSection[], q: string): { section: NavSection; item: NavItem }[] {
-  const n = norm(q);
-  if (!n) return [];
-  const out: { section: NavSection; item: NavItem; score: number }[] = [];
-  for (const s of sections) for (const i of s.items) {
-    const label = norm(i.label), hay = norm(`${i.hint} ${i.keywords ?? ""} ${s.title}`);
-    const score = label.startsWith(n) ? 3 : label.includes(n) ? 2 : hay.includes(n) ? 1 : 0;
-    if (score) out.push({ section: s, item: i, score });
-  }
-  return out.sort((a, b) => b.score - a.score).slice(0, 12);
 }

@@ -172,7 +172,7 @@ function BranchDetail({ code }: { code: string }) {
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
-      <Link to="/reports?tab=branches" className="inline-flex items-center gap-1 text-sm text-primary"><ArrowRight className="size-4" /> كل الفروع</Link>
+      <Link to="/amarsoft?tab=branches" className="inline-flex items-center gap-1 text-sm text-primary"><ArrowRight className="size-4" /> كل الفروع</Link>
       <div>
         <h1 className="text-2xl font-bold">{o?.branch_name ?? code}</h1>
         {o?.last_sale && <p className="text-xs text-muted-foreground">آخر بيعة: {formatTripoli(o.last_sale)}</p>}
@@ -197,7 +197,7 @@ function BranchDetail({ code }: { code: string }) {
           </div>
 
           <div className="grid grid-cols-2 gap-2">
-            <Button asChild size="lg" variant="outline" className="h-14 text-base"><Link to={`/pos-sales?branch=${code}`}>فواتير الفرع</Link></Button>
+            <Button asChild size="lg" variant="outline" className="h-14 text-base"><Link to={`/amarsoft?tab=invoices&branch=${code}`}>فواتير الفرع</Link></Button>
             <Button asChild size="lg" variant="outline" className="h-14 text-base"><Link to={`/pos-stock?branch=${code}`}>مخزون الفرع</Link></Button>
           </div>
 

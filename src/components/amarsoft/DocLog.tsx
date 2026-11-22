@@ -52,7 +52,7 @@ export default function DocLog({ branchName }: { branchName: (code: string) => s
       ) : (
         <div className="space-y-2">
           {data.map((e, i) => (
-            <Link key={i} to={`/pos-sales?q=${encodeURIComponent(e.trn_no)}`}>
+            <Link key={i} to={`/amarsoft?tab=invoices&q=${encodeURIComponent(e.trn_no)}`}>
               <Card className="p-3 flex items-center gap-3 mb-2">
                 <Badge className={STATUS[e.status]?.cls}>{STATUS[e.status]?.label ?? e.status}</Badge>
                 <div className="flex-1 min-w-0">

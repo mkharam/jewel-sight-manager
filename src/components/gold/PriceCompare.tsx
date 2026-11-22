@@ -208,7 +208,7 @@ export default function PriceCompare() {
       )}
 
       <p className="px-1 text-xs text-muted-foreground">
-        تفاصيل الأرباح لكل فرع ولأي فترة: <Link to="/reports?tab=gram" className="font-semibold text-primary underline">الأسعار والأرباح</Link>.
+        تفاصيل الأرباح لكل فرع ولأي فترة: <Link to="/amarsoft?tab=gram" className="font-semibold text-primary underline">الأسعار والأرباح</Link>.
       </p>
     </div>
   );

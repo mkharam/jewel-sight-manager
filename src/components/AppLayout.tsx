@@ -1,9 +1,9 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, LogOut, LayoutGrid } from "lucide-react";
+import { ArrowRight, LogOut, MoreHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import NavMenu from "@/components/NavMenu";
-import { currentPage, navFor, pushRecent, type NavItem, type Role } from "@/lib/nav";
+import { currentPage, navFor, type NavItem, type Role } from "@/lib/nav";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { roleLabel as roleLabelOf, useAuth } from "@/hooks/useAuth";
@@ -21,14 +21,16 @@ import { resumePendingUploads } from "@/lib/uploadRunner";
 import { useActivityFeed } from "@/hooks/useActivityFeed";
 import { CHAT_SEEN_KEY, NOTIFS_SEEN_KEY, SEEN_EVENT, readSeen, setIconBadge } from "@/lib/appBadge";
 
-// القائمة كلها من كتالوج واحد (src/lib/nav.ts): الأقسام، الصلاحيات، الوصف، البحث.
-// الشريط السفلي على الهاتف: أربع صفحات يومية + «القائمة». الموظف عمله اليومي تسجيل استفسار
+// القائمة كلها من كتالوج واحد (src/lib/nav.ts): الأقسام والصلاحيات.
+// الشريط السفلي على الهاتف: أربع صفحات يومية + «المزيد» (كل الباقي في شبكة وحدة). الموظف عمله اليومي تسجيل استفسار
 // وطلب إعادة قطعة؛ المدير العام أمارسوفت أهم له من رفع القطع.
 const MOBILE_BAR = ["/", "/chat", "/inquiries", "/upload"];
 const MOBILE_BAR_ADMIN = ["/", "/chat", "/inquiries", "/amarsoft"];
+// المشرف: أمارسوفت عنده هو المخزون.
+const MOBILE_BAR_SUPERVISOR = ["/", "/chat", "/inquiries", "/stock"];
 const MOBILE_BAR_STAFF = ["/", "/chat", "/inquiries", "/reorders", "/upload"];
 // أسماء قصيرة للشريط السفلي (الاسم الكامل في القائمة).
-const BAR_LABEL: Record<string, string> = { "/": "البحث", "/chat": "المحادثة", "/inquiries": "الاستفسارات", "/amarsoft": "أمارسوفت", "/upload": "رفع قطع", "/reorders": "إعادة الطلب" };
+const BAR_LABEL: Record<string, string> = { "/": "البحث", "/chat": "المحادثة", "/inquiries": "الاستفسارات", "/amarsoft": "أمارسوفت", "/stock": "المخزون", "/upload": "رفع قطع", "/reorders": "إعادة الطلب" };
 
 function CountBadge({ count, className }: { count: number; className?: string }) {
   if (count <= 0) return null;
@@ -228,17 +230,14 @@ export default function AppLayout() {
   ];
   const sections = navFor(navRoles);
   const allItems = sections.flatMap((sec) => sec.items);
-  const barPaths = isAdmin || isSupervisor ? MOBILE_BAR_ADMIN : isStaff ? MOBILE_BAR_STAFF : MOBILE_BAR;
+  const barPaths = isAdmin ? MOBILE_BAR_ADMIN : isSupervisor ? MOBILE_BAR_SUPERVISOR : isStaff ? MOBILE_BAR_STAFF : MOBILE_BAR;
   const mobileBar = barPaths.map((to) => allItems.find((i) => i.to === to)!).filter(Boolean);
   const countOf = (i: NavItem) => (i.badgeKey ? badges[i.badgeKey] ?? 0 : 0);
-  // تنبيه مجمّع على زر «القائمة» للي مش في الشريط، حتى ما تختفيش التحويلات المعلّقة داخلها.
-  const moreBadgeCount = allItems.filter((i) => !barPaths.includes(i.to)).reduce((n, i) => n + countOf(i), 0);
-  // اسم الصفحة الحالية وقسمها في الرأس، وتسجيلها في «آخر صفحات».
+  // تنبيه مجمّع على زر «المزيد» للي مش في الشريط، حتى ما تختفيش التحويلات المعلّقة داخله.
+  const moreBadgeCount = allItems.filter((i) => !i.searchOnly && !barPaths.includes(i.to)).reduce((n, i) => n + countOf(i), 0);
+  // اسم الصفحة الحالية وقسمها في الرأس.
   const { search } = useLocation();
   const page = currentPage(sections, pathname, search);
-  useEffect(() => {
-    if (page?.item && page.item.to !== "/") pushRecent(page.item.to);
-  }, [page?.item?.to]); // eslint-disable-line react-hooks/exhaustive-deps
   const roleLabel = roleLabelOf(roles);
 
   const signOut = async () => {
@@ -308,13 +307,13 @@ export default function AppLayout() {
       </header>
 
       <div className="flex flex-1">
-        {/* الشريط الجانبي على الكمبيوتر والآيباد بالعرض: نفس القائمة بالأقسام والبحث. */}
-        <aside className="hidden lg:block shrink-0 w-64 border-l border-border bg-card/60">
+        {/* الشريط الجانبي على الكمبيوتر والآيباد بالعرض: كل الأقسام مفتوحة. */}
+        <aside className="hidden lg:block shrink-0 w-60 border-l border-border bg-card/60">
           <nav
             aria-label="التنقّل"
-            className="sticky top-[calc(env(safe-area-inset-top)+4rem)] max-h-[calc(100dvh-env(safe-area-inset-top)-4rem)] overflow-y-auto p-3"
+            className="sticky top-[calc(env(safe-area-inset-top)+4rem)] max-h-[calc(100dvh-env(safe-area-inset-top)-4rem)] overflow-y-auto py-3 px-2"
           >
-            <NavMenu sections={sections} countOf={countOf} compact />
+            <NavMenu sections={sections} countOf={countOf} variant="list" />
           </nav>
         </aside>
 
@@ -351,22 +350,22 @@ export default function AppLayout() {
             <SheetTrigger asChild>
               <button
                 type="button"
-                aria-label="القائمة"
+                aria-label="المزيد"
                 className="min-h-[64px] py-2 flex flex-col items-center justify-center gap-1 text-xs font-semibold text-muted-foreground active:bg-muted/40 select-none"
               >
                 <div className="relative flex items-center justify-center rounded-xl h-8 w-12">
-                  <LayoutGrid className="size-[22px]" />
+                  <MoreHorizontal className="size-[22px]" />
                   <CountBadge count={moreBadgeCount} className="absolute -top-1 left-1" />
                 </div>
-                <span className="leading-none">القائمة</span>
+                <span className="leading-none">المزيد</span>
               </button>
             </SheetTrigger>
-            <SheetContent side="bottom" className="rounded-t-2xl pb-8 h-[92dvh] overflow-y-auto">
+            <SheetContent side="bottom" className="rounded-t-2xl pb-8 max-h-[85dvh] overflow-y-auto">
               <SheetHeader className="text-right">
-                <SheetTitle>القائمة</SheetTitle>
+                <SheetTitle>المزيد</SheetTitle>
               </SheetHeader>
               <div className="mt-3">
-                <NavMenu sections={sections} countOf={countOf} onNavigate={() => setMoreOpen(false)} />
+                <NavMenu sections={sections} countOf={countOf} variant="grid" hide={barPaths} onNavigate={() => setMoreOpen(false)} />
               </div>
             </SheetContent>
           </Sheet>

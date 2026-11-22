@@ -471,8 +471,8 @@ export default function AmarsoftReports() {
           {(v.t.deleted > 0 || v.t.edited > 0 || v.t.returns > 0 || v.silent.length > 0) && (
             <Card className="p-3 border-destructive/40 space-y-1.5">
               <h2 className="font-bold flex items-center gap-1.5"><AlertTriangle className="size-5 text-destructive" />انتبه</h2>
-              {v.t.deleted > 0 && <Link to="/pos-sales?tab=log" className="block text-destructive font-bold">{v.t.deleted} فاتورة ممسوحة ←</Link>}
-              {v.t.edited > 0 && <Link to="/pos-sales?tab=log" className="block">{v.t.edited} فاتورة تعدّلت بعد ما تسجلت ←</Link>}
+              {v.t.deleted > 0 && <Link to="/amarsoft?tab=log" className="block text-destructive font-bold">{v.t.deleted} فاتورة ممسوحة ←</Link>}
+              {v.t.edited > 0 && <Link to="/amarsoft?tab=log" className="block">{v.t.edited} فاتورة تعدّلت بعد ما تسجلت ←</Link>}
               {v.t.returns > 0 && <div>{v.t.returns} فاتورة مرتجع</div>}
               {v.silent.map((b) => (
                 <Link key={b.branch_code} to={`/branches/${b.branch_code}`} className="block">
@@ -486,7 +486,7 @@ export default function AmarsoftReports() {
           <Card className="p-3">
             <div className="flex justify-between items-center mb-1">
               <h2 className="text-lg font-bold">الفروع</h2>
-              <Link to="/reports?tab=branches" className="text-sm font-semibold text-primary">التفاصيل ←</Link>
+              <Link to="/amarsoft?tab=branches" className="text-sm font-semibold text-primary">التفاصيل ←</Link>
             </div>
             <Hint>مرتبة من الأكثر مبيعاً. السهم الأخضر يعني زاد عن الفترة اللي قبلها والأحمر نقص. اضغط على فرع تشوف تفاصيله، والأرقام كاملة في خانة «مقارنة الفروع».</Hint>
             {v.branches.map((b) => (
@@ -571,7 +571,7 @@ export default function AmarsoftReports() {
               </div>
             ))}
             {!!v.stale.length && (
-              <Link to="/suppliers" className="block rounded-lg bg-destructive/10 p-2.5 text-sm mt-2">
+              <Link to="/amarsoft?tab=suppliers" className="block rounded-lg bg-destructive/10 p-2.5 text-sm mt-2">
                 <div className="font-bold text-destructive mb-0.5">بضاعة قاعدة أكثر من 6 أشهر ←</div>
                 {v.stale.map((s) => <div key={s.supplier_code}>{s.name ?? s.supplier_code}: {n0(s.stale_pcs)} قطعة</div>)}
               </Link>

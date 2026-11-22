@@ -32,7 +32,7 @@ type Invoice = {
 };
 type Salesman = { branch_code: string; sman: string; name: string | null; is_active: boolean; profile_id: string | null };
 
-// الأرباح وسعر الغرام انتقلوا لصفحة وحدة «الأسعار والأرباح» (/reports?tab=gram) بسعر ذهب تلقائي.
+// الأرباح وسعر الغرام انتقلوا لصفحة وحدة «الأسعار والأرباح» (/amarsoft?tab=gram) بسعر ذهب تلقائي.
 const TABS = [
   { key: "invoices", label: "الفواتير" },
   { key: "log", label: "الممسوح والمعدّل" },
@@ -61,7 +61,8 @@ const CHIPS: { key: Period; label: string }[] = [
   { key: "week", label: "هذا الأسبوع" }, { key: "month", label: "هذا الشهر" },
 ];
 
-export default function PosSales() {
+/** embedded: داخل صفحة «أمارسوفت» — الخانات (الفواتير / الممسوح والمعدّل) فوق في الصفحة نفسها. */
+export default function PosSales({ embedded = false }: { embedded?: boolean } = {}) {
   const today = tripoliToday();
   // ?q= من صفحات أخرى (المخزون، العملاء): ابحث في كل التاريخ بدل اليوم فقط.
   const [params] = useSearchParams();
@@ -190,11 +191,13 @@ export default function PosSales() {
         <Button variant="outline" size="sm" onClick={() => setSmenOpen(true)}><Users className="size-4 ml-1" />البائعون</Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-1.5">
-        {TABS.map((t) => (
-          <Button key={t.key} size="lg" variant={tab === t.key ? "default" : "outline"} onClick={() => setTab(t.key)} className="text-base">{t.label}</Button>
-        ))}
-      </div>
+      {!embedded && (
+        <div className="grid grid-cols-2 gap-1.5">
+          {TABS.map((t) => (
+            <Button key={t.key} size="lg" variant={tab === t.key ? "default" : "outline"} onClick={() => setTab(t.key)} className="text-base">{t.label}</Button>
+          ))}
+        </div>
+      )}
 
       {/* الفروع قابلة للضغط: صفحة الفرع فيها مبيعاته ومخزونه وموظفوه والممسوح والمعدّل. */}
       <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
