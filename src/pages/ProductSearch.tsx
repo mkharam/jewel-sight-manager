@@ -3,7 +3,7 @@ import { Link, useSearchParams, useNavigationType } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { deleteProducts } from "@/lib/productImages";
-import { isLead, roleLabel as roleLabelOf, useAuth } from "@/hooks/useAuth";
+import { isLead, roleLabel as roleLabelOf, useAuth, isManagerOrAdmin } from "@/hooks/useAuth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -208,6 +208,9 @@ export default function ProductSearch() {
   // سعر قديم (أكثر من يومين) ما يتكتبش «اليوم» — الموظف يشوف تاريخه فما يعطيش زبون سعر غلط.
   const goldAge = goldRates.length ? Math.max(...goldRates.map((r) => daysBetween(r.effective_date, businessToday()))) : 0;
   const goldOld = goldAge > 2;
+  // المشرف/المدير هو اللي يحدّث السعر: نوريله التنبيه من أول يوم، رابط يوديه للتسعير مباشرة
+  // (الشريط الأصفر العام ما يطلعش في الرئيسية — هذا مكانه).
+  const canUpdateGold = isManagerOrAdmin(roles);
   const goldDate = goldRates.length
     ? new Intl.DateTimeFormat("ar-LY-u-nu-latn", { day: "numeric", month: "long" }).format(new Date(`${goldRates.map((r) => r.effective_date).sort()[0]}T12:00:00Z`))
     : "";
@@ -661,9 +664,11 @@ export default function ProductSearch() {
           {goldRates.length > 0 && (
             <div className="flex items-center gap-1.5 mb-2.5 flex-wrap">
               <Coins className="size-3.5 text-primary shrink-0" />
-              {goldOld
-                ? <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400">⚠️ سعر قديم من {goldDate} — اسأل المشرف</span>
-                : <span className="text-[11px] text-muted-foreground">سعر الغرام اليوم</span>}
+              {canUpdateGold && goldAge > 0
+                ? <Link to="/gold-price?tab=price" className="text-[11px] font-bold text-amber-600 underline underline-offset-2 dark:text-amber-400">⚠️ السعر من {goldDate} — حدّثه</Link>
+                : goldOld
+                  ? <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400">⚠️ سعر قديم من {goldDate} — اسأل المشرف</span>
+                  : <span className="text-[11px] text-muted-foreground">سعر الغرام اليوم</span>}
               {goldRates.map((r) => (
                 <span
                   key={r.karat}

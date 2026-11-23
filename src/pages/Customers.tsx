@@ -79,10 +79,21 @@ export default function Customers() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-4">
+      {/* سطر واحد: العنوان (على الكمبيوتر بس — على الهاتف هو في الرأس)، القائمة/اللوحة، وزر عميل جديد. */}
       <div className="flex items-center justify-between gap-2">
-        <h1 className="text-xl font-bold flex items-center gap-2">
+        <h1 className="text-xl font-bold flex items-center gap-2 max-lg:hidden">
           <Users className="size-5 text-primary" /> العملاء
         </h1>
+        {isAdmin && (
+          <div className="flex rounded-xl bg-muted p-1" role="tablist" aria-label="العرض">
+            {([["book", "القائمة"], ["dashboard", "اللوحة"]] as const).map(([k, label]) => (
+              <button key={k} type="button" role="tab" aria-selected={view === k} onClick={() => setView(k)}
+                className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition ${view === k ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         <Dialog open={openNew} onOpenChange={(o) => { setOpenNew(o); if (!o) resetForm(); }}>
           <DialogTrigger asChild>
             <Button className="bg-gold-gradient text-primary-foreground shadow-gold">
@@ -103,13 +114,6 @@ export default function Customers() {
           </DialogContent>
         </Dialog>
       </div>
-
-      {isAdmin && (
-        <div className="grid grid-cols-2 gap-1.5">
-          <Button size="lg" variant={view === "book" ? "default" : "outline"} onClick={() => setView("book")} className="text-base">العملاء</Button>
-          <Button size="lg" variant={view === "dashboard" ? "default" : "outline"} onClick={() => setView("dashboard")} className="text-base">اللوحة</Button>
-        </div>
-      )}
 
       {isAdmin ? (view === "dashboard" ? <CustomerDashboard onOpen={openById} /> : (
         <CustomerBook onOpen={(r) => setActiveCustomer({ id: r.customer_id, full_name: r.full_name, phone: r.phone, notes: r.notes, branch_id: null, created_at: "" })} />

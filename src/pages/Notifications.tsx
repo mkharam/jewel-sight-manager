@@ -16,7 +16,7 @@ export default function Notifications() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 max-lg:hidden">
         <Bell className="size-6 text-primary" />
         <h1 className="text-2xl font-bold">{isAdmin ? "الإشعارات" : "ما يخصّك"}</h1>
       </div>

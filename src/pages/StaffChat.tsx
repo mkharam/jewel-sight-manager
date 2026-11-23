@@ -93,7 +93,8 @@ export default function StaffChat() {
 
   return (
     <div className="max-w-2xl mx-auto animate-in fade-in duration-300">
-      <div className="mb-3">
+      {/* على الهاتف الرأس فوق يقول «المحادثة» — المساحة للرسائل. */}
+      <div className="mb-3 max-lg:hidden">
         <h1 className="text-xl font-bold">محادثة الموظفين</h1>
         <p className="text-sm text-muted-foreground">قناة فريق واحدة، تصل فوراً لكل من يفتح هذه الصفحة.</p>
       </div>

@@ -150,8 +150,8 @@ export function currentPage(sections: NavSection[], pathname: string, search: st
   for (const s of sections) for (const i of s.items) if (isActiveItem(i, pathname, search)) return { section: s, item: i, label: i.label };
   // صفحة بخانات مفتوحة على خانة ما لهاش زر: اسم الصفحة الأم.
   for (const s of sections) for (const i of s.items) if (splitTo(i.to).path === pathname && !splitTo(i.to).tab && pathname !== "/") return { section: s, item: i, label: i.label };
+  if (pathname === "/products/new") return { label: "قطعة جديدة" }; // قبل /products/… وإلا تطلع «قطعة»
   if (pathname.startsWith("/products/")) return { label: pathname.endsWith("/edit") ? "تعديل قطعة" : "قطعة" };
-  if (pathname === "/products/new") return { label: "قطعة جديدة" };
   if (pathname === "/live-add") return { label: "إضافة مباشرة" };
   if (pathname.startsWith("/branches/")) return { label: "فرع" };
   return null;

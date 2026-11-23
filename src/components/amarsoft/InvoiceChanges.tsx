@@ -52,9 +52,10 @@ export default function InvoiceChanges({ branch, compact }: { branch?: string; c
         </Button>
       </div>
       {!compact && (
-        <div className="flex gap-1.5">
-          {[30, 60, 180, 365].map((d) => (
-            <Button key={d} size="sm" variant={days === d ? "default" : "outline"} onClick={() => setDays(d)}>آخر {d} يوم</Button>
+        // أربعة أزرار تساع عرض الهاتف (كانت أعرض من الشاشة فالصفحة كلها تتسحب بالعرض).
+        <div className="grid grid-cols-4 gap-1.5">
+          {([[30, "30 يوم"], [60, "60 يوم"], [180, "6 أشهر"], [365, "سنة"]] as const).map(([d, label]) => (
+            <Button key={d} size="sm" variant={days === d ? "default" : "outline"} onClick={() => setDays(d)} className="px-1">{label}</Button>
           ))}
         </div>
       )}

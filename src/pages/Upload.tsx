@@ -119,12 +119,14 @@ export default function Upload() {
   return (
     <div className="max-w-5xl mx-auto space-y-4">
       <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-2xl font-bold flex items-center gap-2 max-lg:hidden">
             <Sparkles className="size-6 text-primary" />
             رفع قطع جديدة
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          {/* على الهاتف سطر واحد بدل أربعة — اسم الصفحة في الرأس فوق. */}
+          <p className="text-xs text-muted-foreground lg:hidden">كل صورة تتحلّل وتتحفظ لوحدها، وتقدر تطلع من الصفحة والرفع يكمل.</p>
+          <p className="text-sm text-muted-foreground mt-1 max-lg:hidden">
             صوّر أو ارفع صوراً (أو PDF) — كل صورة تُرفع وتُحلّل وتُحفظ على حدة فور اكتمالها، فيمكنك البدء بالعمل على ما
             اكتمل بينما البقية لا تزال قيد التحليل. يمكنك مغادرة هذه الصفحة والاستمرار في العمل، الرفع يستمر. الفرع
             اختياري.

@@ -197,11 +197,11 @@ export default function DailyClosing() {
   return (
     <div className="space-y-4 max-w-3xl mx-auto">
       <header className="flex items-center gap-3">
-        <div className="size-10 rounded-xl bg-gold-gradient flex items-center justify-center shadow-gold">
+        <div className="size-10 rounded-xl bg-gold-gradient flex items-center justify-center shadow-gold max-lg:hidden">
           <Landmark className="size-5 text-primary-foreground" />
         </div>
         <div>
-          <h1 className="text-xl font-extrabold text-gold-gradient">إقفال اليوم</h1>
+          <h1 className="text-xl font-extrabold text-gold-gradient max-lg:hidden">إقفال اليوم</h1>
           <p className="text-xs text-muted-foreground">عُدّ الدرج وأدخل ما لديك؛ يقارنه النظام بمبيعات اليوم ومصروفاته.</p>
         </div>
       </header>

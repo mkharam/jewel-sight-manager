@@ -122,21 +122,24 @@ export default function Repairs() {
 
   return (
     <div className="space-y-4">
+      {/* على الهاتف اسم الصفحة في الرأس فوق — هنا بس وقت آخر مزامنة. */}
       <div className="flex items-center gap-2">
-        <Wrench className="size-5 text-primary" />
-        <h1 className="text-xl font-bold">الصيانة</h1>
-        {lastSynced && <span className="mr-auto text-xs text-muted-foreground">آخر مزامنة: {formatDate(lastSynced)}</span>}
+        <Wrench className="size-5 text-primary max-lg:hidden" />
+        <h1 className="text-xl font-bold max-lg:hidden">الصيانة</h1>
+        {lastSynced && <span className="lg:mr-auto text-xs text-muted-foreground">آخر مزامنة: {formatDate(lastSynced)}</span>}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard icon={<Clock className="size-4" />} label="مفتوحة" value={stats.open} />
-        <StatCard icon={<CheckCircle2 className="size-4" />} label="جاهزة للتسليم" value={stats.ready} />
-        <StatCard icon={<AlertTriangle className="size-4" />} label="متأخرة" value={stats.overdue} danger={stats.overdue > 0} />
-        <StatCard icon={<PackageCheck className="size-4" />} label="مسلّمة" value={stats.delivered} />
+      {/* الأربعة في سطر واحد حتى على الهاتف، والضغط على أي وحدة يفلتر القائمة تحت. */}
+      <div className="grid grid-cols-4 gap-1.5 sm:gap-3">
+        <StatCard icon={<Clock className="size-4" />} label="مفتوحة" value={stats.open} active={statusFilter === "open"} onClick={() => setStatusFilter("open")} />
+        <StatCard icon={<CheckCircle2 className="size-4" />} label="جاهزة" value={stats.ready} active={statusFilter === "ready"} onClick={() => setStatusFilter("ready")} />
+        <StatCard icon={<AlertTriangle className="size-4" />} label="متأخرة" value={stats.overdue} danger={stats.overdue > 0} active={statusFilter === "overdue"} onClick={() => setStatusFilter("overdue")} />
+        <StatCard icon={<PackageCheck className="size-4" />} label="مسلّمة" value={stats.delivered} active={statusFilter === "delivered"} onClick={() => setStatusFilter("delivered")} />
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <div className="relative col-span-2 sm:col-span-1">
+      {/* البحث سطر كامل على الهاتف، والقوائم (فرع، موظف، حالة) كلها في السطر اللي تحته. */}
+      <div className="flex flex-wrap gap-2 [&>button]:min-w-[6.5rem] [&>button]:flex-1 [&>button]:px-2.5 [&>button]:text-xs sm:[&>button]:text-sm">
+        <div className="relative basis-full sm:basis-0 sm:flex-[2]">
           <SearchIcon className="absolute right-2.5 top-2.5 size-4 text-muted-foreground" />
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="رقم التذكرة، الزبون، الهاتف…" className="pr-8" />
         </div>
@@ -221,12 +224,17 @@ export default function Repairs() {
   );
 }
 
-function StatCard({ icon, label, value, danger }: { icon: React.ReactNode; label: string; value: number; danger?: boolean }) {
+function StatCard({ icon, label, value, danger, active, onClick }: {
+  icon: React.ReactNode; label: string; value: number; danger?: boolean; active?: boolean; onClick?: () => void;
+}) {
   return (
-    <Card className="p-4">
-      <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">{icon}{label}</div>
-      <p className={`text-xl font-extrabold ${danger ? "text-destructive" : "text-gold-gradient"}`}>{value}</p>
-    </Card>
+    <button type="button" onClick={onClick} aria-pressed={active}
+      className={`rounded-xl border bg-card p-2 text-center shadow-sm transition sm:p-4 sm:text-right ${active ? "ring-2 ring-primary" : "hover:bg-muted/40"}`}>
+      <div className="mb-0.5 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground sm:mb-1 sm:justify-start sm:text-xs">
+        <span className="hidden sm:inline">{icon}</span>{label}
+      </div>
+      <p className={`text-lg font-extrabold tabular-nums sm:text-xl ${danger ? "text-destructive" : "text-gold-gradient"}`}>{value}</p>
+    </button>
   );
 }
 

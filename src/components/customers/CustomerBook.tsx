@@ -1,7 +1,7 @@
 // قائمة العملاء المرتّبة (المدير العام): كل عميل بآخر زيارة، مجموع شرياته، سعر القرام آخر مرة، ومستواه وبطاقته.
 // فلاتر بالمستوى والبطاقة وآخر زيارة والفرع، وترتيب بآخر زيارة ولا الأكثر شراء. الضغط على العميل يفتح ملفه.
 import { useMemo, useState } from "react";
-import { CreditCard, Loader2, Search } from "lucide-react";
+import { CreditCard, Loader2, Search, SlidersHorizontal } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,10 @@ export default function CustomerBook({ onOpen }: { onOpen: (r: CustomerRow) => v
   const [branch, setBranch] = useState("all");
   const [sort, setSort] = useState<SortKey>("last");
   const [shown, setShown] = useState(50);
+  const [showFilters, setShowFilters] = useState(false);
+  // كم فلتر شغّال (غير الافتراضي) — يبان على زر «فلترة» حتى لو اللوحة مسكّرة.
+  const activeFilters = (card !== "all" ? 1 : 0) + (visit !== "all" ? 1 : 0) + (branch !== "all" ? 1 : 0) + (sort !== "last" ? 1 : 0);
+  const clearFilters = () => { setCard("all"); setVisit("all"); setBranch("all"); setSort("last"); };
 
   const rows = useMemo(() => data ?? [], [data]);
   const counts = useMemo(() => {
@@ -86,52 +90,73 @@ export default function CustomerBook({ onOpen }: { onOpen: (r: CustomerRow) => v
 
   return (
     <div className="space-y-3">
+      {/* البحث أول حاجة (أكثر شي يُستعمل)، والفلاتر مطوية ورا زر واحد — باش القائمة تبان من غير ما تنزل. */}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ابحث بالاسم أو الهاتف" className="pr-9" />
+        </div>
+        <Button variant={showFilters ? "default" : "outline"} onClick={() => setShowFilters(!showFilters)}
+          aria-expanded={showFilters} className="shrink-0 gap-1.5 px-3">
+          <SlidersHorizontal className="size-4" />فلترة
+          {activeFilters > 0 && (
+            <span className={`min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center ${showFilters ? "bg-primary-foreground text-primary" : "bg-primary text-primary-foreground"}`}>
+              {activeFilters}
+            </span>
+          )}
+        </Button>
+      </div>
+
+      {showFilters && (
+        <Card className="p-2 space-y-2">
+          <div className="grid grid-cols-3 gap-1.5">
+            {([["all", "كل العملاء"], ["yes", "عنده بطاقة"], ["no", "بلا بطاقة"]] as const).map(([k, label]) => (
+              <Button key={k} size="sm" variant={card === k ? "default" : "outline"} onClick={() => setCard(k)}>{label}</Button>
+            ))}
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            <Select value={visit} onValueChange={(x) => setVisit(x as VisitKey)}>
+              <SelectTrigger aria-label="آخر زيارة"><SelectValue /></SelectTrigger>
+              <SelectContent>{VISITS.map((x) => <SelectItem key={x.key} value={x.key}>{x.label}</SelectItem>)}</SelectContent>
+            </Select>
+            <Select value={branch} onValueChange={setBranch}>
+              <SelectTrigger aria-label="الفرع"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">كل الفروع</SelectItem>
+                {branches.map(([code, name]) => <SelectItem key={code} value={code}>{name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={sort} onValueChange={(x) => setSort(x as SortKey)}>
+              <SelectTrigger aria-label="الترتيب"><SelectValue /></SelectTrigger>
+              <SelectContent>{SORTS.map((x) => <SelectItem key={x.key} value={x.key}>{x.label}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <p className="text-[11px] text-muted-foreground">المستوى (ذهبي، فضي، برونزي) من مجموع شرياتهم في أمارسوفت.</p>
+        </Card>
+      )}
+
       <div className="grid grid-cols-4 gap-1.5">
-        <button onClick={() => setTier("all")} className={`rounded-xl p-2 text-center border transition ${tier === "all" ? "ring-2 ring-primary" : ""}`}>
-          <p className="text-xl font-black tabular-nums">{rows.length}</p>
-          <p className="text-xs text-muted-foreground">الكل</p>
+        <button onClick={() => setTier("all")} className={`rounded-xl px-1 py-1.5 text-center border transition ${tier === "all" ? "ring-2 ring-primary" : ""}`}>
+          <p className="text-lg font-black tabular-nums leading-tight">{rows.length}</p>
+          <p className="text-[11px] text-muted-foreground">الكل</p>
         </button>
         {(["gold", "silver", "bronze"] as Tier[]).map((t) => (
           <button key={t} onClick={() => setTier(tier === t ? "all" : t)}
-            className={`rounded-xl p-2 text-center border transition ${tier === t ? "ring-2 ring-primary" : ""}`}>
-            <p className="text-xl font-black tabular-nums">{counts[t]}</p>
-            <p className="text-xs text-muted-foreground">{TIERS[t].label}</p>
+            className={`rounded-xl px-1 py-1.5 text-center border transition ${tier === t ? "ring-2 ring-primary" : ""}`}>
+            <p className="text-lg font-black tabular-nums leading-tight">{counts[t]}</p>
+            <p className="text-[11px] text-muted-foreground">{TIERS[t].label}</p>
           </button>
         ))}
       </div>
-      <p className="text-xs text-muted-foreground">
-        {counts.active} جو آخر 3 شهور · {counts.cards} عندهم بطاقة ولاء. المستوى من مجموع شرياتهم في أمارسوفت.
-      </p>
-
-      <div className="grid grid-cols-3 gap-1.5">
-        {([["all", "كل العملاء"], ["yes", "عنده بطاقة"], ["no", "بلا بطاقة"]] as const).map(([k, label]) => (
-          <Button key={k} size="sm" variant={card === k ? "default" : "outline"} onClick={() => setCard(k)}>{label}</Button>
-        ))}
+      <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+        <p>
+          <span className="font-semibold text-foreground">{list.length} عميل</span>
+          {" · "}{counts.active} جو آخر 3 شهور · {counts.cards} عندهم بطاقة
+        </p>
+        {activeFilters > 0 && (
+          <button type="button" onClick={clearFilters} className="shrink-0 font-semibold text-primary">مسح الفلاتر</button>
+        )}
       </div>
-
-      <div className="grid grid-cols-3 gap-1.5">
-        <Select value={visit} onValueChange={(x) => setVisit(x as VisitKey)}>
-          <SelectTrigger aria-label="آخر زيارة"><SelectValue /></SelectTrigger>
-          <SelectContent>{VISITS.map((x) => <SelectItem key={x.key} value={x.key}>{x.label}</SelectItem>)}</SelectContent>
-        </Select>
-        <Select value={branch} onValueChange={setBranch}>
-          <SelectTrigger aria-label="الفرع"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">كل الفروع</SelectItem>
-            {branches.map(([code, name]) => <SelectItem key={code} value={code}>{name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={sort} onValueChange={(x) => setSort(x as SortKey)}>
-          <SelectTrigger aria-label="الترتيب"><SelectValue /></SelectTrigger>
-          <SelectContent>{SORTS.map((x) => <SelectItem key={x.key} value={x.key}>{x.label}</SelectItem>)}</SelectContent>
-        </Select>
-      </div>
-
-      <div className="relative">
-        <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ابحث بالاسم أو الهاتف" className="pr-9" />
-      </div>
-      <p className="text-xs text-muted-foreground">{list.length} عميل</p>
 
       {!list.length ? <Card className="p-8 text-center text-muted-foreground">ما فيش عميل مطابق</Card> : (
         <div className="space-y-2">

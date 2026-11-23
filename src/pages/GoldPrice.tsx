@@ -140,7 +140,8 @@ export default function GoldPrice() {
 
   return (
     <div className="space-y-4 max-w-4xl mx-auto">
-      <header className="flex items-center gap-3">
+      {/* داخل «الذهب والسوق» على الهاتف: اسم الخانة ووصفها فوق — العنوان والوصف هنا مكررين. */}
+      <header className="hub-title flex items-center gap-3">
         <div className="hub-title size-10 rounded-xl bg-gold-gradient flex items-center justify-center shadow-gold">
           <Coins className="size-5 text-primary-foreground" />
         </div>
@@ -150,6 +151,101 @@ export default function GoldPrice() {
         </div>
       </header>
 
+      {/* الترتيب: سعر اليوم أول حاجة (هو اللي يتحدّث كل يوم)، بعده اقتراح السوق والحاسبة،
+          ومفاتيح «شن يشوف الموظف» تحت لأنها تتبدّل نادراً. */}
+      {/* عيار عليه بضاعة ولا سعر غرام له = قطع لا يمكن تسعيرها إطلاقاً، ولا شيء كان
+          يُنبّه إلى ذلك: سُجّل سعر ٢٢K بينما بضاعة المتجر ١٨K و٢١K. */}
+      {unpricedKarats.length > 0 && (
+        <Card className="p-3 border-warning/40 bg-warning/10">
+          <p className="text-sm font-semibold flex items-center gap-2">
+            <AlertTriangle className="size-4 text-warning-foreground shrink-0" />
+            عيارات عليها بضاعة بلا سعر غرام
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {unpricedKarats.map((u) => `${u.karat} (${u.pieces} قطعة)`).join(" · ")} — لن يظهر لها سعر
+            للموظفين حتى تُدخل سعر غرامها هنا.
+          </p>
+        </Card>
+      )}
+
+      <div className="grid sm:grid-cols-2 gap-3">
+        {KARATS.map((k) => {
+          const cur = latest.get(k);
+          return (
+            <Card key={k} id={`karat-${k}`} className="scroll-mt-24">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center justify-between">
+                  <span>{k}</span>
+                  <span className="text-sm font-normal text-muted-foreground">
+                    {cur ? `${formatCurrency(cur.price_per_gram)} / غ` : "لا سعر بعد"}
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs">سعر الجرام</Label>
+                    <Input inputMode="decimal" value={form[k]?.price ?? ""}
+                      onChange={(e) => setForm((f) => ({ ...f, [k]: { price: normalizeDecimalInput(e.target.value), making: f[k]?.making ?? "" } }))} />
+                  </div>
+                  <div>
+                    <Label className="text-xs">المصنعية / غ</Label>
+                    <Input inputMode="decimal" value={form[k]?.making ?? ""}
+                      onChange={(e) => setForm((f) => ({ ...f, [k]: { price: f[k]?.price ?? "", making: normalizeDecimalInput(e.target.value) } }))} />
+                  </div>
+                </div>
+                <Button size="sm" className="w-full" onClick={() => save(k)}>
+                  <Save className="size-4 ml-1" /> حفظ سعر اليوم
+                </Button>
+                {cur && cur.effective_date !== businessToday() && (
+                  <Button size="sm" variant="outline" className="w-full" onClick={() => confirmUnchanged(k)}>
+                    السعر لم يتغيّر — أكّد سعر اليوم ({formatCurrency(cur.price_per_gram)})
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      <GoldSpotSuggestion
+        onUse={(karat, price) => {
+          setForm((f) => ({ ...f, [karat]: { price: String(price), making: f[karat]?.making ?? "" } }));
+          // بطاقة العيار صارت فوق الاقتراح — نطلعوله باش يشوف الرقم وينزل «حفظ».
+          document.getElementById(`karat-${karat}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+          toast.info(`حطّينا ${formatCurrency(price)} في خانة ${karat} — راجعه واضغط «حفظ سعر اليوم»`);
+        }}
+      />
+
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-base">حاسبة السعر المقترح</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">الوزن (غ)</Label>
+              <Input inputMode="decimal" dir="ltr" value={weight} onChange={(e) => setWeight(normalizeDecimalInput(e.target.value))} />
+            </div>
+            <div>
+              <Label className="text-xs">العيار</Label>
+              <div className="flex gap-1 mt-1">
+                {KARATS.map((k) => (
+                  <Button key={k} type="button" size="sm" variant={calcKarat === k ? "default" : "secondary"} onClick={() => setCalcKarat(k)}>
+                    {k}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <p className="text-sm">
+            السعر المقترح:{" "}
+            <span className="text-xl font-extrabold text-primary">
+              {suggestion != null ? formatCurrency(suggestion) : "—"}
+            </span>
+          </p>
+        </CardContent>
+      </Card>
+
+      <p className="pt-1 text-xs font-bold text-muted-foreground">شن يشوف الموظفون</p>
       {/* مفتاح المالك: الزبون يقف بجانب الموظف وقد يرى شاشته، فليس دائماً مرغوباً أن
           يظهر سعر كل قطعة في الكتالوق. حين يُطفأ يبقى سعر الغرام وحده ظاهراً للموظف في
           صفحته الرئيسية ويبقى تسجيل السعر لزبون متاحاً. المالك يرى الأسعار دائماً. */}
@@ -210,93 +306,6 @@ export default function GoldPrice() {
             <Button size="sm" disabled={savingRange} onClick={() => saveRange(true)}>حفظ النطاق</Button>
           </div>
         )}
-      </Card>
-
-      {/* عيار عليه بضاعة ولا سعر غرام له = قطع لا يمكن تسعيرها إطلاقاً، ولا شيء كان
-          يُنبّه إلى ذلك: سُجّل سعر ٢٢K بينما بضاعة المتجر ١٨K و٢١K. */}
-      {unpricedKarats.length > 0 && (
-        <Card className="p-3 border-warning/40 bg-warning/10">
-          <p className="text-sm font-semibold flex items-center gap-2">
-            <AlertTriangle className="size-4 text-warning-foreground shrink-0" />
-            عيارات عليها بضاعة بلا سعر غرام
-          </p>
-          <p className="text-xs text-muted-foreground mt-1">
-            {unpricedKarats.map((u) => `${u.karat} (${u.pieces} قطعة)`).join(" · ")} — لن يظهر لها سعر
-            للموظفين حتى تُدخل سعر غرامها هنا.
-          </p>
-        </Card>
-      )}
-
-      <GoldSpotSuggestion
-        onUse={(karat, price) => setForm((f) => ({ ...f, [karat]: { price: String(price), making: f[karat]?.making ?? "" } }))}
-      />
-
-      <div className="grid sm:grid-cols-2 gap-3">
-        {KARATS.map((k) => {
-          const cur = latest.get(k);
-          return (
-            <Card key={k}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center justify-between">
-                  <span>{k}</span>
-                  <span className="text-sm font-normal text-muted-foreground">
-                    {cur ? `${formatCurrency(cur.price_per_gram)} / غ` : "لا سعر بعد"}
-                  </span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <Label className="text-xs">سعر الجرام</Label>
-                    <Input inputMode="decimal" value={form[k]?.price ?? ""}
-                      onChange={(e) => setForm((f) => ({ ...f, [k]: { price: normalizeDecimalInput(e.target.value), making: f[k]?.making ?? "" } }))} />
-                  </div>
-                  <div>
-                    <Label className="text-xs">المصنعية / غ</Label>
-                    <Input inputMode="decimal" value={form[k]?.making ?? ""}
-                      onChange={(e) => setForm((f) => ({ ...f, [k]: { price: f[k]?.price ?? "", making: normalizeDecimalInput(e.target.value) } }))} />
-                  </div>
-                </div>
-                <Button size="sm" className="w-full" onClick={() => save(k)}>
-                  <Save className="size-4 ml-1" /> حفظ سعر اليوم
-                </Button>
-                {cur && cur.effective_date !== businessToday() && (
-                  <Button size="sm" variant="outline" className="w-full" onClick={() => confirmUnchanged(k)}>
-                    السعر لم يتغيّر — أكّد سعر اليوم ({formatCurrency(cur.price_per_gram)})
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-base">حاسبة السعر المقترح</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs">الوزن (غ)</Label>
-              <Input inputMode="decimal" dir="ltr" value={weight} onChange={(e) => setWeight(normalizeDecimalInput(e.target.value))} />
-            </div>
-            <div>
-              <Label className="text-xs">العيار</Label>
-              <div className="flex gap-1 mt-1">
-                {KARATS.map((k) => (
-                  <Button key={k} type="button" size="sm" variant={calcKarat === k ? "default" : "secondary"} onClick={() => setCalcKarat(k)}>
-                    {k}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          </div>
-          <p className="text-sm">
-            السعر المقترح:{" "}
-            <span className="text-xl font-extrabold text-primary">
-              {suggestion != null ? formatCurrency(suggestion) : "—"}
-            </span>
-          </p>
-        </CardContent>
       </Card>
 
       <Card>

@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { BarChart3, Download, TrendingUp, ArrowLeftRight, Package, DollarSign, Clock, AlertTriangle, Receipt, Undo2, Wallet, Plus, Trash2 } from "lucide-react";
+import { BarChart3, Download, TrendingUp, ArrowLeftRight, Package, DollarSign, Clock, AlertTriangle, Receipt, Undo2, Wallet, Plus, Trash2, Wrench, ChevronDown } from "lucide-react";
 import ReindexImagesCard from "@/components/ReindexImagesCard";
 import GenerateThumbsCard from "@/components/GenerateThumbsCard";
 import MigrateToR2Card from "@/components/MigrateToR2Card";
@@ -260,7 +260,7 @@ export default function Reports() {
           </div>
           <div>
             <h1 className="hub-title text-xl font-extrabold text-gold-gradient">الجرد الشهري</h1>
-            <p className="text-xs text-muted-foreground">ملخص أداء كل فرع خلال الشهر المختار</p>
+            <p className="hub-title text-xs text-muted-foreground">ملخص أداء كل فرع خلال الشهر المختار</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -289,7 +289,7 @@ export default function Reports() {
         <TrendingUp className="size-10 text-primary-foreground/50 shrink-0" />
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
         <StatCard icon={<DollarSign className="size-4" />} label="إجمالي الإيراد (مبيعات فعلية)" value={`${fmt(totals.revenue)} د.ل`} />
         <StatCard icon={<Receipt className="size-4" />} label="عدد المبيعات" value={fmt(totals.salesCount)} />
         {totals.returnsCount > 0 && (
@@ -317,11 +317,6 @@ export default function Reports() {
         </div>
       </div>
 
-      {/* صيانة الذكاء الاصطناعي — إعادة فهرسة الصور غير المحلَّلة */}
-      <ReindexImagesCard />
-      <GenerateThumbsCard />
-      <MigrateToR2Card />
-
       {/* Aging report per branch */}
       <Card>
         <CardHeader>
@@ -330,8 +325,8 @@ export default function Reports() {
             القطع الراكدة حسب الفرع
           </CardTitle>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <Table>
+        <CardContent className="overflow-x-auto px-3 sm:px-6">
+          <Table className="text-xs sm:text-sm [&_td]:whitespace-nowrap [&_td]:px-2 [&_th]:h-9 [&_th]:whitespace-nowrap [&_th]:px-2 [&_tr>*:first-child]:sticky [&_tr>*:first-child]:right-0 [&_tr>*:first-child]:bg-card">
             <TableHeader>
               <TableRow>
                 <TableHead>الفرع</TableHead>
@@ -394,8 +389,8 @@ export default function Reports() {
 
       <Card>
         <CardHeader><CardTitle className="text-base">ملخص كل فرع</CardTitle></CardHeader>
-        <CardContent className="overflow-x-auto">
-          <Table>
+        <CardContent className="overflow-x-auto px-3 sm:px-6">
+          <Table className="text-xs sm:text-sm [&_td]:whitespace-nowrap [&_td]:px-2 [&_th]:h-9 [&_th]:whitespace-nowrap [&_th]:px-2 [&_tr>*:first-child]:sticky [&_tr>*:first-child]:right-0 [&_tr>*:first-child]:bg-card">
             <TableHeader>
               <TableRow>
                 <TableHead>الفرع</TableHead>
@@ -478,6 +473,21 @@ export default function Reports() {
           </CardContent>
         </Card>
       </div>
+
+      {/* أدوات صيانة الصور (فهرسة، مصغّرات، نقل) — مش جزء من التقرير، فمطوية في آخر الصفحة. */}
+      <details className="group rounded-2xl border bg-card">
+        <summary className="flex cursor-pointer list-none items-center gap-2 p-3 text-sm font-semibold [&::-webkit-details-marker]:hidden">
+          <Wrench className="size-4 shrink-0 text-muted-foreground" />
+          أدوات الصيانة
+          <span className="truncate text-xs font-normal text-muted-foreground">فهرسة الصور والمصغّرات ونقلها</span>
+          <ChevronDown className="mr-auto size-4 shrink-0 text-muted-foreground transition group-open:rotate-180" />
+        </summary>
+        <div className="space-y-3 border-t p-3">
+          <ReindexImagesCard />
+          <GenerateThumbsCard />
+          <MigrateToR2Card />
+        </div>
+      </details>
     </div>
   );
 }
@@ -602,9 +612,9 @@ function ExpensesCard({
 function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <Card>
-      <CardContent className="p-4">
-        <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">{icon}{label}</div>
-        <p className="text-xl font-extrabold text-gold-gradient">{value}</p>
+      <CardContent className="p-3 sm:p-4">
+        <div className="flex items-center gap-1.5 text-muted-foreground text-[11px] sm:text-xs mb-1 leading-tight">{icon}{label}</div>
+        <p className="text-lg sm:text-xl font-extrabold text-gold-gradient tabular-nums">{value}</p>
       </CardContent>
     </Card>
   );

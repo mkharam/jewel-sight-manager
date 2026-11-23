@@ -21,7 +21,8 @@ export default function StaleGoldPriceBanner() {
   const today = businessToday();
   const [hiddenOn, setHiddenOn] = useState<string | null>(() => { try { return localStorage.getItem(HIDE_KEY); } catch { return null; } });
   const canUpdate = isManagerOrAdmin(roles);
-  if (!canUpdate || !prices || hiddenOn === today || pathname === "/gold-price") return null; // قبل وصول الأسعار لا نعرف — لا إنذار كاذب
+  // قبل وصول الأسعار لا نعرف — لا إنذار كاذب. وفي الرئيسية بطاقة السعر فوق تقول «قديم» بروحها، فما نكرروش.
+  if (!canUpdate || !prices || hiddenOn === today || pathname === "/gold-price" || pathname === "/") return null;
 
   const stale = KARAT_OPTIONS.map((k) => {
     const row = prices.get(k);

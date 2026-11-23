@@ -379,7 +379,7 @@ export default function ProductForm() {
         <ArrowRight className="size-4 ml-1" /> رجوع
       </Button>
 
-      <h1 className="text-2xl font-bold">{editing ? "تعديل قطعة" : "إضافة قطعة جديدة"}</h1>
+      <h1 className="text-2xl font-bold max-lg:hidden">{editing ? "تعديل قطعة" : "إضافة قطعة جديدة"}</h1>
 
       {restoredDraft && <ResumedNotice onDiscard={() => { discardDraft(); window.location.reload(); }} />}
 

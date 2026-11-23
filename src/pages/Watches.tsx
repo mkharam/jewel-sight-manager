@@ -92,7 +92,7 @@ export default function Watches() {
     <div className="max-w-3xl mx-auto space-y-3">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Watch className="size-7 text-primary" />الساعات</h1>
+          <h1 className="text-2xl font-bold flex items-center gap-2 max-lg:hidden"><Watch className="size-7 text-primary" />الساعات</h1>
           <p className="text-sm text-muted-foreground">{available} ساعة متوفرة في الفروع</p>
         </div>
         {canEdit && <Button size="lg" onClick={() => setEditing("new")}><Plus className="size-5" />إضافة ساعة</Button>}
