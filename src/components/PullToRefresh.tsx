@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
-import { uploadQueue } from "@/lib/uploadQueue";
+import { isUploading, uploadQueue } from "@/lib/uploadQueue";
 
 const TRIGGER = 80; // بكسل سحب قبل ما يتحدّث
 const MAX = 120;
@@ -49,7 +49,7 @@ export default function PullToRefresh() {
       if (d < TRIGGER) { setPull(0); return; }
       setBusy(true);
       setPull(TRIGGER * 0.6);
-      const uploading = uploadQueue.getItems().some((i) => i.status !== "done" && i.status !== "error");
+      const uploading = uploadQueue.getItems().some(isUploading);
       if (!uploading) { window.location.reload(); return; }
       await qc.invalidateQueries();
       setBusy(false);

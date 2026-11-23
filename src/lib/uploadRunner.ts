@@ -30,6 +30,55 @@ export type UploadOptions = {
 
 const PLACEHOLDER_NAME = "قطعة جديدة";
 
+/**
+ * القطعة موجودة قبل: الباركود (رقم ليبل أمارسوفت) مسجّل على قطعة في التطبيق — ما نزيدوهاش مرة ثانية.
+ * خطأ «نهائي»: إعادة المحاولة ما تفيدش. قبل كانت نسختها المحلية تتعاود كل ما يتفتح التطبيق وتفشل
+ * بنفس الخطأ، وتتضاعف لو الاستئناف اشتغل مرتين — قطعة وحدة وصلت 16 مرة.
+ */
+export class ExistingPieceError extends Error {
+  constructor(public barcode: string, public productId: string | null, public productName: string | null) {
+    super(productName
+      ? `القطعة هذي موجودة قبل: «${productName}» (باركود ${barcode}) — ما تنزلتش مرة ثانية`
+      : `الباركود ${barcode} مسجّل قبل على قطعة ثانية — ما تنزلتش مرة ثانية`);
+    this.name = "ExistingPieceError";
+  }
+}
+
+const isDuplicateBarcode = (e: unknown) => {
+  const x = e as { code?: string; message?: string; details?: string } | null;
+  return x?.code === "23505" && /barcode/i.test(`${x.message ?? ""} ${x.details ?? ""}`);
+};
+
+/** القطع الموجودة قبل بنفس الباركود (المفتاح = الباركود). ما يرميش: لو فشل يرجّع فاضي والحفظ نفسه يكشفها. */
+async function existingByBarcode(codes: (string | null | undefined)[]): Promise<Map<string, { id: string; name: string }>> {
+  const list = [...new Set(codes.map((c) => (c ?? "").trim()).filter(Boolean))];
+  const out = new Map<string, { id: string; name: string }>();
+  for (let i = 0; i < list.length; i += 100) {
+    try {
+      const { data } = await supabase.from("products").select("id,name,barcode_value").in("barcode_value", list.slice(i, i + 100));
+      for (const p of (data ?? []) as { id: string; name: string; barcode_value: string }[]) out.set(p.barcode_value, { id: p.id, name: p.name });
+    } catch { /* تجاهل */ }
+  }
+  return out;
+}
+
+async function existingError(barcode: string): Promise<ExistingPieceError> {
+  const code = barcode.trim();
+  const hit = (await existingByBarcode([code])).get(code);
+  return new ExistingPieceError(code, hit?.id ?? null, hit?.name ?? null);
+}
+
+/** خطأ شبكة (ما فيش نت ولا انقطع) — يستاهل إعادة المحاولة بلا حدّ. */
+const isNetworkError = (e: unknown) => {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+  const m = String((e as { message?: string } | null)?.message ?? e ?? "");
+  return /failed to fetch|load failed|network|timeout|timed out|aborted/i.test(m);
+};
+/** بعد كم محاولة فاشلة (مش بسبب الشبكة) نوقفوا إعادة رفع الصورة — باش ما تعلقش في لوب. */
+const MAX_ATTEMPTS = 5;
+/** صور قاعدة تترفع توا (معرّفات سجلاتها المحلية) — الاستئناف ما يلمسهاش، ولا كانت تترفع مرتين. */
+const inFlight = new Set<string>();
+
 // كلما كبر ملف الـ PDF نضغط أكثر — يحافظ هذا على حجم صور معقول للرفع والتحليل
 // حتى مع كتالوجات ضخمة (حتى 300MB)، بدون أي حد أقصى لعدد الصفحات.
 function pdfCompressionFor(sizeBytes: number): { maxDimension: number; quality: number } {
@@ -158,7 +207,10 @@ async function saveUnanalyzedProduct(
     } as any)
     .select("id")
     .single();
-  if (e1 || !prod) throw e1 ?? new Error("فشل إنشاء المنتج");
+  if (e1 || !prod) {
+    if (barcodeValue && isDuplicateBarcode(e1)) throw await existingError(barcodeValue);
+    throw e1 ?? new Error("فشل إنشاء المنتج");
+  }
 
   const { data: img, error: e2 } = await supabase
     .from("product_images")
@@ -189,32 +241,45 @@ export async function saveCapturedPiece(
   barcodeValue?: string | null,
   karat?: string | null,
 ): Promise<{ productId: string; imageId: string }> {
+  const code = (barcodeValue ?? "").trim() || null;
+  // الباركود مسجّل قبل؟ القطعة موجودة — ما نرفعوش ولا نخلّوا نسخة محلية تتعاود للأبد.
+  if (code) {
+    const hit = (await existingByBarcode([code])).get(code);
+    if (hit) throw new ExistingPieceError(code, hit.id, hit.name);
+  }
   // نحتفظ بنسخة محلية قبل الرفع: لقطة الكاميرا غير موجودة في أي مكان آخر، فلو انقطع
   // الرفع (خروج من التطبيق/ضعف شبكة) تضيع القطعة نهائياً بدون هذه النسخة. تُحذف فور
   // نجاح الحفظ، ويستأنفها resumePendingUploads عند فتح التطبيق لاحقاً إن بقيت.
   const pendingId = `cap-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  await savePending({
-    id: pendingId,
-    file,
-    fileName: file.name || "capture.jpg",
-    branchId: opts.branchId ?? null,
-    weightGrams: weightGrams ?? null,
-    barcodeValue: barcodeValue ?? null,
-    karat: karat ?? null,
-    itemType: null,
-    trayMode: false,
-    createdAt: Date.now(),
-  });
-
-  const { path, thumbPath } = await uploadFile(file, opts.userId, Math.floor(Math.random() * 1_000_000));
-  const saved = await saveUnanalyzedProduct(path, thumbPath, opts, weightGrams, barcodeValue, karat ?? null, null)
-    .catch(async (e) => {
-      // النسخة المحلية باقية وستُرفع من جديد عند الاستئناف — لا نترك هذه النسخة يتيمة.
-      await removeUnreferencedFiles([path, thumbPath]);
-      throw e;
+  inFlight.add(pendingId);
+  try {
+    await savePending({
+      id: pendingId,
+      file,
+      fileName: file.name || "capture.jpg",
+      branchId: opts.branchId ?? null,
+      weightGrams: weightGrams ?? null,
+      barcodeValue: code,
+      karat: karat ?? null,
+      itemType: null,
+      trayMode: false,
+      createdAt: Date.now(),
     });
-  await removePending(pendingId);
-  return saved;
+
+    const { path, thumbPath } = await uploadFile(file, opts.userId, Math.floor(Math.random() * 1_000_000));
+    const saved = await saveUnanalyzedProduct(path, thumbPath, opts, weightGrams, code, karat ?? null, null)
+      .catch(async (e) => {
+        // النسخة المحلية باقية وستُرفع من جديد عند الاستئناف — لا نترك هذه النسخة يتيمة.
+        await removeUnreferencedFiles([path, thumbPath]);
+        // إلا لو القطعة موجودة قبل: إعادة الرفع ما تفيدش.
+        if (e instanceof ExistingPieceError) await removePending(pendingId);
+        throw e;
+      });
+    await removePending(pendingId);
+    return saved;
+  } finally {
+    inFlight.delete(pendingId);
+  }
 }
 
 /**
@@ -237,7 +302,7 @@ export async function updateCapturedPiece(
   }
   if ("barcode_value" in patch) {
     const { error } = await supabase.rpc("update_product_barcode", { p_product_id: productId, p_barcode_value: patch.barcode_value ?? null });
-    if (error) throw error;
+    if (error) throw patch.barcode_value && isDuplicateBarcode(error) ? await existingError(patch.barcode_value) : error;
   }
 }
 
@@ -533,6 +598,12 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
   const karats: (string | null)[] = [...karatsForImages, ...pdfPages.map(() => null)];
   const itemTypesForImages = images.map((f) => (f as any).itemType ?? null);
   const itemTypes: (string | null)[] = [...itemTypesForImages, ...pdfPages.map(() => null)];
+  // من الاستئناف (resumePendingUploads): نفس معرّف السجل المحلي وتاريخه وعدد محاولاته — السجل
+  // يتحدّث في مكانه بدل ما تتزاد نسخة جديدة كل مرة (كانت تتضاعف وما تنتهيش).
+  type Resumed = File & { pendingId?: string; pendingCreatedAt?: number; attempts?: number };
+  const pendingIds: (string | null)[] = [...images.map((f) => (f as Resumed).pendingId ?? null), ...pdfPages.map(() => null)];
+  const createdAts: (number | null)[] = [...images.map((f) => (f as Resumed).pendingCreatedAt ?? null), ...pdfPages.map(() => null)];
+  const attemptsList: number[] = [...images.map((f) => Number((f as Resumed).attempts) || 0), ...pdfPages.map(() => 0)];
 
   // صور المعرض: نقرا ليبل أمارسوفت من كل صورة (الأصلية قبل التصغير، أوضح للباركود). لو
   // انقرا، القطعة تنربط بأمارسوفت ووزنها وعيارها ينكتبوا وحدهم عند الحفظ.
@@ -555,47 +626,81 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
     return;
   }
 
-  const compressToast = toast.loading(`جارٍ تحسين ${picked.length} صورة قبل الرفع…`);
-  const files = await compressMany(picked, { maxDimension: 1600, quality: 0.82 }, 3, (done, total) => {
+  // قبل الضغط والرفع: القطعة اللي باركودها (رقم ليبل أمارسوفت) مسجّل قبل في التطبيق — ولا مكرر
+  // في نفس الدفعة — ما تترفعش: نقولوا للموظف إنها موجودة ووين. (قبل كانت تفشل وتتعاود للأبد.)
+  const existing = opts.trayMode ? new Map<string, { id: string; name: string }>() : await existingByBarcode(barcodes);
+  const seenCodes = new Set<string>();
+  const keepIdx: number[] = [];
+  let dup = 0;
+  for (let i = 0; i < picked.length; i++) {
+    const b = opts.trayMode ? "" : (barcodes[i] ?? "").trim();
+    const hit = b ? existing.get(b) : undefined;
+    const repeated = !!b && seenCodes.has(b);
+    if (b) seenCodes.add(b);
+    if (!hit && !repeated) { keepIdx.push(i); continue; }
+    dup++;
+    uploadQueue.add({
+      id: pendingIds[i] ?? `${Date.now()}-d${i}-${Math.random().toString(36).slice(2, 8)}`,
+      previewUrl: URL.createObjectURL(picked[i]),
+      status: "exists",
+      productId: hit?.id,
+      label: hit ? new ExistingPieceError(b, hit.id, hit.name).message : `نفس الباركود ${b} مكرر في نفس الدفعة — تنزلت مرة وحدة بس`,
+    });
+    const pid = pendingIds[i];
+    if (pid) await removePending(pid);
+  }
+  if (!keepIdx.length) {
+    toast.info(`${dup} صورة لقطع موجودة قبل في التطبيق — ما تنزلتش مرة ثانية`, { duration: 6000 });
+    return;
+  }
+  const toUpload = keepIdx.map((i) => picked[i]);
+
+  const compressToast = toast.loading(`جارٍ تحسين ${toUpload.length} صورة قبل الرفع…`);
+  const files = await compressMany(toUpload, { maxDimension: 1600, quality: 0.82 }, 3, (done, total) => {
     toast.loading(`تحسين الصور ${done}/${total}…`, { id: compressToast });
   });
   toast.success(`${files.length} صورة جاهزة — يبدأ الرفع والتحليل الآن`, { id: compressToast });
 
   const categories = (await supabase.from("categories").select("id,name").eq("is_active", true)).data ?? [];
 
-  const entries = files.map((file, idx) => ({
-    id: `${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 8)}`,
-    file,
-    previewUrl: URL.createObjectURL(file),
-    weightGrams: weights[idx] ?? null,
-    barcodeValue: barcodes[idx] ?? null,
-    karat: karats[idx] ?? null,
-    itemType: itemTypes[idx] ?? null,
-  }));
+  const entries = files.map((file, j) => {
+    const idx = keepIdx[j];
+    return {
+      id: pendingIds[idx] ?? `${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 8)}`,
+      file,
+      previewUrl: URL.createObjectURL(file),
+      weightGrams: weights[idx] ?? null,
+      barcodeValue: (barcodes[idx] ?? "").trim() || null,
+      karat: karats[idx] ?? null,
+      itemType: itemTypes[idx] ?? null,
+      createdAt: createdAts[idx] ?? Date.now(),
+      attempts: attemptsList[idx] ?? 0,
+    };
+  });
+  type Entry = (typeof entries)[number];
+  const toPending = (e: Entry, attempts = e.attempts) => ({
+    id: e.id,
+    file: e.file,
+    fileName: e.file.name,
+    branchId: opts.branchId ?? null,
+    weightGrams: e.weightGrams,
+    barcodeValue: e.barcodeValue,
+    karat: e.karat,
+    itemType: e.itemType,
+    trayMode: !!opts.trayMode,
+    createdAt: e.createdAt,
+    attempts,
+  });
 
-  entries.forEach((e) =>
-    uploadQueue.add({ id: e.id, previewUrl: e.previewUrl, label: "جارٍ الرفع…", status: "uploading" }),
-  );
+  entries.forEach((e) => {
+    inFlight.add(e.id);
+    uploadQueue.add({ id: e.id, previewUrl: e.previewUrl, label: "جارٍ الرفع…", status: "uploading" });
+  });
 
   // نحفظ كل صورة في IndexedDB قبل أن نبدأ رفعها. صورة الكاميرا لا يمكن استرجاعها من أي
   // مكان آخر لو قُتل التبويب في المنتصف، فبدون هذا الحفظ تضيع بلا أثر ولا يعرف الموظف
-  // أصلاً أيّ قطعة ضاعت. السجل يُحذف فور نجاح رفع صورته.
-  await Promise.all(
-    entries.map((e) =>
-      savePending({
-        id: e.id,
-        file: e.file,
-        fileName: e.file.name,
-        branchId: opts.branchId ?? null,
-        weightGrams: e.weightGrams,
-        barcodeValue: e.barcodeValue,
-        karat: e.karat,
-        itemType: e.itemType,
-        trayMode: !!opts.trayMode,
-        createdAt: Date.now(),
-      }),
-    ),
-  );
+  // أصلاً أيّ قطعة ضاعت. السجل يُحذف فور نجاح رفع صورته (ولا لو القطعة طلعت موجودة قبل).
+  await Promise.all(entries.map((e) => savePending(toPending(e))));
 
   let ok = 0;
   let failed = 0;
@@ -652,20 +757,37 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
       await removePending(entry.id);
       ok++;
     } catch (e: any) {
-      failed++;
       // الصورة رُفعت لكن القطعة لم تُحفظ — السجل المحلي سيعيد رفعها عند الاستئناف، فهذه
       // النسخة لن يشير إليها أحد. removeUnreferencedFiles لا يحذف ما حُفظ فعلاً.
       await removeUnreferencedFiles(uploaded);
-      // نُبقي السجل في IndexedDB ليُستأنف لاحقاً بدل فقدان الصورة.
-      uploadQueue.update(entry.id, { status: "error", message: e?.message ?? "فشل الرفع" });
+      if (e instanceof ExistingPieceError) {
+        // موجودة قبل (اتسجّلت من جهاز ثاني وإحنا نرفعوا): إعادة المحاولة ما تفيدش.
+        dup++;
+        await removePending(entry.id);
+        uploadQueue.update(entry.id, { status: "exists", label: e.message, productId: e.productId ?? undefined });
+        return;
+      }
+      failed++;
+      // نُبقي السجل في IndexedDB ليُستأنف لاحقاً بدل فقدان الصورة — الشبكة بلا حدّ، وغيرها لين
+      // MAX_ATTEMPTS مرات، بعدها نوقفوا (كانت تعلق في لوب).
+      const attempts = entry.attempts + (isNetworkError(e) ? 0 : 1);
+      const msg = e?.message ?? "فشل الرفع";
+      if (attempts >= MAX_ATTEMPTS) {
+        await removePending(entry.id);
+        uploadQueue.update(entry.id, { status: "error", message: `${msg} — فشلت ${attempts} مرات ووقّفنا نعاودوها. صوّرها من جديد لو تحتاجها.` });
+      } else {
+        await savePending(toPending(entry, attempts));
+        uploadQueue.update(entry.id, { status: "error", message: msg });
+      }
     }
   }, stagger);
   } finally {
     window.removeEventListener("beforeunload", warnBeforeUnload);
     releaseWakeLock();
+    entries.forEach((e) => inFlight.delete(e.id));
   }
 
-  toast.success(`اكتمل رفع ${ok} صورة` + (failed ? ` (${failed} فشل)` : ""), { duration: 6000 });
+  toast.success(`اكتمل رفع ${ok} صورة` + (failed ? ` (${failed} فشل)` : "") + (dup ? ` · ${dup} موجودة قبل وما تنزلتش` : ""), { duration: 6000 });
 
   // الطابور الخلفي صار شبكة أمان فقط: يُستدعى حين يتعذّر التحليل الفوري لبعض القطع
   // (ازدحام/نفاد حصة لحظية)، بدل استدعائه دائماً كما كان.
@@ -692,14 +814,44 @@ export async function runUploadBatch(fileList: FileList | File[], opts: UploadOp
  * حفظها. لا نستأنف وضع "الصينية" تلقائياً لأنه يفتح قطعاً متعددة لكل صورة ويحتاج قرار
  * الموظف، فنكتفي بإبقائها محفوظة.
  */
-export async function resumePendingUploads(userId: string): Promise<number> {
+let resuming: Promise<number> | null = null;
+
+export function resumePendingUploads(userId: string): Promise<number> {
+  // مرة وحدة في نفس الوقت — داخل التبويب، وبين التبويبات (Web Locks لو موجودة). قبل كان
+  // الاستئناف يشتغل مرتين مع بعض (تبويبين، ولا تجدّد الجلسة) فكل صورة فاشلة تتضاعف.
+  if (resuming) return resuming;
+  const locks = typeof navigator !== "undefined" ? (navigator as Navigator & { locks?: LockManager }).locks : undefined;
+  const run = locks?.request
+    ? locks.request("mkharam-resume-uploads", { ifAvailable: true }, async (lock) => (lock ? resumeNow(userId) : 0))
+    : resumeNow(userId);
+  resuming = Promise.resolve(run).finally(() => { resuming = null; });
+  return resuming;
+}
+
+async function resumeNow(userId: string): Promise<number> {
   await prunePending();
-  const pending = (await listPending()).filter((p) => !p.trayMode);
+  // اللي قاعدة تترفع توا (من الكاميرا ولا صفحة الرفع) ما نلمسوهاش — ولا كانت تترفع مرتين.
+  const all = (await listPending()).filter((p) => !p.trayMode && !inFlight.has(p.id));
+
+  // نفس الباركود أكثر من مرة: وحدة بس تقدر تنحفظ — نخلّوا الأحدث ونمسحوا الباقي.
+  const seen = new Set<string>();
+  const keep: typeof all = [];
+  for (const p of [...all].reverse()) {
+    const b = (p.barcodeValue ?? "").trim();
+    if (b && seen.has(b)) { await removePending(p.id); continue; }
+    if (b) seen.add(b);
+    // فشلت MAX_ATTEMPTS مرات لسبب مش الشبكة: ما نعاودوهاش.
+    if ((p.attempts ?? 0) >= MAX_ATTEMPTS) { await removePending(p.id); continue; }
+    keep.push(p);
+  }
+  const pending = keep.reverse();
   if (!pending.length) return 0;
 
   toast.info(`استئناف ${pending.length} صورة لم يكتمل رفعها`, { duration: 5000 });
 
-  // الوزن/الباركود/العيار تُنقل كخصائص على كائن الملف نفسه — هذا ما يقرأه runUploadBatch.
+  // الوزن/الباركود/العيار ومعرّف السجل تُنقل كخصائص على كائن الملف نفسه — هذا ما يقرأه
+  // runUploadBatch. بنفس المعرّف: السجل يتحدّث في مكانه (ينمسح لو نجح ولا طلعت القطعة موجودة
+  // قبل، ويبقى بعدد محاولاته لو فشل) بدل ما تتزاد نسخة جديدة كل مرة.
   const files = pending.map((p) => {
     const f = new File([p.file], p.fileName || "photo.jpg", { type: p.file.type || "image/jpeg" });
     Object.assign(f, {
@@ -707,6 +859,9 @@ export async function resumePendingUploads(userId: string): Promise<number> {
       barcodeValue: p.barcodeValue ?? null,
       karat: p.karat ?? null,
       itemType: p.itemType ?? null,
+      pendingId: p.id,
+      pendingCreatedAt: p.createdAt,
+      attempts: p.attempts ?? 0,
     });
     return f;
   });
@@ -716,10 +871,6 @@ export async function resumePendingUploads(userId: string): Promise<number> {
     branchId: pending[0].branchId ?? null,
     trayMode: false,
   });
-
-  // السجلات القديمة استُبدلت بسجلات جديدة داخل runUploadBatch (معرّفات جديدة)، فنحذف
-  // القديمة صراحةً كي لا تُستأنف مرة أخرى في الإقلاع القادم.
-  for (const p of pending) await removePending(p.id);
   return pending.length;
 }
 

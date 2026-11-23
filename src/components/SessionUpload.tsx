@@ -11,7 +11,7 @@ import { readTagDeep } from "@/lib/tagReader";
 import TagScanDialog from "@/components/TagScanDialog";
 import { exifDate } from "@/lib/exifDate";
 import { normalizeDecimalInput } from "@/lib/constants";
-import { saveCapturedPiece, addExtraPieceImage, analyzeCapturedPiece, indexExtraImage } from "@/lib/uploadRunner";
+import { saveCapturedPiece, addExtraPieceImage, analyzeCapturedPiece, indexExtraImage, ExistingPieceError } from "@/lib/uploadRunner";
 
 type Photo = { id: string; file: File; url: string; time: number; tag: string | null; isLabel: boolean; use: boolean };
 type Info = { found: boolean; in_stock: boolean; karat: string | null; grams: number | null; type_name: string | null; existing: string | null };
@@ -195,8 +195,10 @@ export default function SessionUpload({ open, onClose, userId, branchId, onFinis
         }
         toAnalyze.push({ gid: g.id, file: use[0].file, saved, extras, partIds });
         update(g.id, { state: "saved", ai: "pending" });
-      } catch {
+      } catch (e) {
         update(g.id, { state: "error" });
+        // الباركود مسجّل قبل: القطعة موجودة في التطبيق — ما تنزلتش مرة ثانية.
+        if (e instanceof ExistingPieceError) toast.error(e.message, { duration: 8000 });
       }
     }
     if (ids.length) { toast.success(`تم حفظ ${ids.length} قطعة — جارٍ التحليل والتسمية…`); onFinished?.(ids); }

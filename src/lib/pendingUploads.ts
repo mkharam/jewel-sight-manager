@@ -26,6 +26,8 @@ export type PendingUpload = {
   itemType?: string | null;
   trayMode?: boolean;
   createdAt: number;
+  /** كم مرة فشل رفعها لسبب مش الشبكة — بعد حدّ معيّن ما نعاودوهاش (راجع uploadRunner). */
+  attempts?: number;
 };
 
 /**

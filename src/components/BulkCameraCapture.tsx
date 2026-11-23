@@ -41,7 +41,7 @@ import { readTag } from "@/lib/tagReader";
 import { supabase } from "@/integrations/supabase/client";
 import ScanBoxOverlay from "@/components/ScanBoxOverlay";
 import { normalizeDecimalInput } from "@/lib/constants";
-import { saveCapturedPiece, updateCapturedPiece, deleteCapturedPiece, analyzeCapturedPiece } from "@/lib/uploadRunner";
+import { saveCapturedPiece, updateCapturedPiece, deleteCapturedPiece, analyzeCapturedPiece, ExistingPieceError } from "@/lib/uploadRunner";
 import { suspendWakeLock } from "@/lib/keepAwake";
 import { toast } from "sonner";
 import { isBuiltInCamera } from "@/lib/cameras";
@@ -372,7 +372,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
     const productId = productIdsRef.current[id];
     if (!productId) return;
     updateCapturedPiece(productId, { barcode_value: barcode.trim() || null })
-      .catch(() => markShotFailed(id, "تعذّر حفظ الباركود — تحقق من الاتصال وأعد كتابته"));
+      .catch((e) => markShotFailed(id, e instanceof ExistingPieceError ? e.message : "تعذّر حفظ الباركود — تحقق من الاتصال وأعد كتابته"));
   };
 
   // منطق الحفظ مشترك بين الالتقاط الحيّ (canvas من الفيديو المباشر) والتقاط كاميرا
@@ -427,7 +427,7 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
           updateCapturedPiece(productId, {
             weight_grams: !isNaN(wNum) && wNum > 0 ? wNum : null,
             barcode_value: (b || "").trim() || null,
-          }).catch(() => markShotFailed(id, "تعذّر حفظ الوزن — تحقق من الاتصال وأعد كتابته"));
+          }).catch((e) => markShotFailed(id, e instanceof ExistingPieceError ? e.message : "تعذّر حفظ الوزن — تحقق من الاتصال وأعد كتابته"));
         }
         // تحليل فوري تلقائي — القطعة تخرج من هذه الشاشة مُسمّاة ومصنّفة فعلاً بدل
         // انتظار مراجعة يدوية لاحقة. العيار مضبوط دائماً من الموظف قبل التصوير (لا
@@ -435,9 +435,10 @@ export default function BulkCameraCapture({ open, onClose, userId, branchId, ini
         // القطعة تبقى محفوظة وتلتقطها الطابور الخلفي لاحقاً كالمعتاد.
         void analyzeCapturedPiece(file, { productId, imageId }, { karat: true, itemType: false }).catch(() => {});
       })
-      .catch(() => {
+      .catch((e) => {
         setShots((prev) => prev.map((s) => (s.id === id ? { ...s, saveState: "error" } : s)));
-        toast.error("تعذّر حفظ إحدى الصور — تحقق من الاتصال وأعد المحاولة");
+        // الباركود مسجّل قبل: القطعة موجودة — نقولوا وين بدل «تحقق من الاتصال».
+        toast.error(e instanceof ExistingPieceError ? e.message : "تعذّر حفظ إحدى الصور — تحقق من الاتصال وأعد المحاولة", { duration: 8000 });
       });
 
     setFlash(true);

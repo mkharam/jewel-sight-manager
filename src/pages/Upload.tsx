@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Camera, FolderUp, Loader2, Sparkles, X, CheckCircle2, AlertCircle, Layers, ImageOff, ScanLine, Images } from "lucide-react";
+import { Camera, FolderUp, Loader2, Sparkles, X, CheckCircle2, AlertCircle, Layers, ImageOff, ScanLine, Images, Info } from "lucide-react";
 import { toast } from "sonner";
 import { runUploadBatch } from "@/lib/uploadRunner";
 import { useUploadQueue, uploadQueue } from "@/lib/uploadQueue";
@@ -275,6 +275,15 @@ export default function Upload() {
                 {it.status === "done" && (
                   <p className="text-xs text-primary flex items-center gap-1">
                     <CheckCircle2 className="size-3" /> {it.label}
+                  </p>
+                )}
+                {it.status === "exists" && (
+                  <p className="text-xs text-amber-700 dark:text-amber-400 flex items-start gap-1">
+                    <Info className="size-3 mt-0.5 shrink-0" />
+                    <span>
+                      {it.label}
+                      {it.productId && <> — <Link to={`/products/${it.productId}`} className="font-semibold underline">افتح القطعة</Link></>}
+                    </span>
                   </p>
                 )}
                 {it.status === "error" && (

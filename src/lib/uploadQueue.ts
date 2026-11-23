@@ -3,7 +3,8 @@
 // بالعمل في الخلفية بغض النظر عمّا إذا كانت صفحة الرفع معروضة حالياً أم لا.
 import { useEffect, useState } from "react";
 
-export type QueueItemStatus = "uploading" | "analyzing" | "saving" | "done" | "error";
+// exists = القطعة موجودة قبل (نفس الباركود) فما تنزلتش مرة ثانية — مش فشل.
+export type QueueItemStatus = "uploading" | "analyzing" | "saving" | "done" | "exists" | "error";
 
 export type QueueItem = {
   id: string;
@@ -11,7 +12,12 @@ export type QueueItem = {
   label: string;
   status: QueueItemStatus;
   message?: string;
+  /** للحالة exists: القطعة الموجودة قبل — باش الموظف يفتحها. */
+  productId?: string;
 };
+
+/** لسه قاعد يترفع/يتحلّل/يتحفظ. */
+export const isUploading = (it: QueueItem) => it.status === "uploading" || it.status === "analyzing" || it.status === "saving";
 
 type Listener = () => void;
 
@@ -47,8 +53,9 @@ class UploadQueueStore {
     this.notify();
   }
 
+  /** يمسح كل اللي خلص (تم، موجودة قبل، فشل) — الصور الفاشلة تبقى محفوظة محلياً وتتعاود وحدها. */
   clearFinished() {
-    this.items = this.items.filter((it) => it.status !== "done");
+    this.items = this.items.filter(isUploading);
     this.notify();
   }
 }
@@ -67,5 +74,5 @@ export function useUploadQueue() {
 /** عدد العناصر التي ما زالت تُرفع/تُحفظ — تُستخدم لشارة صغيرة في شريط التنقّل. */
 export function useUploadQueuePendingCount() {
   const items = useUploadQueue();
-  return items.filter((it) => it.status === "uploading" || it.status === "analyzing" || it.status === "saving").length;
+  return items.filter(isUploading).length;
 }
