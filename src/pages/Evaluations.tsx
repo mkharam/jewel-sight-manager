@@ -1,40 +1,46 @@
 // لوحة التقييمات — للمدير العام ومسؤول التقييم (أيمن). ثلاث خانات:
 // الإيقاع: المشرف يقيّم موظفينه كل يوم، والموظفين (ونفس المشرف لنفسه) مرتين في الشهر.
-//  * اللوحة: كل شهر — كم واحد اتقيّم، المتوسط، الأحسن واللي يحتاج متابعة، الناقصين، الترتيب، الفروع،
-//    أضعف البنود، وتفاصيل كل شخص (بنوده، تقييمه لنفسه مقابل تقييم مشرفه، ملاحظاته، وتطوّره شهر بشهر).
+//  * اللوحة: الدرجة من تقييمهم لبعض بس (المشرف للموظف، الموظفين للمشرف) — التقييم الذاتي لوحده للمقارنة،
+//    وعلامة على اللي قيّم نفسه 5 في كل البنود. مين اتقيّم ومين لا (يوم بيوم)، الفروع، البنود، وشهر بشهر.
+//    كل رقم واسم ويوم يتضغط ويفتح تفاصيله (الحسبة في lib/evalBoard، والأقسام في components/evaluations).
 //  * تسجيل تقييم: نفس استمارة الرابط، لأيمن يسجّل عن اللي ما يعرفوش يبلّغوا.
 //  * الإعدادات: رابط التقييم (نسخ/واتساب)، قائمة الموظفين، والمسؤولين على التقييم.
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { AlertTriangle, Award, ClipboardList, Copy, Loader2, MessageCircle, Plus, Settings2, Star, TrendingDown, TrendingUp, Users } from "lucide-react";
+import { Award, ChevronRight, ClipboardList, Copy, Loader2, MessageCircle, Plus, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import EvaluationForm from "@/components/EvaluationForm";
+import { BranchesCard, CriteriaCard, Kpis, ResultCard, SelfCompare, TrendCard, WhoEvaluated } from "@/components/evaluations/EvalSections";
+import { EvalDetail } from "@/components/evaluations/EvalDetail";
+import type { Detail } from "@/components/evaluations/bits";
 import { businessToday } from "@/lib/dates";
-import {
-  ALL_CRITERIA, EMPLOYEE_CRITERIA, GM_CRITERIA, GM_EVAL_ENABLED, MANAGER_CRITERIA, KIND_LABEL, db, dayLabel, defaultMonth, grade, halfLabel,
-  monthLabel, shiftMonth, type EvalStaff, type Evaluation, useIsEvalAdmin,
-} from "@/lib/evaluation";
+import { GM_EVAL_ENABLED, db, defaultMonth, monthLabel, shiftMonth, type EvalStaff, type Evaluation, useIsEvalAdmin } from "@/lib/evaluation";
+import { buildBoard } from "@/lib/evalBoard";
 
 type Tab = "board" | "record" | "settings";
-type Person = EvalStaff & {
-  final: number | null; self: number | null; others: number | null; gm: number | null; prev: number | null;
-  evals: Evaluation[]; missing: string[];
-  /** تقييم المشرف اليومي: أيام حضر فيها، والأيام اللي سجّله فيها غايب (بسببها). */
-  presentDays: number; absences: Evaluation[];
-};
 
-const avg = (xs: (number | null | undefined)[]) => {
-  const v = xs.filter((x): x is number => x != null).map(Number);
-  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
-};
-const f1 = (v: number | null | undefined) => (v == null ? "—" : Number(v).toFixed(1));
+/** أقسام اللوحة — للقفز السريع. */
+const JUMPS: [string, string][] = [
+  ["ev-result", "النتيجة"], ["ev-who", "مين اتقيّم"], ["ev-self", "التقييم الذاتي"], ["ev-branches", "الفروع"], ["ev-criteria", "البنود"],
+];
+
+/** التقييم اليومي يكثّر الصفوف: نجيبوهم صفحات (السيرفر يرجّع 1000 صف بالكثير في المرة). */
+async function fetchEvals(from: string, to: string) {
+  const out: Evaluation[] = [];
+  for (let i = 0; ; i += 1000) {
+    const { data, error } = await db.from("staff_evaluations").select("*")
+      .gte("month", from).lte("month", to).order("period").order("id").range(i, i + 999);
+    if (error) throw error;
+    out.push(...((data ?? []) as Evaluation[]));
+    if (!data || data.length < 1000) return out;
+  }
+}
 
 export default function Evaluations() {
   const { roles } = useAuth();
@@ -42,73 +48,30 @@ export default function Evaluations() {
   const allowed = useIsEvalAdmin();
   const [tab, setTab] = useState<Tab>("board");
   const [month, setMonth] = useState(() => defaultMonth(businessToday()));
-  const [openId, setOpenId] = useState<string | null>(null);
   const [recordMode, setRecordMode] = useState<"gm" | "behalf">(GM_EVAL_ENABLED ? "gm" : "behalf");
+  // التفاصيل: كل ضغطة تفتح فوق اللي قبلها، و«رجوع» يرجّع خطوة.
+  const [stack, setStack] = useState<Detail[]>([]);
+  const open = useCallback((d: Detail) => setStack((s) => [...s, d]), []);
+  const top = stack.length ? stack[stack.length - 1] : null;
+  const sheetRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { sheetRef.current?.scrollTo({ top: 0 }); }, [top]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["evaluations", month],
     queryFn: async () => {
-      const from = shiftMonth(month, -5);
       const [staff, evals] = await Promise.all([
         db.from("eval_staff").select("*, branch:branches(name)").order("name"),
-        db.from("staff_evaluations").select("*").gte("month", from).lte("month", month),
+        fetchEvals(shiftMonth(month, -5), month),
       ]);
       if (staff.error) throw staff.error;
-      if (evals.error) throw evals.error;
       return {
         staff: ((staff.data ?? []) as (EvalStaff & { branch: { name: string } | null })[]).map((s) => ({ ...s, branch_name: s.branch?.name ?? null })),
-        evals: (evals.data ?? []) as Evaluation[],
+        evals,
       };
     },
   });
 
-  const v = useMemo(() => {
-    if (!data) return null;
-    // «المدير العام» صف للتقييم بس (هو اللي يقيّم)، ما يدخلش في الترتيب.
-    const active = data.staff.filter((s) => s.active !== false && s.role !== "gm");
-    const byMonth = (m: string) => data.evals.filter((e) => e.month === m);
-    // درجة الشخص في شهر: تقييم الغير (المشرف للموظف، الموظفين للمشرف) ولو ما فيش، تقييمه لنفسه.
-    const scoreOf = (s: EvalStaff, m: string) => {
-      const es = byMonth(m).filter((e) => e.subject_id === s.id);
-      const others = avg(es.filter((e) => e.kind !== "self").map((e) => e.overall));
-      const self = avg(es.filter((e) => e.kind === "self").map((e) => e.overall));
-      const gm = avg(es.filter((e) => e.kind === "by_gm").map((e) => e.overall));
-      const daily = es.filter((e) => e.kind === "by_manager");
-      const absences = daily.filter((e) => e.absent).sort((a, b) => (a.period ?? a.month).localeCompare(b.period ?? b.month));
-      const presentDays = new Set(daily.filter((e) => !e.absent).map((e) => e.period ?? e.month)).size;
-      return { others, self, gm, final: others ?? self, evals: es, absences, presentDays };
-    };
-    const people: Person[] = active.map((s) => {
-      const cur = scoreOf(s, month);
-      const prev = scoreOf(s, shiftMonth(month, -1)).final;
-      const hasManager = active.some((m) => m.role === "manager" && m.branch_id === s.branch_id && m.id !== s.id);
-      const missing = [
-        ...(cur.evals.some((e) => e.kind === "self") ? [] : ["تقييمه لنفسه"]),
-        ...(s.role === "employee" && hasManager && !cur.evals.some((e) => e.kind === "by_manager") ? ["تقييم المشرف ليه"] : []),
-        ...(!GM_EVAL_ENABLED || cur.evals.some((e) => e.kind === "by_gm") ? [] : ["تقييم المدير العام"]),
-      ];
-      return { ...s, ...cur, prev, missing };
-    });
-    const rated = people.filter((p) => p.final != null).sort((a, b) => (b.final ?? 0) - (a.final ?? 0));
-    const branches = Object.entries(rated.reduce<Record<string, number[]>>((m, p) => {
-      ((m[p.branch_name ?? "بدون فرع"] ??= [])).push(p.final!); return m;
-    }, {})).map(([name, xs]) => ({ name, avg: avg(xs)!, n: xs.length })).sort((a, b) => b.avg - a.avg);
-    // متوسط كل بند (من تقييم الغير لو موجود، والا الذاتي) — أضعف البنود أول.
-    const crit: Record<string, number[]> = {};
-    for (const p of rated) {
-      const src = p.evals.filter((e) => e.kind !== "self").length ? p.evals.filter((e) => e.kind !== "self") : p.evals;
-      for (const e of src) for (const [k, val] of Object.entries(e.scores ?? {})) (crit[k] ??= []).push(Number(val));
-    }
-    const criteria = Object.entries(crit).map(([k, xs]) => ({ key: k, label: ALL_CRITERIA[k] ?? k, avg: avg(xs)!, n: xs.length }))
-      .sort((a, b) => a.avg - b.avg);
-    // المتوسط العام شهر بشهر (آخر 6 أشهر).
-    const trend = Array.from({ length: 6 }, (_, i) => shiftMonth(month, i - 5)).map((m) => ({
-      month: monthLabel(m).split(" ")[0], avg: avg(active.map((s) => scoreOf(s, m).final)),
-    }));
-    return { people, rated, branches, criteria, trend, scoreOf, overall: avg(rated.map((p) => p.final)), missing: people.filter((p) => p.missing.length) };
-  }, [data, month]);
-
-  const open = v?.people.find((p) => p.id === openId) ?? null;
+  const b = useMemo(() => (data ? buildBoard(data.staff, data.evals, month, businessToday()) : null), [data, month]);
   const months = Array.from({ length: 6 }, (_, i) => shiftMonth(defaultMonth(businessToday()), -i));
 
   if (allowed === undefined) return <div className="flex justify-center py-16"><Loader2 className="size-6 animate-spin text-primary" /></div>;
@@ -119,17 +82,16 @@ export default function Evaluations() {
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-2xl font-bold flex items-center gap-2"><ClipboardList className="size-7 text-primary" />تقييم الموظفين</h1>
       </div>
-      {/* أرقام الفروع (مبيعات وأسعار) في «التقييم ← أرقام البائعين والفروع» — حسبة وحدة بدل حسبتين. */}
       <div className="grid gap-1.5 grid-cols-3">
         {([["board", "اللوحة", Award], ["record", "تسجيل", Plus], ["settings", "الإعدادات", Settings2]] as const).map(([k, l, Icon]) => (
-          <Button key={k} variant={tab === k ? "default" : "outline"} onClick={() => setTab(k)} className="gap-1 px-1"><Icon className="size-4" />{l}</Button>
+          <Button key={k} variant={tab === k ? "default" : "outline"} onClick={() => { setTab(k); setStack([]); }} className="gap-1 px-1"><Icon className="size-4" />{l}</Button>
         ))}
       </div>
 
       {tab === "board" && (
         <div className="flex gap-1.5 overflow-x-auto pb-1">
           {months.map((m) => (
-            <Button key={m} size="sm" variant={m === month ? "default" : "outline"} onClick={() => setMonth(m)} className="shrink-0">{monthLabel(m)}</Button>
+            <Button key={m} size="sm" variant={m === month ? "default" : "outline"} onClick={() => { setMonth(m); setStack([]); }} className="shrink-0">{monthLabel(m)}</Button>
           ))}
         </div>
       )}
@@ -153,272 +115,44 @@ export default function Evaluations() {
 
       {tab === "settings" && <SettingsTab isAdmin={isAdmin} staff={data?.staff ?? []} />}
 
-      {tab === "board" && (
+      {tab === "board" && (isLoading || !b ? (
+        <div className="flex justify-center py-16"><Loader2 className="size-6 animate-spin text-primary" /></div>
+      ) : (
         <>
-          {isLoading || !v ? (
-            <div className="flex justify-center py-16"><Loader2 className="size-6 animate-spin text-primary" /></div>
-          ) : (
-            <>
-              {/* الأرقام الكبيرة */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <Kpi icon={Users} label="اتقيّموا" value={`${v.rated.length} / ${v.people.length}`} />
-                <Kpi icon={Star} label="المتوسط العام" value={f1(v.overall)} sub={grade(v.overall).label} tone={grade(v.overall).text} />
-                <Kpi icon={Award} label="الأحسن" value={v.rated[0]?.name ?? "—"} sub={v.rated[0] ? f1(v.rated[0].final) : ""} tone="text-emerald-600" />
-                <Kpi icon={AlertTriangle} label="يحتاج متابعة" value={String(v.rated.filter((p) => (p.final ?? 5) < 3).length)} sub="أقل من 3" tone="text-red-600" />
-              </div>
-
-              {/* مين قيّم ومين اتقيّم — جدول بسيط لكل الموظفين: ✅ صار، ❌ ناقص */}
-              <WhoEvaluated people={v.people} evals={data?.evals.filter((e) => e.month === month) ?? []} month={month} today={businessToday()} onRecord={() => setTab("record")} />
-
-              {/* الترتيب */}
-              <Card className="p-3">
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <h2 className="text-lg font-bold">نتيجة الشهر — {monthLabel(month)}</h2>
-                  {v.rated.length > 0 && (
-                    <span className="flex gap-1">
-                      <Button size="sm" variant="outline" className="h-8 px-2" onClick={() => { void navigator.clipboard.writeText(summaryText(v.rated, month)); toast.success("انسخت النتيجة"); }}><Copy className="size-4" /></Button>
-                      <Button asChild size="sm" variant="outline" className="h-8 px-2">
-                        <a href={`https://wa.me/?text=${encodeURIComponent(summaryText(v.rated, month))}`} target="_blank" rel="noreferrer"><MessageCircle className="size-4" /></a>
-                      </Button>
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground mb-2">الدرجة = متوسط {GM_EVAL_ENABLED ? "تقييم المدير العام وتقييم المشرف اليومي" : "تقييم المشرف اليومي"} في الشهر (وللمشرف تقييم موظفينه)، ولو ما فيش، تقييمه لنفسه. اضغط على أي اسم للتفاصيل.</p>
-                {!v.rated.length ? <p className="text-center text-muted-foreground py-6">ما فيش تقييمات لهذا الشهر لين توا.</p> : v.rated.map((p, i) => {
-                  const g = grade(p.final);
-                  const d = p.prev != null && p.final != null ? p.final - p.prev : null;
-                  return (
-                    <button key={p.id} onClick={() => setOpenId(p.id)} className="w-full text-right py-2 border-b last:border-0 active:bg-muted/40">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="flex items-center gap-2 min-w-0">
-                          <span className={`size-7 shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${i < 3 ? "bg-gold-gradient text-primary-foreground" : "bg-muted"}`}>{i + 1}</span>
-                          <span className="min-w-0">
-                            <span className="block font-bold truncate">{p.name}</span>
-                            <span className="block text-[11px] text-muted-foreground truncate">{p.role === "manager" ? "مشرف" : "موظف"} · {p.branch_name ?? "—"}{p.gm != null ? ` · المدير العام ${f1(p.gm)}` : ""}{p.self != null && p.others != null ? ` · قيّم نفسه ${f1(p.self)}` : ""}{p.absences.length ? ` · غاب ${p.absences.length} يوم` : ""}</span>
-                          </span>
-                        </span>
-                        <span className="shrink-0 text-left">
-                          <span className={`block text-xl font-bold ${g.text}`}>{f1(p.final)}</span>
-                          <span className="flex items-center gap-0.5 text-[11px] justify-end">
-                            {d != null && Math.abs(d) >= 0.1 && (d > 0
-                              ? <span className="text-emerald-600 flex items-center"><TrendingUp className="size-3" />{f1(d)}</span>
-                              : <span className="text-red-600 flex items-center"><TrendingDown className="size-3" />{f1(-d)}</span>)}
-                            <span className="text-muted-foreground mr-1">{g.label}</span>
-                          </span>
-                        </span>
-                      </div>
-                      <div className="h-1.5 bg-muted rounded-full mt-1.5 overflow-hidden"><div className={`h-full ${g.bg}`} style={{ width: `${((p.final ?? 0) / 5) * 100}%` }} /></div>
-                    </button>
-                  );
-                })}
-              </Card>
-
-              {/* تفاصيل إضافية مخفية افتراضياً — الصفحة الأساسية بسيطة: مين قيّم + الترتيب. */}
-              <details className="rounded-xl border bg-card p-3">
-                <summary className="cursor-pointer font-bold">تفاصيل أكثر (الفروع، البنود، المتوسط شهر بشهر)</summary>
-                <div className="mt-3 space-y-4">
-              <div className="grid sm:grid-cols-2 gap-4">
-                {/* الفروع */}
-                <Card className="p-3">
-                  <h2 className="font-bold mb-2">الفروع</h2>
-                  {!v.branches.length ? <p className="text-sm text-muted-foreground">—</p> : v.branches.map((b) => (
-                    <div key={b.name} className="mb-2">
-                      <div className="flex justify-between text-sm"><span>{b.name}</span><span className={`font-bold ${grade(b.avg).text}`}>{f1(b.avg)}</span></div>
-                      <div className="h-2 bg-muted rounded-full overflow-hidden"><div className={`h-full ${grade(b.avg).bg}`} style={{ width: `${(b.avg / 5) * 100}%` }} /></div>
-                    </div>
-                  ))}
-                </Card>
-                {/* البنود */}
-                <Card className="p-3">
-                  <h2 className="font-bold mb-1">البنود — الأضعف أول</h2>
-                  <p className="text-[11px] text-muted-foreground mb-2">وين الفريق يحتاج تدريب ولا متابعة.</p>
-                  {!v.criteria.length ? <p className="text-sm text-muted-foreground">—</p> : v.criteria.map((c) => (
-                    <div key={c.key} className="mb-1.5">
-                      <div className="flex justify-between text-xs"><span className="truncate">{c.label}</span><span className={`font-bold ${grade(c.avg).text}`}>{f1(c.avg)}</span></div>
-                      <div className="h-1.5 bg-muted rounded-full overflow-hidden"><div className={`h-full ${grade(c.avg).bg}`} style={{ width: `${(c.avg / 5) * 100}%` }} /></div>
-                    </div>
-                  ))}
-                </Card>
-              </div>
-
-              {/* المتوسط شهر بشهر */}
-              {v.trend.filter((t) => t.avg != null).length > 1 && (
-                <Card className="p-3">
-                  <h2 className="font-bold mb-2">المتوسط العام شهر بشهر</h2>
-                  <div className="h-48" dir="ltr">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={v.trend} margin={{ top: 5, right: 8, left: -20, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                        <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                        <YAxis domain={[1, 5]} ticks={[1, 2, 3, 4, 5]} tick={{ fontSize: 11 }} />
-                        <Tooltip formatter={(val: number) => f1(val)} />
-                        <Line type="monotone" dataKey="avg" stroke="#C9A227" strokeWidth={3} dot={{ r: 4 }} connectNulls />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Card>
-              )}
-                </div>
-              </details>
-            </>
-          )}
+          <p className="rounded-lg bg-primary/5 p-2 text-xs leading-relaxed">
+            <b>الدرجة من تقييمهم لبعض بس</b>: المشرف يقيّم موظفينه كل يوم، والموظفين يقيّموا مشرفهم مرتين في الشهر.
+            <b> التقييم الذاتي لوحده</b> للمقارنة وما يدخلش في الترتيب. اضغط على أي رقم ولا اسم ولا يوم تشوف تفاصيله.
+          </p>
+          <Kpis b={b} open={open} />
+          <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {JUMPS.map(([id, label]) => (
+              <button key={id} type="button" onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                className="shrink-0 rounded-full border bg-card px-3 py-1 text-xs font-semibold text-muted-foreground active:bg-muted">{label}</button>
+            ))}
+          </div>
+          <section id="ev-result" className="scroll-mt-24"><ResultCard b={b} open={open} /></section>
+          <section id="ev-who" className="scroll-mt-24"><WhoEvaluated key={b.month} b={b} open={open} onRecord={() => setTab("record")} /></section>
+          <section id="ev-self" className="scroll-mt-24"><SelfCompare b={b} open={open} /></section>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <section id="ev-branches" className="scroll-mt-24"><BranchesCard b={b} open={open} /></section>
+            <section id="ev-criteria" className="scroll-mt-24"><CriteriaCard b={b} open={open} /></section>
+          </div>
+          <TrendCard b={b} />
         </>
-      )}
+      ))}
 
-      <Sheet open={!!open} onOpenChange={(o) => !o && setOpenId(null)}>
-        <SheetContent side="bottom" className="rounded-t-2xl max-h-[92dvh] overflow-y-auto pb-8">
-          {open && v && data && <PersonDetail p={open} month={month} staff={data.staff} scoreOf={v.scoreOf} />}
+      <Sheet open={!!top} onOpenChange={(o) => !o && setStack([])}>
+        <SheetContent ref={sheetRef} side="bottom" className="max-h-[92dvh] overflow-y-auto rounded-t-2xl pb-8">
+          {stack.length > 1 && (
+            <div className="mb-2 flex justify-end">
+              <button type="button" onClick={() => setStack((s) => s.slice(0, -1))} className="flex items-center gap-1 text-sm font-semibold text-primary">
+                <ChevronRight className="size-4" />رجوع
+              </button>
+            </div>
+          )}
+          {top && b && data && <EvalDetail key={`${stack.length}:${JSON.stringify(top)}`} d={top} b={b} staff={data.staff} open={open} />}
         </SheetContent>
       </Sheet>
-    </div>
-  );
-}
-
-/** نتيجة الشهر كنص (واتساب/نسخ): كل فرع، كل واحد بدرجته وغيابه، واللي يحتاج متابعة. */
-function summaryText(rated: Person[], month: string) {
-  const lines = [`نتيجة تقييم ${monthLabel(month)}`];
-  const byBranch = new Map<string, Person[]>();
-  for (const p of rated) byBranch.set(p.branch_name ?? "بدون فرع", [...(byBranch.get(p.branch_name ?? "بدون فرع") ?? []), p]);
-  for (const [b, ps] of byBranch) {
-    lines.push("", `${b}:`);
-    ps.forEach((p, i) => lines.push(`${i + 1}. ${p.name}${p.role === "manager" ? " (مشرف)" : ""} — ${f1(p.final)} ${grade(p.final).label}${p.absences.length ? ` · غاب ${p.absences.length} يوم` : ""}`));
-  }
-  const low = rated.filter((p) => (p.final ?? 5) < 3);
-  if (low.length) lines.push("", `يحتاج متابعة: ${low.map((p) => p.name).join("، ")}`);
-  return lines.join("\n");
-}
-
-function Kpi({ icon: Icon, label, value, sub, tone }: { icon: typeof Star; label: string; value: string; sub?: string; tone?: string }) {
-  return (
-    <Card className="p-3">
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><Icon className="size-3.5" />{label}</div>
-      <div className={`text-xl font-bold truncate ${tone ?? ""}`}>{value}</div>
-      {sub && <div className="text-[11px] text-muted-foreground">{sub}</div>}
-    </Card>
-  );
-}
-
-function PersonDetail({ p, month, staff, scoreOf }: {
-  p: Person; month: string; staff: EvalStaff[];
-  scoreOf: (s: EvalStaff, m: string) => { others: number | null; self: number | null; gm: number | null; final: number | null; evals: Evaluation[] };
-}) {
-  const criteria = p.role === "manager" ? MANAGER_CRITERIA : EMPLOYEE_CRITERIA;
-  const others = p.evals.filter((e) => e.kind !== "self" && e.kind !== "by_gm");
-  const gmEvals = p.evals.filter((e) => e.kind === "by_gm");
-  const selfs = p.evals.filter((e) => e.kind === "self");
-  const daily = others.filter((e) => e.kind === "by_manager");
-  const notes = [...p.evals].filter((e) => e.strengths || e.improvements || e.notes)
-    .sort((a, b) => (b.period ?? b.month).localeCompare(a.period ?? a.month)).slice(0, 20);
-  const when = (e: Evaluation) => (e.kind === "by_manager" ? dayLabel(e.period ?? e.month, "") : e.kind === "by_gm" ? monthLabel(e.month) : halfLabel(e.period ?? e.month));
-  const crit = (k: string, es: Evaluation[]) => {
-    const xs = es.map((e) => e.scores?.[k]).filter((x) => x != null).map(Number);
-    return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
-  };
-  const history = Array.from({ length: 6 }, (_, i) => shiftMonth(month, i - 5)).map((m) => {
-    const s = scoreOf(p, m);
-    return { month: monthLabel(m).split(" ")[0], others: s.others, self: s.self };
-  });
-  const nameOf = (id: string) => staff.find((s) => s.id === id)?.name ?? "—";
-  const g = grade(p.final);
-  return (
-    <div className="space-y-4">
-      <SheetHeader className="text-right">
-        <SheetTitle className="text-xl">{p.name}</SheetTitle>
-        <p className="text-xs text-muted-foreground">{p.role === "manager" ? "مشرف" : "موظف"} · {p.branch_name ?? "—"} · {monthLabel(month)}</p>
-      </SheetHeader>
-      <div className={`grid gap-2 text-center ${GM_EVAL_ENABLED ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"}`}>
-        <Card className="p-2"><div className="text-[11px] text-muted-foreground">الدرجة</div><div className={`text-2xl font-bold ${g.text}`}>{f1(p.final)}</div><div className="text-[11px]">{g.label}</div></Card>
-        {GM_EVAL_ENABLED && <Card className="p-2"><div className="text-[11px] text-muted-foreground">المدير العام</div><div className="text-xl font-bold">{f1(p.gm)}</div></Card>}
-        <Card className="p-2"><div className="text-[11px] text-muted-foreground">{p.role === "manager" ? "تقييم موظفينه" : "تقييم المشرف"}</div><div className="text-xl font-bold">{f1(avg(others.map((e) => e.overall)))}</div></Card>
-        <Card className="p-2"><div className="text-[11px] text-muted-foreground">قيّم نفسه</div><div className="text-xl font-bold">{f1(p.self)}</div></Card>
-      </div>
-
-      {gmEvals.length > 0 && (
-        <Card className="p-3">
-          <h3 className="font-bold mb-2">بنود المدير العام</h3>
-          {GM_CRITERIA.map((c) => {
-            const val = crit(c.key, gmEvals);
-            return (
-              <div key={c.key} className="mb-1.5">
-                <div className="flex justify-between text-sm"><span>{c.label}</span><span className={`font-bold ${grade(val).text}`}>{f1(val)}</span></div>
-                <div className="h-1.5 bg-muted rounded-full overflow-hidden"><div className={`h-full ${grade(val).bg}`} style={{ width: `${((val ?? 0) / 5) * 100}%` }} /></div>
-              </div>
-            );
-          })}
-        </Card>
-      )}
-      {p.self != null && p.others != null && Math.abs(p.self - p.others) >= 0.75 && (
-        <p className="text-xs rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-300 p-2">
-          فرق كبير بين تقييمه لنفسه ({f1(p.self)}) و{p.role === "manager" ? "تقييم موظفينه" : "تقييم مشرفه"} ({f1(p.others)}) — يستاهل جلسة كلام معاه.
-        </p>
-      )}
-
-      <Card className="p-3">
-        <h3 className="font-bold mb-2">البنود</h3>
-        <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-1.5 text-sm items-center">
-          <span className="text-[11px] text-muted-foreground">البند</span>
-          <span className="text-[11px] text-muted-foreground text-center">{p.role === "manager" ? "الموظفين" : "المشرف"}</span>
-          <span className="text-[11px] text-muted-foreground text-center">نفسه</span>
-          {criteria.map((c) => {
-            const o = crit(c.key, others), s = crit(c.key, selfs);
-            return [
-              <span key={c.key} className="truncate">{c.label}</span>,
-              <span key={c.key + "o"} className={`text-center font-bold ${grade(o).text}`}>{f1(o)}</span>,
-              <span key={c.key + "s"} className="text-center text-muted-foreground">{f1(s)}</span>,
-            ];
-          })}
-        </div>
-      </Card>
-
-      {history.some((h) => h.others != null || h.self != null) && (
-        <Card className="p-3">
-          <h3 className="font-bold mb-2">شهر بشهر</h3>
-          <div className="h-40" dir="ltr">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={history} margin={{ top: 5, right: 8, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                <YAxis domain={[1, 5]} ticks={[1, 2, 3, 4, 5]} tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(val: number, k: string) => [f1(val), k === "self" ? "نفسه" : p.role === "manager" ? "الموظفين" : "المشرف"]} />
-                <Line type="monotone" dataKey="others" stroke="#C9A227" strokeWidth={3} dot={{ r: 3 }} connectNulls />
-                <Line type="monotone" dataKey="self" stroke="#94a3b8" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 2 }} connectNulls />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          <p className="text-[11px] text-muted-foreground">الذهبي: {p.role === "manager" ? "تقييم الموظفين" : "تقييم المشرف"} · المقطّع: تقييمه لنفسه</p>
-        </Card>
-      )}
-
-      {p.role !== "manager" && (
-        <p className="text-xs text-muted-foreground">
-          قيّمه المشرف {p.presentDays} يوم حاضر في {monthLabel(month)}{p.presentDays ? ` — المتوسط ${f1(avg(daily.map((e) => e.overall)))}` : ""}
-          {p.absences.length ? ` · وغاب ${p.absences.length} يوم` : ""}.
-        </p>
-      )}
-      {p.absences.length > 0 && (
-        <Card className="p-3 space-y-1.5">
-          <h3 className="font-bold">الغياب ({p.absences.length} يوم)</h3>
-          {p.absences.map((e) => (
-            <div key={e.id} className="flex items-start justify-between gap-2 border-b pb-1.5 text-sm last:border-0">
-              <span className="text-muted-foreground">{when(e)}</span>
-              <span className="text-left font-semibold">{e.absence_reason ?? "—"}</span>
-            </div>
-          ))}
-        </Card>
-      )}
-      {notes.length > 0 && (
-        <Card className="p-3 space-y-3">
-          <h3 className="font-bold">الملاحظات</h3>
-          {notes.map((e) => (
-            <div key={e.id} className="text-sm border-b last:border-0 pb-2">
-              <p className="text-xs text-muted-foreground">{KIND_LABEL[e.kind]}{e.kind !== "self" ? ` · من ${nameOf(e.evaluator_id)}` : ""} · {when(e)} · {f1(e.overall)}{e.source === "recorder" ? " · سجّلها المسؤول" : ""}</p>
-              {e.strengths && <p><b className="text-emerald-600">قوة: </b>{e.strengths}</p>}
-              {e.improvements && <p><b className="text-amber-600">يتحسّن: </b>{e.improvements}</p>}
-              {e.notes && <p className="text-muted-foreground">{e.notes}</p>}
-            </div>
-          ))}
-        </Card>
-      )}
     </div>
   );
 }
@@ -543,135 +277,5 @@ function SettingsTab({ isAdmin, staff }: { isAdmin: boolean; staff: EvalStaff[] 
         </Card>
       )}
     </div>
-  );
-}
-
-/**
- * مين قيّم ومين اتقيّم في الشهر — على الإيقاع الجديد:
- *  • المشرف: كم يوم قيّم موظفينه (من الأيام اللي فاتت في الشهر)، واليوم قيّم كم واحد، وتقييمه لنفسه في كل نص.
- *  • الموظف: كم يوم قيّمه مشرفه، وفي كل نص: قيّم نفسه؟ قيّم مشرفه؟
- * ✅ = صار · ❌ = ناقص · ⏳ = النص ما بداش · «—» = ما ينطبقش (مثلاً فرع بلا مشرف).
- */
-function WhoEvaluated({ people, evals, month, today, onRecord }: { people: Person[]; evals: Evaluation[]; month: string; today: string; onRecord: () => void }) {
-  const dim = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
-  const isCur = today.slice(0, 7) === month.slice(0, 7);
-  const elapsed = isCur ? Number(today.slice(8, 10)) : today > month ? dim : 0;
-  const halves = [
-    { key: month, label: "1–15", started: elapsed >= 1 },
-    { key: `${month.slice(0, 7)}-16`, label: `16–${dim}`, started: elapsed >= 16 },
-  ];
-  const per = (e: Evaluation) => e.period ?? e.month;
-  const has = (kind: Evaluation["kind"], subject: string, period: string, evaluator?: string) =>
-    evals.some((e) => e.kind === kind && e.subject_id === subject && per(e) === period && (!evaluator || e.evaluator_id === evaluator));
-  const daysBy = (evaluator: string) => new Set(evals.filter((e) => e.kind === "by_manager" && e.evaluator_id === evaluator).map(per)).size;
-  const daysOf = (subject: string) => new Set(evals.filter((e) => e.kind === "by_manager" && e.subject_id === subject).map(per)).size;
-  const byBranch = new Map<string, Person[]>();
-  for (const p of people) {
-    const k = p.branch_name ?? "بدون فرع";
-    byBranch.set(k, [...(byBranch.get(k) ?? []), p]);
-  }
-  const Mark = ({ ok, na, wait }: { ok: boolean; na?: boolean; wait?: boolean }) =>
-    na ? <span className="text-muted-foreground">—</span> : wait ? <span title="ما بداش">⏳</span> : ok ? <span title="صار">✅</span> : <span title="ناقص">❌</span>;
-  const Days = ({ n }: { n: number }) => {
-    if (!elapsed) return <span className="text-muted-foreground">—</span>;
-    const r = n / elapsed;
-    return <span className={`font-bold tabular-nums ${r >= 0.85 ? "text-emerald-600" : r >= 0.5 ? "text-amber-600" : "text-red-600"}`}>{n}/{elapsed}</span>;
-  };
-
-  let missing = 0;
-  const rows = [...byBranch.entries()].map(([branch, list]) => {
-    const managers = list.filter((p) => p.role === "manager");
-    const staff = list.filter((p) => p.role !== "manager");
-    return {
-      branch,
-      people: [...managers, ...staff].map((p) => {
-        if (p.role === "manager") {
-          const todayN = isCur ? staff.filter((t) => has("by_manager", t.id, today, p.id)).length : null;
-          const selfMiss = halves.some((h) => h.started && !has("self", p.id, h.key));
-          const done = !selfMiss && (todayN === null || todayN === staff.length);
-          if (!done) missing++;
-          return {
-            p, done,
-            daily: (
-              <span className="block leading-tight">
-                <Days n={daysBy(p.id)} />
-                {todayN !== null && staff.length > 0 && (
-                  <span className={`block text-[10px] ${todayN === staff.length ? "text-emerald-600" : "text-red-600"}`}>اليوم {todayN}/{staff.length}</span>
-                )}
-              </span>
-            ),
-            halves: halves.map((h) => (
-              <span key={h.key} className="block leading-tight">
-                <Mark ok={has("self", p.id, h.key)} wait={!h.started} />
-                {h.started && staff.length > 0 && (
-                  <span className="block text-[10px] text-muted-foreground">قيّموه {staff.filter((t) => has("of_manager", p.id, h.key, t.id)).length}/{staff.length}</span>
-                )}
-              </span>
-            )),
-          };
-        }
-        const mgr = managers.find((m) => m.id !== p.id);
-        const selfMiss = halves.some((h) => h.started && !has("self", p.id, h.key));
-        if (selfMiss) missing++;
-        return {
-          p, done: !selfMiss,
-          daily: mgr ? (
-            <span className="block leading-tight">
-              <Days n={daysOf(p.id)} />
-              {p.absences.length > 0 && <span className="block text-[10px] text-red-600">غاب {p.absences.length}</span>}
-            </span>
-          ) : <span className="text-muted-foreground">—</span>,
-          halves: halves.map((h) => (
-            <span key={h.key} className="inline-flex items-center gap-1 whitespace-nowrap">
-              <Mark ok={has("self", p.id, h.key)} wait={!h.started} />
-              {mgr && h.started && <span className="text-[10px] text-muted-foreground">مشرفه <Mark ok={has("of_manager", mgr.id, h.key, p.id)} /></span>}
-            </span>
-          )),
-        };
-      }),
-    };
-  });
-
-  return (
-    <Card className="p-3 space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-lg font-bold">مين قيّم ومين اتقيّم — {monthLabel(month)}</h2>
-        {missing > 0 ? <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700 dark:bg-red-950/40">{missing} ناقص</span>
-          : <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700 dark:bg-emerald-950/40">الكل كمّل ✅</span>}
-      </div>
-      <p className="text-xs text-muted-foreground leading-relaxed">
-        <b>يومي</b>: للمشرف كم يوم قيّم موظفينه من {elapsed || "—"} يوم فاتت (وتحتها اليوم قيّم كم واحد)، وللموظف كم يوم قيّمه مشرفه.
-        <b> النص</b>: قيّم نفسه؟ (وللموظف: قيّم مشرفه؟ وللمشرف: كم واحد من موظفينه قيّموه). ✅ صار · ❌ ناقص · ⏳ ما بداش · «—» ما ينطبقش.
-      </p>
-      {rows.map(({ branch, people: ps }) => (
-        <div key={branch} className="overflow-x-auto">
-          <p className="mb-1 text-sm font-bold text-primary">{branch}</p>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-[11px] text-muted-foreground">
-                <th className="text-right font-normal py-1">الاسم</th>
-                <th className="font-normal px-1">يومي</th>
-                {halves.map((h) => <th key={h.key} className="font-normal px-1">النص {h.label}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {ps.map(({ p, daily, halves: hs, done }) => (
-                <tr key={p.id} className={`border-t ${done ? "" : "bg-red-50/60 dark:bg-red-950/20"}`}>
-                  <td className="py-1.5">
-                    <span className="font-semibold">{p.name}</span>
-                    <span className="block text-[11px] text-muted-foreground">{p.role === "manager" ? "مشرف" : "موظف"}</span>
-                  </td>
-                  <td className="text-center">{daily}</td>
-                  {hs.map((c, i) => <td key={i} className="text-center">{c}</td>)}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ))}
-      {missing > 0 && (
-        <Button size="sm" variant="outline" onClick={onRecord}><Plus className="size-4" />سجّل تقييم عن واحد ناقص</Button>
-      )}
-    </Card>
   );
 }
