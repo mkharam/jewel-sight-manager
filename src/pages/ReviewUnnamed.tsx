@@ -306,7 +306,7 @@ export default function ReviewUnnamed() {
   return (
     <div className="max-w-4xl mx-auto space-y-4">
       <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
+        <h1 className="hub-title text-2xl font-bold flex items-center gap-2">
           <Sparkles className="size-6 text-primary" />
           {isSessionReview ? "مراجعة صور هذه الجلسة" : "مراجعة الصور غير المسمّاة"}
         </h1>

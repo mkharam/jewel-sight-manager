@@ -197,3 +197,9 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* داخل صفحة بخانات (PageTabs): عنوان الصفحة الداخلي مكرر — اسم الخانة فوقه مباشرة، واسم الصفحة في
+   الرأس — فنخبّوه على الهاتف ونربحوا مساحة. على الكمبيوتر يبقى. */
+@media (max-width: 1023px) {
+  .hub-content .hub-title { display: none; }
+}

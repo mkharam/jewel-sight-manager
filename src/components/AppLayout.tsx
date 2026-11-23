@@ -19,6 +19,7 @@ import { useResumeRoute } from "@/lib/resume";
 import { ensurePushEnabled } from "@/lib/push";
 import { resumePendingUploads } from "@/lib/uploadRunner";
 import { useActivityFeed } from "@/hooks/useActivityFeed";
+import { usePendingReorders, usePendingTransfers } from "@/hooks/usePendingCounts";
 import { CHAT_SEEN_KEY, NOTIFS_SEEN_KEY, SEEN_EVENT, readSeen, setIconBadge } from "@/lib/appBadge";
 
 // القائمة كلها من كتالوج واحد (src/lib/nav.ts): الأقسام والصلاحيات.
@@ -28,9 +29,12 @@ const MOBILE_BAR = ["/", "/chat", "/inquiries", "/upload"];
 const MOBILE_BAR_ADMIN = ["/", "/chat", "/inquiries", "/amarsoft"];
 // المشرف: أمارسوفت عنده هو المخزون.
 const MOBILE_BAR_SUPERVISOR = ["/", "/chat", "/inquiries", "/stock"];
-const MOBILE_BAR_STAFF = ["/", "/chat", "/inquiries", "/reorders", "/upload"];
+const MOBILE_BAR_STAFF = ["/", "/chat", "/inquiries", "/transfers?tab=reorders", "/upload"];
 // أسماء قصيرة للشريط السفلي (الاسم الكامل في القائمة).
-const BAR_LABEL: Record<string, string> = { "/": "البحث", "/chat": "المحادثة", "/inquiries": "الاستفسارات", "/amarsoft": "أمارسوفت", "/stock": "المخزون", "/upload": "رفع قطع", "/reorders": "إعادة الطلب" };
+const BAR_LABEL: Record<string, string> = {
+  "/": "البحث", "/chat": "المحادثة", "/inquiries": "الاستفسارات", "/amarsoft": "أمارسوفت", "/stock": "المخزون",
+  "/upload": "رفع قطع", "/transfers?tab=reorders": "إعادة الطلب",
+};
 
 function CountBadge({ count, className }: { count: number; className?: string }) {
   if (count <= 0) return null;
@@ -82,18 +86,7 @@ export default function AppLayout() {
   // عدد طلبات إعادة الطلب التي بانتظار قرار المدير
   // مُعرّف المستخدم جزء من المفتاح: بدونه كان العدّاد المحسوب لحساب سابق يبقى في الكاش
   // ويظهر كما هو للحساب التالي بعد تبديل المستخدم على الجهاز نفسه.
-  const { data: pendingReorders = 0 } = useQuery({
-    queryKey: ["pending-reorders-count", user?.id],
-    queryFn: async () => {
-      const { count } = await supabase
-        .from("product_reorder_requests")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "pending");
-      return count ?? 0;
-    },
-    enabled: !!user,
-    refetchInterval: 60_000,
-  });
+  const pendingReorders = usePendingReorders();
 
   useEffect(() => {
     if (!user) return;
@@ -107,25 +100,7 @@ export default function AppLayout() {
   }, [user, qc]);
 
   // عدد التحويلات المعلّقة للموظف: واردة بانتظار استلام، أو صادرة بانتظار موافقة
-  const { data: pendingTransfers = 0 } = useQuery({
-    queryKey: ["pending-transfers-count", branchId, user?.id],
-    queryFn: async () => {
-      if (!user) return 0;
-      // واردة إلى فرعي بانتظار approval/شحن
-      let total = 0;
-      if (branchId) {
-        const { count: incoming } = await supabase
-          .from("transfers")
-          .select("id", { count: "exact", head: true })
-          .eq("to_branch_id", branchId)
-          .in("status", ["pending", "approved", "in_transit"] as any);
-        total += incoming ?? 0;
-      }
-      return total;
-    },
-    enabled: !!user,
-    refetchInterval: 60_000,
-  });
+  const pendingTransfers = usePendingTransfers();
 
   // اشتراك Realtime لتحديث العدّاد فوراً
   useEffect(() => {
@@ -216,7 +191,10 @@ export default function AppLayout() {
   }, [user, unreadNotifs, unreadChat]);
 
   const pendingUploads = useUploadQueuePendingCount();
-  const badges: Record<string, number> = { transfers: pendingTransfers, uploads: pendingUploads, reorders: pendingReorders, weights: missingWeights, chat: unreadChat };
+  const badges: Record<string, number> = {
+    transfers: pendingTransfers, uploads: pendingUploads, reorders: pendingReorders, weights: missingWeights, chat: unreadChat,
+    requests: pendingTransfers + pendingReorders,
+  };
 
   const [moreOpen, setMoreOpen] = useState(false);
 

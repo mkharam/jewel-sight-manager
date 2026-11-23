@@ -97,7 +97,7 @@ export default function Inquiries() {
           كانا يتزاحمان ويقصّان النص. من sm فأعلى يعودان بجانب العنوان كالسابق. */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">استفسارات العملاء</h1>
+          <h1 className="hub-title text-2xl font-bold">استفسارات العملاء</h1>
           <p className="text-sm text-muted-foreground">سجّل ما يطلبه العملاء حتى لو القطعة غير موجودة الآن.</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">

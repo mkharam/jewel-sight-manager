@@ -141,11 +141,11 @@ export default function GoldPrice() {
   return (
     <div className="space-y-4 max-w-4xl mx-auto">
       <header className="flex items-center gap-3">
-        <div className="size-10 rounded-xl bg-gold-gradient flex items-center justify-center shadow-gold">
+        <div className="hub-title size-10 rounded-xl bg-gold-gradient flex items-center justify-center shadow-gold">
           <Coins className="size-5 text-primary-foreground" />
         </div>
         <div>
-          <h1 className="text-xl font-extrabold text-gold-gradient">تسعير الذهب اليومي</h1>
+          <h1 className="hub-title text-xl font-extrabold text-gold-gradient">تسعير الذهب اليومي</h1>
           <p className="text-xs text-muted-foreground">حدّث سعر الجرام والمصنعية لكل عيار — يستخدمها الموظفون لحساب السعر المقترح.</p>
         </div>
       </header>

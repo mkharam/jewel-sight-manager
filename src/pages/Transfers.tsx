@@ -122,7 +122,7 @@ export default function Transfers() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+        <div className="hub-title flex items-center gap-2">
           <ArrowLeftRight className="size-5 text-primary" />
           <h1 className="text-xl font-bold">تحويلات الفروع</h1>
         </div>

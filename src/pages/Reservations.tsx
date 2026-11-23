@@ -140,11 +140,11 @@ export default function Reservations() {
   return (
     <div className="space-y-4 max-w-3xl mx-auto">
       <header className="flex items-center gap-3">
-        <div className="size-10 rounded-xl bg-gold-gradient flex items-center justify-center shadow-gold">
+        <div className="hub-title size-10 rounded-xl bg-gold-gradient flex items-center justify-center shadow-gold">
           <BookmarkCheck className="size-5 text-primary-foreground" />
         </div>
         <div>
-          <h1 className="text-xl font-extrabold text-gold-gradient">الحجوزات</h1>
+          <h1 className="hub-title text-xl font-extrabold text-gold-gradient">الحجوزات</h1>
           <p className="text-xs text-muted-foreground">
             يُفرَج عن القطعة تلقائياً بعد {GRACE_DAYS} يومين من تاريخ انتهاء الحجز. الحجز يبدأ من صفحة القطعة.
           </p>

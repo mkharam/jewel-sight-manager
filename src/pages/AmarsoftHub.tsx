@@ -69,12 +69,13 @@ export default function AmarsoftHub() {
 
   return (
     <div className="space-y-2">
+      {/* سطر واحد: آخر تحديث، وجنبه تنبيه الفواتير الممسوحة اليوم (كان صندوق أحمر كبير فوق كل خانة). */}
       {isAdmin && (
-        <div className="mx-auto max-w-5xl space-y-2">
-          <p className="px-1 text-[11px] text-muted-foreground">آخر تحديث من أمارسوفت: {formatTripoli(data?.lastSync)}</p>
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-2 gap-y-1 px-1">
+          <p className="text-[11px] text-muted-foreground">آخر تحديث من أمارسوفت: {formatTripoli(data?.lastSync)}</p>
           {!!data?.deletedToday && (
-            <Link to="/amarsoft?tab=log" className="flex items-center gap-2 rounded-xl border-2 border-destructive bg-destructive/10 p-3 font-bold text-destructive">
-              <AlertTriangle className="size-5 shrink-0" />حُذفت {data.deletedToday} فاتورة اليوم — اضغط للتفاصيل
+            <Link to="/amarsoft?tab=log" className="flex items-center gap-1 rounded-full border border-destructive bg-destructive/10 px-2.5 py-1 text-xs font-bold text-destructive">
+              <AlertTriangle className="size-3.5 shrink-0" />حُذفت {data.deletedToday} فاتورة اليوم ←
             </Link>
           )}
         </div>

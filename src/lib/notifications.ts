@@ -113,10 +113,10 @@ export function describe(a: ActivityItem): { text: string; icon: any; href: stri
 
   if (type === "product_reorder_requests") {
     const product = d.product ?? "قطعة";
-    if (a.action === "reorder_requested") return { text: `${actor} طلب إعادة طلب: ${product}`, icon: PackagePlus, href: "/reorders" };
-    if (a.action === "reorder_ordered") return { text: `تم طلب «${product}» من المورد`, icon: PackagePlus, href: "/reorders" };
-    if (a.action === "reorder_received") return { text: `وصلت «${product}» 🎉`, icon: PackagePlus, href: "/reorders" };
-    if (a.action === "reorder_cancelled") return { text: `أُلغي طلب إعادة طلب: ${product}`, icon: PackagePlus, href: "/reorders" };
+    if (a.action === "reorder_requested") return { text: `${actor} طلب إعادة طلب: ${product}`, icon: PackagePlus, href: "/transfers?tab=reorders" };
+    if (a.action === "reorder_ordered") return { text: `تم طلب «${product}» من المورد`, icon: PackagePlus, href: "/transfers?tab=reorders" };
+    if (a.action === "reorder_received") return { text: `وصلت «${product}» 🎉`, icon: PackagePlus, href: "/transfers?tab=reorders" };
+    if (a.action === "reorder_cancelled") return { text: `أُلغي طلب إعادة طلب: ${product}`, icon: PackagePlus, href: "/transfers?tab=reorders" };
     return null;
   }
 

@@ -95,7 +95,7 @@ export default function PosStock() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-4">
-      <div>
+      <div className="hub-title">
         <h1 className="text-2xl font-bold flex items-center gap-2"><Boxes className="size-6 text-primary" />مخزون أمارسوفت</h1>
         <p className="text-xs text-muted-foreground mt-1">القطع المكوّدة كما في أمارسوفت، تتحدّث كل 5 دقائق.</p>
       </div>

@@ -19,27 +19,22 @@ import ProductSearch from "@/pages/ProductSearch";
 // code splitting) بدل حزمة JS واحدة ضخمة تُبطئ أول ظهور على الجوال.
 const ProductDetail = lazy(() => import("@/pages/ProductDetail"));
 const ProductForm = lazy(() => import("@/pages/ProductForm"));
-const Inquiries = lazy(() => import("@/pages/Inquiries"));
 const StaffChat = lazy(() => import("@/pages/StaffChat"));
 const Upload = lazy(() => import("@/pages/Upload"));
 const PiecesHub = lazy(() => import("@/pages/PiecesHub"));
-const CountHub = lazy(() => import("@/pages/CountHub"));
 const StockHub = lazy(() => import("@/pages/StockHub"));
-const EvaluationHub = lazy(() => import("@/pages/EvaluationHub"));
 const TeamHub = lazy(() => import("@/pages/TeamHub"));
-const Transfers = lazy(() => import("@/pages/Transfers"));
-const Reorders = lazy(() => import("@/pages/Reorders"));
+const TransfersHub = lazy(() => import("@/pages/TransfersHub"));
+const RequestsHub = lazy(() => import("@/pages/RequestsHub"));
 const GoldHub = lazy(() => import("@/pages/GoldHub"));
 const AmarsoftHub = lazy(() => import("@/pages/AmarsoftHub"));
 const Branches = lazy(() => import("@/pages/Branches"));
 const Leaderboard = lazy(() => import("@/pages/Leaderboard"));
 const Repairs = lazy(() => import("@/pages/Repairs"));
 const DailyClosing = lazy(() => import("@/pages/DailyClosing"));
-const Reservations = lazy(() => import("@/pages/Reservations"));
 const Buybacks = lazy(() => import("@/pages/Buybacks"));
 const Customers = lazy(() => import("@/pages/Customers"));
 const LiveAdd = lazy(() => import("@/pages/LiveAdd"));
-const AdminProducts = lazy(() => import("@/pages/AdminProducts"));
 const Notifications = lazy(() => import("@/pages/Notifications"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 const SaleReceipt = lazy(() => import("@/pages/SaleReceipt"));
@@ -82,6 +77,22 @@ function ReportsRedirect() {
   if (t === "stock") return <Navigate to="/stock?tab=app" replace />;
   return <Navigate to={`/amarsoft?tab=${REPORTS_TAB[t] ?? "overview"}`} replace />;
 }
+// «الفروع والفريق» (/team) لمّ «التقييم» و«الموظفون»؛ و«المخزون والجرد» (/stock) لمّ «الجرد».
+const TEAM_TAB: Record<string, string> = { numbers: "numbers", monthly: "evaluations", evaluations: "evaluations", leaderboard: "leaderboard" };
+function EvaluationRedirect() {
+  const [params] = useSearchParams();
+  return <Navigate to={`/team?tab=${TEAM_TAB[params.get("tab") ?? ""] ?? "numbers"}`} replace />;
+}
+function StaffRedirect() {
+  const [params] = useSearchParams();
+  const t = params.get("tab");
+  return <Navigate to={`/team?tab=${t === "evaluations" || t === "leaderboard" ? t : "accounts"}`} replace />;
+}
+function CountRedirect() {
+  const [params] = useSearchParams();
+  return <Navigate to={`/stock?tab=${params.get("tab") === "app" ? "appcount" : "scan"}`} replace />;
+}
+
 function PosSalesRedirect() {
   const [params] = useSearchParams();
   const t = params.get("tab");
@@ -122,7 +133,7 @@ const App = () => (
                 <Route path="/products/new" element={<ProductForm />} />
                 <Route path="/products/:id" element={<ProductDetail />} />
                 <Route path="/products/:id/edit" element={<ProductForm />} />
-                <Route path="/inquiries" element={<Inquiries />} />
+                <Route path="/inquiries" element={<RequestsHub />} />
                 <Route path="/chat" element={<StaffChat />} />
                 <Route path="/notifications" element={<Notifications />} />
                 <Route path="/upload" element={<Upload />} />
@@ -136,31 +147,32 @@ const App = () => (
                 <Route path="/import" element={<Navigate to="/upload" replace />} />
                 <Route path="/tray" element={<Navigate to="/upload" replace />} />
                 {/* الفريق والتقارير: كل وحدة صفحة بخانات. الروابط القديمة تفتح على خانتها. */}
-                <Route path="/staff" element={<RequireRole allow={["admin"]}><TeamHub /></RequireRole>} />
+                <Route path="/team" element={<RequireRole allow={["admin"]}><TeamHub /></RequireRole>} />
+                <Route path="/staff" element={<StaffRedirect />} />
                 <Route path="/reports" element={<ReportsRedirect />} />
                 <Route path="/reports/app" element={<Navigate to="/stock?tab=app" replace />} />
                 <Route path="/daily-summary" element={<Navigate to="/amarsoft?tab=daily" replace />} />
-                <Route path="/transfers" element={<Transfers />} />
-                <Route path="/reorders" element={<Reorders />} />
+                <Route path="/transfers" element={<TransfersHub />} />
+                <Route path="/reorders" element={<RedirectKeep to="/transfers?tab=reorders" />} />
                 {/* «الذهب والسوق»: السوق اليوم، تسعير المحل، المنافسين، سعري والسوق (للمدير العام). */}
                 <Route path="/gold-price" element={<RequireRole allow={["admin", "manager", "supervisor"]}><GoldHub /></RequireRole>} />
                 {/* «الجرد» و«المخزون»: كل وحدة صفحة بخانات (أمارسوفت + التطبيق). */}
-                <Route path="/count" element={<RequireRole allow={["admin", "manager", "supervisor"]}><CountHub /></RequireRole>} />
+                <Route path="/count" element={<CountRedirect />} />
                 <Route path="/stock" element={<RequireRole allow={["admin", "manager", "supervisor"]}><StockHub /></RequireRole>} />
-                <Route path="/stock-take" element={<RedirectKeep to="/count?tab=app" />} />
+                <Route path="/stock-take" element={<RedirectKeep to="/stock?tab=appcount" />} />
                 <Route path="/sales" element={<Navigate to="/amarsoft?tab=appsales" replace />} />
                 <Route path="/pos-sales" element={<PosSalesRedirect />} />
                 <Route path="/pos-stock" element={<RedirectKeep to="/stock?tab=amarsoft" />} />
-                <Route path="/pos-count" element={<RedirectKeep to="/count?tab=scan" />} />
+                <Route path="/pos-count" element={<RedirectKeep to="/stock?tab=scan" />} />
                 <Route path="/amarsoft" element={<RequireRole allow={["admin", "manager", "supervisor"]}><AmarsoftHub /></RequireRole>} />
                 <Route path="/branches" element={<Navigate to="/amarsoft?tab=branches" replace />} />
                 <Route path="/branches/:code" element={<RequireRole allow={["admin"]}><Branches /></RequireRole>} />
                 <Route path="/suppliers" element={<Navigate to="/amarsoft?tab=suppliers" replace />} />
                 <Route path="/leaderboard" element={<Leaderboard />} />
                 {/* «التقييم» للمدير العام: الأرقام، تقييم الموظفين، المتصدرون. */}
-                <Route path="/evaluation" element={<RequireRole allow={["admin"]}><EvaluationHub /></RequireRole>} />
-                <Route path="/staff-eval" element={<RedirectKeep to="/evaluation?tab=numbers" />} />
-                <Route path="/reservations" element={<Reservations />} />
+                <Route path="/evaluation" element={<EvaluationRedirect />} />
+                <Route path="/staff-eval" element={<RedirectKeep to="/team?tab=numbers" />} />
+                <Route path="/reservations" element={<RedirectKeep to="/inquiries?tab=reservations" />} />
                 <Route path="/watches" element={<Watches />} />
                 <Route path="/gram-price" element={<Navigate to="/amarsoft?tab=gram" replace />} />
                 <Route path="/accountant" element={<Navigate to="/amarsoft?tab=accountant" replace />} />
@@ -174,7 +186,7 @@ const App = () => (
                 <Route path="/loyalty" element={<Loyalty />} />
                 <Route path="/discount" element={<Navigate to="/loyalty?tab=discount" replace />} />
                 <Route path="/wallet-customers" element={<Navigate to="/loyalty?tab=wallet" replace />} />
-                <Route path="/admin/products" element={<RequireRole allow={["admin", "supervisor"]}><AdminProducts /></RequireRole>} />
+                <Route path="/admin/products" element={<RedirectKeep to="/pieces?tab=manage" />} />
               </Route>
               <Route path="*" element={<NotFound />} />
             </Routes>

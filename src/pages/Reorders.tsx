@@ -191,7 +191,7 @@ export default function Reorders() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
+      <div className="hub-title flex items-center gap-2">
         <PackagePlus className="size-5 text-primary" />
         <h1 className="text-xl font-bold">طلبات إعادة الطلب</h1>
       </div>

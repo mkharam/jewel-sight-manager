@@ -79,7 +79,7 @@ export default function Evaluations() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-4">
-      <div className="flex items-center justify-between gap-2">
+      <div className="hub-title flex items-center justify-between gap-2">
         <h1 className="text-2xl font-bold flex items-center gap-2"><ClipboardList className="size-7 text-primary" />تقييم الموظفين</h1>
       </div>
       <div className="grid gap-1.5 grid-cols-3">

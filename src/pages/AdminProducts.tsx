@@ -185,8 +185,8 @@ export default function AdminProducts() {
   if (!loading && !rolesLoading && !isAdmin) return <Navigate to="/" replace />;
 
   return (
-    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4 pb-24">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
+    <div className="max-w-6xl mx-auto space-y-4 pb-24">
+      <div className="hub-title flex items-center justify-between gap-2 flex-wrap">
         <h1 className="text-xl font-bold">إدارة القطع</h1>
         <span className="text-sm text-muted-foreground">تعديل أو حذف عدة قطع دفعة واحدة</span>
       </div>

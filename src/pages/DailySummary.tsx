@@ -102,10 +102,10 @@ export default function DailySummary() {
   const dateLabel = new Intl.DateTimeFormat("ar-u-nu-latn", { weekday: "long", year: "numeric", month: "long", day: "numeric" }).format(new Date());
 
   const stats = [
-    { icon: Package, label: "قطع أُضيفت", value: summary?.products_added, href: "/admin/products" },
+    { icon: Package, label: "قطع أُضيفت", value: summary?.products_added, href: "/pieces?tab=manage" },
     { icon: Tag, label: "أسعار سُجّلت لزبائن", value: summary?.quotes_given, href: "/inquiries" },
     { icon: MessageCircle, label: "استفسارات جديدة", value: summary?.inquiries_created, href: "/inquiries" },
-    { icon: PackagePlus, label: "طلبات إعادة طلب", value: summary?.reorders_requested, href: "/reorders" },
+    { icon: PackagePlus, label: "طلبات إعادة طلب", value: summary?.reorders_requested, href: "/transfers?tab=reorders" },
     { icon: ArrowLeftRight, label: "طلبات تحويل", value: summary?.transfers_requested, href: "/transfers" },
   ];
 
@@ -116,7 +116,7 @@ export default function DailySummary() {
   return (
     <div className="max-w-3xl mx-auto space-y-4">
       <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
+        <h1 className="hub-title text-2xl font-bold flex items-center gap-2">
           <CalendarDays className="size-6 text-primary" /> الملخّص اليومي
         </h1>
         <p className="text-sm text-muted-foreground mt-1">{dateLabel}</p>
@@ -145,7 +145,7 @@ export default function DailySummary() {
           </Link>
         ))}
         {!!reservationsDue && (
-          <Link to="/reservations">
+          <Link to="/inquiries?tab=reservations">
             <Card className="p-3 hover:bg-muted/40 transition-colors h-full border-warning/40 bg-warning/10">
               <BookmarkCheck className="size-4 text-warning-foreground mb-1.5" />
               <p className="text-xl font-bold leading-none">{reservationsDue}</p>
@@ -202,7 +202,7 @@ export default function DailySummary() {
             ))}
           </div>
         )}
-        <Link to="/staff" className="block text-center text-sm font-semibold text-primary mt-3 pt-3 border-t border-border">
+        <Link to="/team?tab=accounts" className="block text-center text-sm font-semibold text-primary mt-3 pt-3 border-t border-border">
           كل نشاط الموظفين ←
         </Link>
       </Card>

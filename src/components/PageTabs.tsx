@@ -56,9 +56,12 @@ export default function PageTabs({ tabs }: { tabs: PageTab[] }) {
           {tab.hint && <p className="px-1 text-xs text-muted-foreground">{tab.hint}</p>}
         </div>
       )}
-      <Suspense fallback={<div className="flex justify-center py-24"><Loader2 className="size-6 animate-spin text-primary" /></div>}>
-        {tab.render()}
-      </Suspense>
+      {/* hub-content: عنوان الصفحة الداخلي (hub-title) يتخبّى على الهاتف — اسم الخانة فوقه واسم الصفحة في الرأس. */}
+      <div className="hub-content">
+        <Suspense fallback={<div className="flex justify-center py-24"><Loader2 className="size-6 animate-spin text-primary" /></div>}>
+          {tab.render()}
+        </Suspense>
+      </div>
     </div>
   );
 }

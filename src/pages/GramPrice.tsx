@@ -74,14 +74,14 @@ export default function GramPrice() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-4">
-      <div>
+      <div className="hub-title">
         <h1 className="text-2xl font-bold flex items-center gap-2"><Coins className="size-7 text-primary" />الأسعار والأرباح</h1>
         <p className="text-sm text-muted-foreground">بكم يبيع كل فرع الغرام فعلاً، وكم يربح فوق سعر الذهب — من فواتير أمارسوفت.</p>
       </div>
 
-      <div className="grid grid-cols-4 gap-1.5">
+      <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {RANGES.map((r) => (
-          <Button key={r.key} size="lg" variant={range === r.key ? "default" : "outline"} onClick={() => setRange(r.key)} className="px-1 text-sm gap-1">
+          <Button key={r.key} size="sm" variant={range === r.key ? "default" : "outline"} onClick={() => setRange(r.key)} className="shrink-0 rounded-full gap-1">
             {r.key === 0 && <CalendarRange className="size-4" />}{r.label}
           </Button>
         ))}
@@ -92,11 +92,11 @@ export default function GramPrice() {
           <label className="text-sm font-semibold">لين يوم<Input type="date" value={custom.to} max={tripoliToday()} onChange={(e) => setCustom({ ...custom, to: e.target.value })} className="h-11 mt-1" /></label>
         </Card>
       )}
-      <div className="grid grid-cols-4 gap-1.5">
-        <Button variant={karat === "18" ? "secondary" : "ghost"} onClick={() => setKarat("18")}>عيار 18</Button>
-        <Button variant={karat === "21" ? "secondary" : "ghost"} onClick={() => setKarat("21")}>عيار 21</Button>
-        <Button variant={bucket === "month" ? "secondary" : "ghost"} onClick={() => setBucket("month")}>شهر بشهر</Button>
-        <Button variant={bucket === "week" ? "secondary" : "ghost"} onClick={() => setBucket("week")}>أسبوع بأسبوع</Button>
+      <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <Button size="sm" variant={karat === "18" ? "secondary" : "ghost"} className="shrink-0" onClick={() => setKarat("18")}>عيار 18</Button>
+        <Button size="sm" variant={karat === "21" ? "secondary" : "ghost"} className="shrink-0" onClick={() => setKarat("21")}>عيار 21</Button>
+        <Button size="sm" variant={bucket === "month" ? "secondary" : "ghost"} className="shrink-0" onClick={() => setBucket("month")}>شهر بشهر</Button>
+        <Button size="sm" variant={bucket === "week" ? "secondary" : "ghost"} className="shrink-0" onClick={() => setBucket("week")}>أسبوع بأسبوع</Button>
       </div>
 
       {/* الربح الحقيقي — نفس الفترة والعيار المختارين فوق. */}
@@ -167,7 +167,7 @@ export default function GramPrice() {
             <h2 className="text-lg font-bold">الأرقام {bucket === "month" ? "شهر بشهر" : "أسبوع بأسبوع"}</h2>
             <p className="text-xs text-muted-foreground mb-2">في كل خانة: بكم تباع الغرام عادة، وتحته كم غرام انباع.</p>
             <div className="overflow-x-auto -mx-3 px-3">
-              <table className="w-full text-sm border-collapse min-w-[420px]">
+              <table className="w-full text-xs border-collapse min-w-[340px]">
                 <thead>
                   <tr className="text-xs text-muted-foreground">
                     <th className="text-right py-1.5 font-normal sticky right-0 bg-card" />
@@ -198,7 +198,7 @@ export default function GramPrice() {
             <h2 className="text-lg font-bold">كم غرام انباع في كل سعر</h2>
             <p className="text-xs text-muted-foreground mb-2">من كل 100 غرام باعها الفرع، كم غرام تباع بالسعر هذا. الخانة الأغمق = أكثر.</p>
             <div className="overflow-x-auto -mx-3 px-3">
-              <table className="w-full text-sm border-collapse min-w-[420px]">
+              <table className="w-full text-xs border-collapse min-w-[340px]">
                 <thead>
                   <tr className="text-xs text-muted-foreground">
                     <th className="text-right py-1.5 font-normal">الغرام بـ</th>

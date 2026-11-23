@@ -57,11 +57,11 @@ function PeriodTabs({ period, setPeriod }: { period: Sel; setPeriod: (p: Sel) =>
   const today = tripoliToday();
   return (
     <div className="space-y-2">
-      <div className="grid grid-cols-5 gap-1.5">
+      <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {PERIODS.map((p) => (
-          <Button key={p.key} size="lg" variant={period === p.key ? "default" : "outline"} onClick={() => setPeriod(p.key)} className="text-base px-1">{p.label}</Button>
+          <Button key={p.key} size="sm" variant={period === p.key ? "default" : "outline"} onClick={() => setPeriod(p.key)} className="shrink-0 rounded-full">{p.label}</Button>
         ))}
-        <Button size="lg" variant={day ? "default" : "outline"} onClick={() => setPeriod(`day:${day ?? shiftDay(today, -1)}`)} className="text-base px-1 gap-1">
+        <Button size="sm" variant={day ? "default" : "outline"} onClick={() => setPeriod(`day:${day ?? shiftDay(today, -1)}`)} className="shrink-0 rounded-full gap-1">
           <CalendarDays className="size-4" />يوم…
         </Button>
       </div>
@@ -97,7 +97,7 @@ function BranchList() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
-      <h1 className="text-2xl font-bold flex items-center gap-2"><Building2 className="size-7 text-primary" />الفروع</h1>
+      <h1 className="hub-title text-2xl font-bold flex items-center gap-2"><Building2 className="size-7 text-primary" />الفروع</h1>
       <PeriodTabs period={period} setPeriod={setPeriod} />
       <Card className="p-4 bg-gold-soft border-primary/30 grid grid-cols-3 text-center gap-2">
         <div><div className="text-xs text-muted-foreground">المبيعات</div><div className="font-bold text-lg">{formatLD(total.sales)}</div></div>

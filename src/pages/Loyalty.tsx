@@ -56,11 +56,12 @@ export default function Loyalty() {
 
   return (
     <div className={`${tab === "discount" ? "max-w-6xl" : "max-w-3xl"} mx-auto space-y-4`}>
-      <h1 className="text-xl font-bold flex items-center gap-2"><Award className="size-5 text-primary" /> الولاء</h1>
+      <h1 className="hidden text-xl font-bold lg:flex items-center gap-2"><Award className="size-5 text-primary" /> الولاء</h1>
+      {/* الخانات في سطر واحد يتسحب (كانت تسع أزرار كبار في ثلاث سطور). */}
       {tabs.length > 1 && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {tabs.map((t) => (
-            <Button key={t.key} variant={tab === t.key ? "default" : "outline"} onClick={() => setTab(t.key)} className="flex-1 min-w-[6.5rem]">
+            <Button key={t.key} size="sm" variant={tab === t.key ? "default" : "outline"} onClick={() => setTab(t.key)} className="shrink-0 rounded-full">
               {t.label}
             </Button>
           ))}

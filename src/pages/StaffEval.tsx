@@ -395,7 +395,7 @@ export default function StaffEval() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4" dir="rtl">
-      <div className="flex items-center gap-2">
+      <div className="hub-title flex items-center gap-2">
         <ClipboardList className="size-6 text-primary" />
         <h1 className="text-xl sm:text-2xl font-bold">تقييم البائعين والفروع</h1>
       </div>

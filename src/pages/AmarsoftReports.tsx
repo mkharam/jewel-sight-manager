@@ -155,7 +155,7 @@ function BranchTable({ branches }: { branches: Overview[] }) {
       <h2 className="text-lg font-bold">مقارنة الفروع</h2>
       <Hint>كل فرع في عمود. الأحسن في كل سطر بالأخضر (في «ممسوحة» الأقل هو الأحسن). اسحب الجدول يمين ويسار لو ما بانش كامل.</Hint>
       <div className="overflow-x-auto -mx-3 px-3 mt-2">
-        <table className="w-full text-sm border-collapse min-w-[480px]">
+        <table className="w-full text-xs tabular-nums border-collapse min-w-[360px]">
           <thead>
             <tr>
               <th className="text-right py-1.5 pl-2 sticky right-0 bg-card" />
@@ -397,15 +397,16 @@ export default function AmarsoftReports() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
-      <div>
+      <div className="hub-title">
         <h1 className="text-2xl font-bold flex items-center gap-2"><BarChart3 className="size-7 text-primary" />التقارير</h1>
         <p className="text-sm text-muted-foreground">كل الفروع من أمارسوفت · آخر تحديث: {formatTripoli(data?.lastSync)}</p>
       </div>
-      <div className="grid grid-cols-3 gap-1.5">
+      {/* الفترة في سطر واحد (كانت سطرين بأزرار كبار) — يتسحب بالعرض لو ما وسعش. */}
+      <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {PERIODS.map((p) => (
-          <Button key={p.key} size="lg" variant={period === p.key ? "default" : "outline"} onClick={() => setPeriod(p.key)} className="text-base">{p.label}</Button>
+          <Button key={p.key} size="sm" variant={period === p.key ? "default" : "outline"} onClick={() => setPeriod(p.key)} className="shrink-0 rounded-full">{p.label}</Button>
         ))}
-        <Button size="lg" variant={period === "custom" ? "default" : "outline"} onClick={() => setPeriod("custom")} className="text-base gap-1">
+        <Button size="sm" variant={period === "custom" ? "default" : "outline"} onClick={() => setPeriod("custom")} className="shrink-0 rounded-full gap-1">
           <CalendarRange className="size-4" />من… لـ…
         </Button>
       </div>
@@ -545,7 +546,7 @@ export default function AmarsoftReports() {
             <Card className="p-3">
               <div className="flex justify-between items-center mb-1">
                 <h2 className="text-lg font-bold">أحسن البائعين</h2>
-                <Link to="/evaluation?tab=leaderboard" className="text-sm font-semibold text-primary">الكل ←</Link>
+                <Link to="/team?tab=leaderboard" className="text-sm font-semibold text-primary">الكل ←</Link>
               </div>
               {v.leaders.map((l, i) => (
                 <div key={`${l.branch_name}-${l.sman}`} className="flex justify-between items-center py-1.5 border-b last:border-0 text-sm">

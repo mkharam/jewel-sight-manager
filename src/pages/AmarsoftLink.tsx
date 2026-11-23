@@ -87,7 +87,7 @@ export default function AmarsoftLink() {
   return (
     <div className="max-w-2xl mx-auto space-y-4 pb-24">
       <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2"><Link2 className="size-7 text-primary" />ربط القطع بأمارسوفت</h1>
+        <h1 className="hub-title text-2xl font-bold flex items-center gap-2"><Link2 className="size-7 text-primary" />ربط القطع بأمارسوفت</h1>
         <p className="text-sm text-muted-foreground leading-relaxed">
           القطعة المربوطة تتحوّل «مبيعة» وحدها لما تنباع في أمارسوفت. المقترحات بنفس الوزن (لين 0.005 جم) ونفس العيار في نفس الفرع — قارن النوع والصورة قبل ما تربط.
         </p>

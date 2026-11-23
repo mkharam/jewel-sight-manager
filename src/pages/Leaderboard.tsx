@@ -86,11 +86,11 @@ export default function Leaderboard() {
   return (
     <div className="max-w-2xl mx-auto space-y-4">
       <div className="flex items-center gap-2">
-        <Trophy className="size-6 text-primary" />
-        <h1 className="text-2xl font-bold">لوحة المتصدرين</h1>
+        <Trophy className="hub-title size-6 text-primary" />
+        <h1 className="hub-title text-2xl font-bold">لوحة المتصدرين</h1>
         {/* الترتيب بمعايير ثانية (سعر الجرام، الخصم، النقاط…) في «التقييم ← أرقام البائعين». */}
         {isAdmin && (
-          <Link to="/evaluation?tab=numbers" className="mr-auto text-sm font-semibold text-primary">أرقام التقييم ←</Link>
+          <Link to="/team?tab=numbers" className="mr-auto text-sm font-semibold text-primary">أرقام التقييم ←</Link>
         )}
       </div>
 

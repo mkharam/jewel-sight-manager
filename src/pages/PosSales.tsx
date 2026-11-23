@@ -182,7 +182,7 @@ export default function PosSales({ embedded = false }: { embedded?: boolean } = 
     <div className="max-w-3xl mx-auto space-y-4">
       <div className="flex items-start justify-between gap-2 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Receipt className="size-6 text-primary" />مبيعات أمارسوفت</h1>
+          <h1 className="hub-title text-2xl font-bold flex items-center gap-2"><Receipt className="size-6 text-primary" />مبيعات أمارسوفت</h1>
           <p className={`text-xs mt-1 flex items-center gap-1 ${stale ? "text-amber-600" : "text-muted-foreground"}`}>
             {stale && <AlertTriangle className="size-3.5" />}
             آخر مزامنة: {formatTripoli(lastSync.data)}

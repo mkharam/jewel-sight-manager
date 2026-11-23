@@ -75,14 +75,14 @@ export default function Accountant() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-4">
-      <div>
+      <div className="hub-title">
         <h1 className="text-2xl font-bold flex items-center gap-2"><Wallet className="size-7 text-primary" />صفحة المحاسب</h1>
         <p className="text-sm text-muted-foreground">الفلوس من فواتير أمارسوفت: قداش دخل، وكيف تدفع، لكل فرع ولكل يوم.</p>
       </div>
 
-      <div className="grid grid-cols-5 gap-1.5">
+      <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {PERIODS.map((p) => (
-          <Button key={p.key} variant={period === p.key ? "default" : "outline"} onClick={() => setPeriod(p.key)} className="px-1 text-sm gap-1">
+          <Button key={p.key} size="sm" variant={period === p.key ? "default" : "outline"} onClick={() => setPeriod(p.key)} className="shrink-0 rounded-full gap-1">
             {p.key === "custom" && <CalendarRange className="size-4" />}{p.label}
           </Button>
         ))}
@@ -139,15 +139,15 @@ export default function Accountant() {
             <Card className="p-3">
               <h2 className="text-lg font-bold mb-1">كل فرع كيف تدفعله</h2>
               <div className="overflow-x-auto -mx-3 px-3">
-                <table className="w-full text-sm border-collapse min-w-[480px]">
-                  <thead><tr className="text-xs text-muted-foreground">
-                    <th className="text-right py-1.5 font-normal">الفرع</th><th className="py-1.5 font-normal">المبيعات</th>
+                <table className="w-full text-xs tabular-nums border-collapse min-w-[360px]">
+                  <thead><tr className="text-[11px] text-muted-foreground">
+                    <th className="sticky right-0 bg-card text-right py-1.5 font-normal">الفرع</th><th className="py-1.5 font-normal">المبيعات</th>
                     {v.cols.map((a) => <th key={a} className="py-1.5 font-normal">{label(a)}</th>)}
                   </tr></thead>
                   <tbody>
                     {v.perBranch.map((b) => (
                       <tr key={b.code} className="border-t">
-                        <td className="py-1.5 font-bold whitespace-nowrap">{short(b.name)}</td>
+                        <td className="sticky right-0 bg-card py-1.5 pl-1 font-bold whitespace-nowrap">{short(b.name)}</td>
                         <td className="py-1.5 text-center font-bold">{ld(b.sales).toLocaleString("en-US")}</td>
                         {v.cols.map((a) => <td key={a} className="py-1.5 text-center">{b.pay[a] ? ld(b.pay[a]).toLocaleString("en-US") : "—"}</td>)}
                       </tr>
@@ -167,15 +167,15 @@ export default function Accountant() {
             </div>
             {!v.days.length ? <p className="text-center text-muted-foreground py-4">ما فيش فواتير في الفترة هذي.</p> : (
               <div className="overflow-x-auto -mx-3 px-3">
-                <table className="w-full text-sm border-collapse min-w-[520px]">
-                  <thead><tr className="text-xs text-muted-foreground">
-                    <th className="text-right py-1.5 font-normal">اليوم</th>{branch === "all" && <th className="text-right py-1.5 font-normal">الفرع</th>}
+                <table className="w-full text-xs tabular-nums border-collapse min-w-[400px]">
+                  <thead><tr className="text-[11px] text-muted-foreground">
+                    <th className="sticky right-0 bg-card text-right py-1.5 font-normal">اليوم</th>{branch === "all" && <th className="text-right py-1.5 font-normal">الفرع</th>}
                     <th className="py-1.5 font-normal">المبيعات</th>{v.cols.map((a) => <th key={a} className="py-1.5 font-normal">{label(a)}</th>)}
                   </tr></thead>
                   <tbody>
                     {v.days.map((d) => (
                       <tr key={`${d.day}-${d.branch_code}`} className="border-t">
-                        <td className="py-1.5 whitespace-nowrap" dir="ltr">{d.day.slice(5)}</td>
+                        <td className="sticky right-0 bg-card py-1.5 pl-1 whitespace-nowrap" dir="ltr">{d.day.slice(5)}</td>
                         {branch === "all" && <td className="py-1.5 whitespace-nowrap">{short(d.branch_name)}</td>}
                         <td className="py-1.5 text-center font-bold">{ld(d.sales_dirhams).toLocaleString("en-US")}<span className="text-[10px] text-muted-foreground font-normal"> ({d.invoices})</span></td>
                         {v.cols.map((a) => <td key={a} className="py-1.5 text-center">{d.payments[a] ? ld(d.payments[a]).toLocaleString("en-US") : "—"}</td>)}

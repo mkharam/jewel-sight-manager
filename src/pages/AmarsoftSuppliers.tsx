@@ -74,10 +74,10 @@ export default function AmarsoftSuppliers() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
-      <h1 className="text-2xl font-bold flex items-center gap-2"><Truck className="size-7 text-primary" />الموردون</h1>
+      <h1 className="hub-title text-2xl font-bold flex items-center gap-2"><Truck className="size-7 text-primary" />الموردون</h1>
       <div className="grid grid-cols-4 gap-1.5">
         {PERIODS.map((p) => (
-          <Button key={p.key} size="lg" variant={days === p.key ? "default" : "outline"} onClick={() => setDays(p.key)} className="text-base">{p.label}</Button>
+          <Button key={p.key} variant={days === p.key ? "default" : "outline"} onClick={() => setDays(p.key)}>{p.label}</Button>
         ))}
       </div>
 

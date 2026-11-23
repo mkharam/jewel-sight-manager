@@ -255,11 +255,11 @@ export default function Reports() {
     <div className="space-y-4">
       <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="size-10 rounded-xl bg-gold-gradient flex items-center justify-center shadow-gold">
+          <div className="hub-title size-10 rounded-xl bg-gold-gradient flex items-center justify-center shadow-gold">
             <BarChart3 className="size-5 text-primary-foreground" />
           </div>
           <div>
-            <h1 className="text-xl font-extrabold text-gold-gradient">الجرد الشهري</h1>
+            <h1 className="hub-title text-xl font-extrabold text-gold-gradient">الجرد الشهري</h1>
             <p className="text-xs text-muted-foreground">ملخص أداء كل فرع خلال الشهر المختار</p>
           </div>
         </div>

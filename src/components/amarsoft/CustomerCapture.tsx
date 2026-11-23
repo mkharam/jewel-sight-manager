@@ -134,7 +134,7 @@ export default function CustomerCapture() {
           })}
 
           <p className="px-1 text-xs text-muted-foreground">
-            «اسم ورقم الزبون» داخل في نقاط التقييم — شوف <Link to="/evaluation?tab=numbers" className="font-semibold text-primary underline">أرقام البائعين والفروع</Link>.
+            «اسم ورقم الزبون» داخل في نقاط التقييم — شوف <Link to="/team?tab=numbers" className="font-semibold text-primary underline">أرقام البائعين والفروع</Link>.
             الفواتير «بلا اسم بائع» ما تدخلش في تقييم أي موظف، لكنها تبان هنا في فرعها.
           </p>
         </>

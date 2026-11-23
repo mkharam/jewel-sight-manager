@@ -130,11 +130,11 @@ export default function StockTake() {
   return (
     <div className="space-y-4 max-w-3xl mx-auto">
       <header className="flex items-center gap-3">
-        <div className="size-10 rounded-xl bg-gold-gradient flex items-center justify-center shadow-gold">
+        <div className="hub-title size-10 rounded-xl bg-gold-gradient flex items-center justify-center shadow-gold">
           <ClipboardCheck className="size-5 text-primary-foreground" />
         </div>
         <div>
-          <h1 className="text-xl font-extrabold text-gold-gradient">الجرد الميداني</h1>
+          <h1 className="hub-title text-xl font-extrabold text-gold-gradient">الجرد الميداني</h1>
           <p className="text-xs text-muted-foreground">مرّ على القطع وأكّد وجودها قطعة بقطعة.</p>
         </div>
       </header>

@@ -111,7 +111,7 @@ export default function PosCount() {
   if (!count) {
     return (
       <div className="max-w-md mx-auto space-y-4">
-        <h1 className="text-2xl font-bold flex items-center gap-2"><ClipboardCheck className="size-7 text-primary" />جرد أمارسوفت</h1>
+        <h1 className="hub-title text-2xl font-bold flex items-center gap-2"><ClipboardCheck className="size-7 text-primary" />جرد أمارسوفت</h1>
         <p className="text-base text-muted-foreground">اختر الفرع ثم امسح وسم كل قطعة. يقارن التطبيق مع مخزون الفرع في أمارسوفت.</p>
         <Select value={branch} onValueChange={setBranch}>
           <SelectTrigger className="h-14 text-lg"><SelectValue placeholder="اختر الفرع" /></SelectTrigger>
