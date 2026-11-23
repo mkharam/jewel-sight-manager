@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { GM_EVAL_ENABLED, dayLabel, grade, monthLabel } from "@/lib/evaluation";
 import { avg, f1, per, signed1, summaryText, type Board, type Person } from "@/lib/evalBoard";
-import { Bar, DAY_CLS, FlagBadge, roleLabel, weekdayOf, type Detail, type OpenFn } from "./bits";
+import { Badges, Bar, DAY_CLS, FlagBadge, roleLabel, weekdayOf, type Detail, type OpenFn } from "./bits";
 
 /** الأرقام الكبيرة — كل وحدة تفتح قائمتها. */
 export function Kpis({ b, open }: { b: Board; open: OpenFn }) {
@@ -70,7 +70,7 @@ export function ResultCard({ b, open }: { b: Board; open: OpenFn }) {
               <span className="min-w-0">
                 <span className="block font-semibold">{p.name} <span className="text-[11px] font-normal text-muted-foreground">· {roleLabel(p.role)} · {p.branch_name ?? "—"}</span></span>
                 <span className="block text-[11px] text-red-600">{p.whyNot}</span>
-                {p.flag && <FlagBadge flag={p.flag} />}
+                <Badges p={p} />
               </span>
               <ChevronLeft className="mt-1 size-4 shrink-0 text-muted-foreground" />
             </button>
@@ -109,7 +109,7 @@ function RankRow({ p, i, open }: { p: Person; i: number; open: OpenFn }) {
           </span>
         </span>
       </div>
-      {p.flag && <div className="mt-1"><FlagBadge flag={p.flag} /></div>}
+      <Badges p={p} />
       <Bar v={p.final} className="mt-1.5 h-1.5" />
     </button>
   );
@@ -176,7 +176,7 @@ export function WhoEvaluated({ b, open, onRecord }: { b: Board; open: OpenFn; on
             className="mb-1 flex w-full flex-wrap items-baseline justify-between gap-x-2 text-right active:bg-muted/40">
             <span className="text-sm font-bold text-primary">{br.name}</span>
             <span className="text-[11px] text-muted-foreground">
-              {br.managers.length ? br.managers.map((m) => `${m.name} قيّم ${m.daysRated}/${b.elapsed} يوم`).join(" · ") : "ما فيش مشرف"}
+              {br.managers.length ? br.managers.map((m) => (m.duty?.closed ? `${m.name} قيّم كل موظفينه ${m.duty.full}/${m.duty.closed} يوم` : m.name)).join(" · ") : "ما فيش مشرف"}
             </span>
           </button>
           <table className="w-full text-sm">
@@ -194,13 +194,21 @@ export function WhoEvaluated({ b, open, onRecord }: { b: Board; open: OpenFn; on
                 const bad = day != null && n > 0 && k < n;
                 return (
                   <tr key={m.id} onClick={() => open({ t: "person", id: m.id })} className={`cursor-pointer border-t active:bg-muted/40 ${tint(bad)}`}>
-                    <td className="py-1.5"><span className="font-semibold">{m.name}</span><span className="block text-[11px] text-muted-foreground">مشرف</span></td>
+                    <td className="py-1.5">
+                      <span className="font-semibold">{m.name}</span><span className="block text-[11px] text-muted-foreground">مشرف</span>
+                      {m.phone && <FlagBadge flag={m.phone} />}
+                    </td>
                     <td className="text-center">
                       {!n || !day ? <span className="text-muted-foreground">—</span>
                         : <span className={`font-bold tabular-nums ${k >= n ? "text-emerald-600" : k || isToday ? "text-amber-600" : "text-red-600"}`}>قيّم {k}/{n}</span>}
                     </td>
                     <td className="text-center leading-tight">
-                      <span className={`block font-bold tabular-nums ${ratio(m.daysRated)}`}>{m.daysRated}/{b.elapsed} يوم</span>
+                      {m.duty && m.duty.closed > 0 ? (
+                        <>
+                          <span className={`block font-bold tabular-nums ${m.duty.level === "red" ? "text-red-600" : m.duty.level === "amber" ? "text-amber-600" : "text-emerald-600"}`}>كاملين {m.duty.full}/{m.duty.closed}</span>
+                          {m.duty.skipped > 0 && <span className="block text-[10px] text-red-600">فوّت {m.duty.skipped} يوم</span>}
+                        </>
+                      ) : <span className="block text-muted-foreground">—</span>}
                       {n > 0 && b.halves.some((h) => h.started) && (
                         <span className="block text-[10px] text-muted-foreground">
                           موظفينه قيّموه: {b.halves.filter((h) => h.started).map((h) => `${new Set(m.others.filter((e) => e.kind === "of_manager" && per(e) === h.key).map((e) => e.evaluator_id)).size}/${n}`).join(" · ")}
@@ -317,7 +325,7 @@ export function BranchesCard({ b, open }: { b: Board; open: OpenFn }) {
           <span className="flex justify-between text-sm"><span>{br.name}</span><span className={`font-bold ${grade(br.avg).text}`}>{f1(br.avg)}</span></span>
           <Bar v={br.avg} className="h-2" />
           <span className="block text-[11px] text-muted-foreground">
-            اتقيّموا {br.rated} من {br.people.length}{br.managers.map((m) => ` · ${m.name} قيّم ${m.daysRated}/${b.elapsed} يوم`).join("")}
+            اتقيّموا {br.rated} من {br.people.length}{br.managers.map((m) => (m.duty?.closed ? ` · ${m.name} قيّم كل موظفينه ${m.duty.full}/${m.duty.closed} يوم` : "")).join("")}
           </span>
         </button>
       ))}

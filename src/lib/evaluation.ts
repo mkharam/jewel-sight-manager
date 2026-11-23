@@ -17,6 +17,8 @@ export type Evaluation = {
   source: "link" | "recorder"; entered_by: string | null; created_at: string; updated_at: string;
   /** تقييم المشرف اليومي: الموظف كان غايب (بلا درجات) والسبب. */
   absent?: boolean; absence_reason?: string | null;
+  /** معرّف عشوائي للجهاز اللي اتبعت منه (من الرابط) — باش نعرفوا لو تقييم اتبعت من تليفون اللي يتقيّم. */
+  device_id?: string | null;
 };
 
 /** أسباب جاهزة للغياب — والمشرف يقدر يكتب سبب ثاني. */

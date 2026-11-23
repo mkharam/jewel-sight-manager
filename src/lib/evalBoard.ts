@@ -2,6 +2,8 @@
 // القاعدة: درجة كل واحد من تقييم «الغير» بس — المشرف لموظفينه (كل يوم)، والموظفين لمشرفهم
 // (مرتين في الشهر)، والمدير العام لو رجع. تقييمه لنفسه ما يدخلش في الدرجة ولا الترتيب: يبان لوحده
 // للمقارنة، وعليه علامة لو عطى نفسه 5 في كل البنود (حمرا لو اللي يقيّموه عطوه أقل بوضوح).
+// والمشرف: التزامه بالتقييم اليومي لموظفينه (كم يوم قيّمهم كاملين وكم فوّت)، وعلامة 📱 لو تقييم
+// موظفينه ليه اتبعت من نفس التليفون اللي يقيّم منه هو (ممكن هو اللي عبّاه ولا شافه).
 import { ALL_CRITERIA, addDaysYmd, grade, monthLabel, shiftMonth, ymd, type EvalStaff, type Evaluation } from "@/lib/evaluation";
 
 export const avg = (xs: (number | null | undefined)[]) => {
@@ -25,8 +27,31 @@ export const ratersWord = (s: { role: string }) => (s.role === "manager" ? "مو
 const gaveWord = (s: { role: string }) => (s.role === "manager" ? "عطوه" : "عطاه");
 const notYetWord = (s: { role: string }) => (s.role === "manager" ? "ما قيّموهش" : "ما قيّمهوش");
 
-/** علامة التقييم الذاتي: حمرا = قيّم نفسه 5 كاملة واللي يقيّموه عطوه أقل بوضوح. */
-export type Flag = { level: "red" | "amber"; short: string; text: string };
+/** علامة: حمرا = قيّم نفسه 5 كاملة واللي يقيّموه عطوه أقل بوضوح (ولا 📱 تقييمات من تليفونه). */
+export type Flag = { level: "red" | "amber"; short: string; text: string; icon?: string };
+
+/** التزام المشرف بالتقييم اليومي — على الأيام اللي خلصت (اليوم لسه مفتوح). */
+export type Duty = {
+  level: "ok" | "amber" | "red";
+  /** عدد موظفينه. */
+  n: number;
+  /** الأيام اللي خلصت من الشهر. */
+  closed: number;
+  /** أيام قيّم فيها كل موظفينه (ولا سجّلهم غايب). */
+  full: number;
+  /** أيام قيّم فيها بعضهم بس. */
+  part: number;
+  /** أيام ما قيّم فيها ولا واحد. */
+  none: number;
+  /** part + none. */
+  skipped: number;
+  /** اليوم (الشهر الحالي): كم واحد قيّم لين توا. */
+  today: number | null;
+  /** كل موظف: كم يوم (من اللي خلصو) قيّمه — الأقل أول. */
+  perStaff: { id: string; name: string; days: number }[];
+  short: string;
+  text: string;
+};
 export type Half = { key: string; label: string; started: boolean };
 
 export type Person = EvalStaff & {
@@ -59,6 +84,13 @@ export type Person = EvalStaff & {
   team: EvalStaff[];
   /** للمشرف: كم يوم قيّم فيه ولو واحد من موظفينه. */
   daysRated: number;
+  /** للمشرف: التزامه بالتقييم اليومي (null للموظف ولا مشرف بلا موظفين). */
+  duty: Duty | null;
+  /** للمشرف: تقييمات موظفينه ليه اللي اتبعتو من نفس التليفون اللي يقيّم منه هو. */
+  samePhone: Evaluation[];
+  phone: Flag | null;
+  /** درجته لو شلنا تقييمات samePhone. */
+  finalClean: number | null;
 };
 
 export type Branch = { name: string; people: Person[]; managers: Person[]; staff: Person[]; avg: number | null; rated: number };
@@ -92,6 +124,52 @@ export function buildBoard(staff: EvalStaff[], evals: Evaluation[], month: strin
   const inMonth = (m: string) => byMonth.get(m) ?? [];
   const monthEvals = inMonth(month);
 
+  // الأيام اللي خلصت (اليوم لسه مفتوح — ما يتحسبش ناقص لين يخلص).
+  const closed = info.isCur ? info.elapsed - 1 : info.elapsed;
+  const closedDays = info.days.slice(0, Math.max(closed, 0));
+
+  // تليفونات كل واحد: الأجهزة اللي بعت منها تقييماته هو من الرابط (على كل الشهور المحمّلة).
+  const devicesOf = new Map<string, Set<string>>();
+  for (const e of evals) {
+    if (!e.device_id || e.source !== "link") continue;
+    const set = devicesOf.get(e.evaluator_id) ?? new Set<string>();
+    set.add(e.device_id);
+    devicesOf.set(e.evaluator_id, set);
+  }
+  /** تقييم موظف لمشرفه اتبعت من نفس التليفون اللي يقيّم منه المشرف نفسه. */
+  const fromSubjectPhone = (e: Evaluation) =>
+    e.kind === "of_manager" && e.source === "link" && !!e.device_id && e.evaluator_id !== e.subject_id
+    && !!devicesOf.get(e.subject_id)?.has(e.device_id);
+
+  const dutyOf = (team: EvalStaff[], given: Evaluation[]): Duty | null => {
+    const n = team.length;
+    if (!n) return null;
+    const ids = new Set(team.map((t) => t.id));
+    const byDay = new Map<string, Set<string>>();
+    for (const e of given) {
+      if (!ids.has(e.subject_id)) continue;
+      const set = byDay.get(per(e)) ?? new Set<string>();
+      set.add(e.subject_id);
+      byDay.set(per(e), set);
+    }
+    let full = 0, part = 0, none = 0;
+    for (const d of closedDays) {
+      const k = byDay.get(d)?.size ?? 0;
+      if (k >= n) full++; else if (k > 0) part++; else none++;
+    }
+    const skipped = part + none;
+    const days = closedDays.length;
+    const level: Duty["level"] = skipped >= 3 && skipped / Math.max(days, 1) >= 0.25 ? "red" : skipped >= 3 ? "amber" : "ok";
+    const perStaff = team.map((t) => ({ id: t.id, name: t.name, days: closedDays.filter((d) => byDay.get(d)?.has(t.id)).length }))
+      .sort((a, b) => a.days - b.days);
+    const worst = perStaff[0];
+    const short = level === "ok" ? (days ? `قيّم موظفينه ${full}/${days} يوم` : "الشهر بدا اليوم") : `فوّت ${skipped} يوم في التقييم اليومي`;
+    const text = !days ? "الشهر بدا اليوم — ما فيش أيام خلصت لين توا."
+      : `قيّم كل موظفينه في ${full} يوم من ${days}${part ? `، وبعضهم بس في ${part}` : ""}${none ? `، وما قيّم ولا واحد في ${none}` : ""}.`
+        + (worst && worst.days < days ? ` أكثر واحد يفوّته: ${worst.name} (قيّمه ${worst.days} يوم من ${days}).` : "");
+    return { level, n, closed: days, full, part, none, skipped, today: info.isCur ? byDay.get(today)?.size ?? 0 : null, perStaff, short, text };
+  };
+
   const managerOf = (s: EvalStaff) =>
     s.branch_id == null ? null : active.find((m) => m.role === "manager" && m.branch_id === s.branch_id && m.id !== s.id) ?? null;
   const teamOf = (s: EvalStaff) =>
@@ -117,8 +195,6 @@ export function buildBoard(staff: EvalStaff[], evals: Evaluation[], month: strin
     const manager = s.role === "manager" ? null : managerOf(s);
     const team = s.role === "manager" ? teamOf(s) : [];
     const given = monthEvals.filter((e) => e.evaluator_id === s.id && e.kind === "by_manager");
-    // الأيام اللي خلصت (اليوم لسه مفتوح — ما يتحسبش ناقص لين يخلص).
-    const closed = info.isCur ? info.elapsed - 1 : info.elapsed;
     const lastClosed = info.isCur ? addDaysYmd(today, -1) : info.days[info.elapsed - 1];
     const missedDays = s.role !== "manager" && manager && closed > 0
       ? Math.max(0, closed - new Set(daily.filter((e) => per(e) <= lastClosed).map(per)).size)
@@ -149,10 +225,20 @@ export function buildBoard(staff: EvalStaff[], evals: Evaluation[], month: strin
       if (c.selfs.length) whyNot += " — قيّم نفسه بس، وهذا ما يحسبش";
     }
 
+    // 📱 تقييمات موظفينه ليه من نفس تليفونه.
+    const samePhone = s.role === "manager" ? c.others.filter(fromSubjectPhone) : [];
+    const finalClean = samePhone.length ? avg(c.others.filter((e) => !samePhone.includes(e)).map((e) => e.overall)) : c.final;
+    const phone: Flag | null = samePhone.length ? {
+      level: "red", icon: "📱",
+      short: `${samePhone.length} من تقييمات موظفينه من تليفونه`,
+      text: `${samePhone.length} من تقييمات موظفينه ليه اتبعتو من نفس التليفون اللي يقيّم منه هو — يعني ممكن هو اللي عبّاهم ولا شاف كم عطوه. درجته بدونهم: ${f1(finalClean)}.`,
+    } : null;
+
     return {
       ...s, final: c.final, self: c.self, gm: c.gm, prev: scoreOf(s, shiftMonth(month, -1)).final,
       evals: c.es, others: c.others, selfs: c.selfs, given, presentDays, absences, missedDays,
       selfAll5, flag, whyNot, manager, team, daysRated: new Set(given.map(per)).size,
+      duty: s.role === "manager" ? dutyOf(team, given) : null, samePhone, phone, finalClean,
     };
   });
 
@@ -200,6 +286,8 @@ export function buildBoard(staff: EvalStaff[], evals: Evaluation[], month: strin
     dayStats: days,
     people, rated, unrated, low, all5, flagged, branches, criteria, trend, monthEvals,
     overall: avg(rated.map((p) => p.final)),
+    /** تقييمات الموظفين لمشرفهم اللي اتبعتو من تليفون المشرف (📱). */
+    samePhoneIds: new Set(people.flatMap((p) => p.samePhone.map((e) => e.id))),
     byId: new Map(people.map((p) => [p.id, p])),
     scoreOf: (s: EvalStaff, m: string) => { const x = scoreOf(s, m); return { final: x.final, self: x.self }; },
   };
@@ -213,8 +301,11 @@ export function summaryText(b: Board) {
     const r = br.people.filter((p) => p.final != null).sort((x, y) => y.final! - x.final!);
     if (!r.length) continue;
     lines.push("", `${br.name}:`);
-    r.forEach((p, i) => lines.push(`${i + 1}. ${p.name}${p.role === "manager" ? " (مشرف)" : ""} — ${f1(p.final)} ${grade(p.final).label}${p.absences.length ? ` · غاب ${p.absences.length} يوم` : ""}`));
+    r.forEach((p, i) => lines.push(`${i + 1}. ${p.name}${p.role === "manager" ? " (مشرف)" : ""} — ${f1(p.final)} ${grade(p.final).label}`
+      + `${p.absences.length ? ` · غاب ${p.absences.length} يوم` : ""}${p.duty?.closed ? ` · قيّم موظفينه ${p.duty.full} من ${p.duty.closed} يوم` : ""}`));
   }
+  const lax = b.people.filter((p) => p.duty && p.duty.level !== "ok");
+  if (lax.length) lines.push("", `مشرفين فوّتوا التقييم اليومي: ${lax.map((p) => `${p.name} (${p.duty!.skipped} يوم)`).join("، ")}`);
   if (b.unrated.length) lines.push("", `ما اتقيّموش لين توا: ${b.unrated.map((p) => p.name).join("، ")}`);
   if (b.low.length) lines.push("", `يحتاج متابعة: ${b.low.map((p) => p.name).join("، ")}`);
   return lines.join("\n");

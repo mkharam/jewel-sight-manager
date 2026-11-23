@@ -1,7 +1,7 @@
 // قطع صغيرة مشتركة بين أقسام لوحة التقييم وشاشات التفاصيل.
 import type { ReactNode } from "react";
 import { ALL_CRITERIA, KIND_LABEL, dayLabel, grade, halfLabel, monthLabel, type Evaluation } from "@/lib/evaluation";
-import { f1, per, type Board, type Flag } from "@/lib/evalBoard";
+import { f1, per, type Board, type Duty, type Flag } from "@/lib/evalBoard";
 
 /** شن يفتح لما تضغط: شخص، فرع، بند، قائمة، ولا الفروع كلها. */
 export type ListKind = "rated" | "low" | "flagged" | "noself";
@@ -30,7 +30,28 @@ export function FlagBadge({ flag }: { flag: Flag | null }) {
     <span className={`inline-flex max-w-full items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-tight ${flag.level === "red"
       ? "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300"
       : "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300"}`}>
-      ⚠️ <span className="truncate">{flag.short}</span>
+      {flag.icon ?? "⚠️"} <span className="truncate">{flag.short}</span>
+    </span>
+  );
+}
+
+/** التزام المشرف بالتقييم اليومي: أخضر لو ملتزم، وعلامة لو فوّت أيام واجدة. */
+export function DutyBadge({ duty }: { duty: Duty | null }) {
+  if (!duty) return null;
+  if (duty.level !== "ok") return <FlagBadge flag={{ level: duty.level, short: duty.short, text: duty.text }} />;
+  return (
+    <span className="inline-flex max-w-full items-center gap-0.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold leading-tight text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
+      ✅ <span className="truncate">{duty.short}</span>
+    </span>
+  );
+}
+
+/** كل علامات الشخص في سطر واحد: التقييم الذاتي، 📱، والتزام المشرف. */
+export function Badges({ p }: { p: { flag: Flag | null; phone: Flag | null; duty: Duty | null } }) {
+  if (!p.flag && !p.phone && !p.duty) return null;
+  return (
+    <span className="mt-1 flex flex-wrap gap-1">
+      <FlagBadge flag={p.phone} /><FlagBadge flag={p.flag} /><DutyBadge duty={p.duty} />
     </span>
   );
 }
@@ -40,7 +61,7 @@ export function FlagBanner({ flag }: { flag: Flag }) {
     <p className={`rounded-lg p-2 text-sm font-semibold ${flag.level === "red"
       ? "bg-red-500/10 text-red-700 dark:text-red-300"
       : "bg-amber-500/10 text-amber-800 dark:text-amber-300"}`}>
-      ⚠️ {flag.text}
+      {flag.icon ?? "⚠️"} {flag.text}
     </p>
   );
 }

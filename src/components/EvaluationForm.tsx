@@ -1,8 +1,11 @@
 // استمارة التقييم — نفسها في الرابط اللي يتبعت للموظفين (token) وفي التطبيق لمسؤول التقييم (أيمن) اللي
 // يسجّل نيابة عن اللي ما يعرفوش يبلّغوا. الخطوات: موظف ولا مشرف ← مين أنت ← البنود.
 //  * المشرف: يقيّم كل موظف في فرعه كل يوم (اليوم، ولا أمس/قبل أمس لو نسي)، ويقيّم نفسه مرتين في الشهر.
-//  * الموظف: مرتين في الشهر (1–15 و16–آخر الشهر): يقيّم نفسه (لازم)، ويقيّم مشرف فرعه (اختياري).
-// «نفس آخر تقييم» يعبّي البنود من آخر مرة على نفس الجهاز — المشرف يبدّل بس اللي تغيّر اليوم.
+//  * الموظف: مرتين في الشهر (1–15 و16–آخر الشهر): يقيّم نفسه، ويقيّم مشرف فرعه — الاثنين لازم،
+//    وتقييمه لمشرفه سري (ما يشوفه إلا الإدارة).
+// «نفس آخر تقييم» يعبّي البنود من آخر مرة على نفس الجهاز — يبدّل بس اللي تغيّر.
+// كل جهاز يبعت معرّف عشوائي مع التقييم: اللوحة تعلّم 📱 لو تقييم الموظفين لمشرفهم اتبعت من تليفون المشرف،
+// والاستمارة تنبّه الموظف لو التليفون اللي في يده اتبعت منه تقييم مشرفه قبل.
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, ChevronDown, ChevronLeft, Copy, Loader2, UserCheck, UserX, Users } from "lucide-react";
@@ -20,6 +23,24 @@ const LAST_KEY = "eval.last.v1";
 type Saved = Record<string, Record<string, number>>;
 const readLast = (): Saved => { try { return JSON.parse(localStorage.getItem(LAST_KEY) ?? "{}"); } catch { return {}; } };
 const writeLast = (patch: Saved) => { try { localStorage.setItem(LAST_KEY, JSON.stringify({ ...readLast(), ...patch })); } catch { /* ignore */ } };
+
+// معرّف عشوائي لهذا الجهاز (مش رقم التليفون ولا أي معلومة عليه)، ومين بعت تقييمه منه.
+const DEVICE_KEY = "eval.device.v1";
+const WHO_KEY = "eval.who.v1";
+function deviceId(): string | null {
+  try {
+    let v = localStorage.getItem(DEVICE_KEY);
+    if (!v) {
+      v = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+      localStorage.setItem(DEVICE_KEY, v);
+    }
+    return v;
+  } catch { return null; }
+}
+const readWho = (): string[] => { try { const v = JSON.parse(localStorage.getItem(WHO_KEY) ?? "[]"); return Array.isArray(v) ? v : []; } catch { return []; } };
+const addWho = (id: string) => {
+  try { const xs = readWho(); if (!xs.includes(id)) localStorage.setItem(WHO_KEY, JSON.stringify([...xs, id].slice(-30))); } catch { /* ignore */ }
+};
 
 /** تذكير قبل التقييم: أمانة. آية النساء 135، وحديث «لا إيمان لمن لا أمانة له» (رواه أحمد). */
 function TrustNote() {
@@ -40,7 +61,12 @@ function TrustNote() {
 }
 
 type Entry = { scores: Record<string, number>; strengths: string; improvements: string; notes: string; absent?: boolean; reason?: string };
-type Card_ = { key: string; kind: Kind; subject: EvalStaff | null; title: string; criteria: readonly { key: string; label: string }[]; required: boolean; done?: boolean; note?: string };
+type Card_ = {
+  key: string; kind: Kind; subject: EvalStaff | null; title: string; criteria: readonly { key: string; label: string }[]; required: boolean;
+  done?: boolean; note?: string;
+  /** تقييم الموظف لمشرفه: سري، وتنبيه لو المشرف بعت تقييمه من نفس التليفون. */
+  secret?: boolean; phoneWarn?: boolean;
+};
 type Status = { rated_day: string[]; absent_day?: string[]; half_done: { kind: Kind; subject: string }[] };
 const blank = (): Entry => ({ scores: {}, strengths: "", improvements: "", notes: "" });
 
@@ -63,6 +89,8 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
   const [entries, setEntries] = useState<Record<string, Entry>>({});
   const [open, setOpen] = useState<string | null>(null);
   const [done, setDone] = useState<number | null>(null);
+  // مين بعت تقييمه من هذا التليفون قبل (باش ننبّهوا الموظف لو تليفون مشرفه).
+  const usedHere = useMemo(readWho, [done]);
 
   // تقييم المدير العام (موقّف حالياً) يبقى شهري.
   const months = useMemo(() => {
@@ -121,12 +149,18 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
     return [
       { key: "self", kind: "self", subject: null, title: "قيّم نفسك", criteria: EMPLOYEE_CRITERIA, required: !selfDone,
         done: selfDone, note: selfDone ? "سلّمته لهذا النص — تقدر تعدّل" : undefined },
-      ...sameBranch.filter((s) => s.role === "manager").map((s) => ({
-        key: `of_manager:${s.id}`, kind: "of_manager" as Kind, subject: s, title: `قيّم مشرفك ${s.name} (اختياري)`, criteria: MANAGER_CRITERIA, required: false,
-        done: halfDone("of_manager", s.id), note: halfDone("of_manager", s.id) ? "سلّمته لهذا النص — تقدر تعدّل" : undefined,
-      })),
+      // تقييم المشرف لازم مرتين في الشهر (إلا لو سلّمه في هذا النص) — هو اللي يتحاسب عليه المشرف.
+      ...sameBranch.filter((s) => s.role === "manager").map((s) => {
+        const did = halfDone("of_manager", s.id);
+        return {
+          key: `of_manager:${s.id}`, kind: "of_manager" as Kind, subject: s, title: `قيّم مشرفك ${s.name}`, criteria: MANAGER_CRITERIA,
+          required: !did && !recorder,
+          done: did, note: `${did ? "سلّمته لهذا النص — تقدر تعدّل · " : ""}🔒 سري — ما يشوفه إلا الإدارة`,
+          secret: true, phoneWarn: !recorder && usedHere.includes(s.id),
+        };
+      }),
     ];
-  }, [me, data, gm, status.data, day, today]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [me, data, gm, status.data, day, today, usedHere]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const entry = (k: string) => entries[k] ?? blank();
   const lastKey = (c: Card_) => `${gm ? gmId : me?.id}|${c.kind}|${c.subject?.id ?? me?.id}`;
@@ -151,8 +185,11 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
       const evaluator = gm ? gmId : me!.id;
       if (!evaluator) throw new Error("صف المدير العام مش موجود في قائمة التقييم");
       // month برضو: لين يتشغّل ملف التحديث، السيرفر القديم يحفظ شهري بدل ما يرفض.
-      const { data, error } = await db.rpc("eval_submit", { p_token: token ?? null, p: { day, month: `${day.slice(0, 7)}-01`, evaluator_id: evaluator, entries: list } });
+      const { data, error } = await db.rpc("eval_submit", {
+        p_token: token ?? null, p: { day, month: `${day.slice(0, 7)}-01`, evaluator_id: evaluator, entries: list, device: deviceId() },
+      });
       if (error) throw error;
+      if (!recorder && !gm) addWho(evaluator);
       writeLast(Object.fromEntries(cards.filter((c) => !isAbsent(c) && answered(c) > 0).map((c) => [lastKey(c), entry(c.key).scores])));
       return data as number;
     },
@@ -191,7 +228,8 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
         </div>
       ) : !me ? (
         <p className="rounded-xl bg-muted/50 p-3 text-sm leading-relaxed">
-          <b>المشرف</b>: يقيّم موظفينه <b>كل يوم</b>. <b>الموظف</b>: يقيّم نفسه ومشرفه <b>مرتين في الشهر</b> (من 1 لـ 15، ومن 16 لآخر الشهر).
+          <b>المشرف</b>: يقيّم موظفينه <b>كل يوم</b>. <b>الموظف</b>: يقيّم نفسه ومشرفه <b>مرتين في الشهر</b> (من 1 لـ 15، ومن 16 لآخر الشهر)
+          — وتقييمه لمشرفه <b>سري</b>، ما يشوفه إلا الإدارة.
         </p>
       ) : recorder ? (
         <div>
@@ -278,6 +316,16 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
                 </button>
                 {isOpen && (
                   <div className="px-3 pb-3 space-y-3">
+                    {c.secret && (
+                      <p className="rounded-lg bg-emerald-500/10 p-2 text-xs leading-relaxed text-emerald-800 dark:text-emerald-300">
+                        🔒 تقييمك لمشرفك <b>سري</b>: ما يشوفه إلا الإدارة، و{c.subject?.name} ما يعرفش كم عطيته. قيّمه بصراحة — هذا اللي يتحاسب عليه المشرف.
+                      </p>
+                    )}
+                    {c.phoneWarn && (
+                      <p className="rounded-lg bg-destructive/10 p-2 text-xs font-semibold leading-relaxed text-destructive">
+                        📱 هذا التليفون اتبعت منه تقييم {c.subject?.name} قبل. لو تقيّمه من هنا يطلع للإدارة بعلامة إنه من تليفون المشرف — الأحسن تقيّمه من تليفونك باش يبقى سري.
+                      </p>
+                    )}
                     {c.kind === "by_manager" && (
                       <div className="grid grid-cols-2 gap-1.5">
                         <Button size="sm" variant={isAbsent(c) ? "outline" : "default"} onClick={() => setEntry(c.key, { absent: false })}>

@@ -10,7 +10,7 @@ import {
   type EvalStaff, type Evaluation,
 } from "@/lib/evaluation";
 import { avg, f1, isAll5, per, ratersWord, signed1, type Board, type Branch, type Person } from "@/lib/evalBoard";
-import { Bar, DAY_CLS, EvalCard, FlagBadge, FlagBanner, MonthGrid, roleLabel, whenLabel, type Detail, type ListKind, type OpenFn } from "./bits";
+import { Badges, Bar, DAY_CLS, DutyBadge, EvalCard, FlagBanner, MonthGrid, roleLabel, whenLabel, type Detail, type ListKind, type OpenFn } from "./bits";
 
 export function EvalDetail({ d, b, staff, open }: { d: Detail; b: Board; staff: EvalStaff[]; open: OpenFn }) {
   const nameOf = (id: string) => staff.find((s) => s.id === id)?.name ?? "—";
@@ -46,7 +46,7 @@ function PersonRow({ p, open, right, sub }: { p: Person; open: OpenFn; right?: R
       <span className="min-w-0">
         <span className="block font-semibold">{p.name} <span className="text-[11px] font-normal text-muted-foreground">· {roleLabel(p.role)} · {p.branch_name ?? "—"}</span></span>
         {sub != null && sub !== "" && <span className="block text-[11px] text-muted-foreground">{sub}</span>}
-        {p.flag && <FlagBadge flag={p.flag} />}
+        <Badges p={p} />
       </span>
       <span className="flex shrink-0 items-center gap-1">
         {right ?? <span className={`text-lg font-bold ${grade(p.final).text}`}>{f1(p.final)}</span>}
@@ -58,7 +58,7 @@ function PersonRow({ p, open, right, sub }: { p: Person; open: OpenFn; right?: R
 
 const ratersCount = (p: Person) => new Set(p.others.map((e) => e.evaluator_id)).size;
 const howRated = (p: Person) => p.role === "manager"
-  ? `موظفينه قيّموه ${ratersCount(p)} من ${p.team.length}`
+  ? `موظفينه قيّموه ${ratersCount(p)} من ${p.team.length}${p.duty?.closed ? ` · قيّم كل موظفينه ${p.duty.full} يوم من ${p.duty.closed}` : ""}`
   : `اتقيّم ${p.presentDays} يوم${p.absences.length ? ` · غاب ${p.absences.length}` : ""}${p.missedDays ? ` · ما اتقيّمش ${p.missedDays} يوم` : ""}`;
 
 // ===================== الشخص =====================
@@ -76,6 +76,7 @@ function PersonDetail({ p, b, open, nameOf }: { p: Person; b: Board; open: OpenF
   return (
     <div className="space-y-4">
       <Title title={p.name} sub={`${roleLabel(p.role)} · ${p.branch_name ?? "—"} · ${monthLabel(b.month)}`} />
+      {p.phone && <FlagBanner flag={p.phone} />}
       {p.flag && <FlagBanner flag={p.flag} />}
       {p.final == null && p.whyNot && !p.flag && <p className="rounded-lg bg-muted p-2 text-sm">ما عندهش درجة لين توا: {p.whyNot}.</p>}
 
@@ -255,7 +256,8 @@ function ManagerBlocks({ p, b, nameOf }: { p: Person; b: Board; nameOf: (id: str
               {rows.map(({ id, name, e }) => e ? (
                 <div key={id}>
                   <button type="button" onClick={() => toggle(e.id)} className="flex w-full items-center justify-between py-1 text-right text-sm active:bg-muted/40">
-                    <span>✅ {name}</span><span className={`font-bold ${grade(e.overall).text}`}>{f1(e.overall)}</span>
+                    <span>✅ {name}{b.samePhoneIds.has(e.id) && <span className="mr-1 text-[11px] font-bold text-red-600">📱 من تليفون {p.name}</span>}</span>
+                    <span className={`font-bold ${grade(e.overall).text}`}>{f1(e.overall)}</span>
                   </button>
                   {exp === e.id && <EvalCard e={e} b={b} nameOf={nameOf} />}
                 </div>
@@ -271,10 +273,18 @@ function ManagerBlocks({ p, b, nameOf }: { p: Person; b: Board; nameOf: (id: str
 
       {n > 0 && (
         <Card className="space-y-2 p-3">
-          <h3 className="font-bold">تقييمه اليومي لموظفينه</h3>
-          <p className="text-xs text-muted-foreground">
-            قيّم في <b>{p.daysRated}</b> يوم من {b.elapsed}. كل مربّع: كم واحد من {n} قيّمهم (ولا سجّلهم غايب) ذاك اليوم — اضغط على اليوم للتفاصيل.
-          </p>
+          <h3 className="flex flex-wrap items-center justify-between gap-1 font-bold">تقييمه اليومي لموظفينه <DutyBadge duty={p.duty} /></h3>
+          {p.duty && <p className="text-sm">{p.duty.text}{p.duty.today != null ? ` اليوم لين توا: ${p.duty.today} من ${n}.` : ""}</p>}
+          {p.duty && p.duty.closed > 0 && (
+            <div className="flex flex-wrap gap-1.5 text-xs">
+              {p.duty.perStaff.map((x) => (
+                <span key={x.id} className={`rounded-full border px-2 py-0.5 ${x.days < p.duty!.closed * 0.75 ? "border-red-300 text-red-700 dark:border-red-800 dark:text-red-300" : "text-muted-foreground"}`}>
+                  {x.name}: {x.days}/{p.duty!.closed}
+                </span>
+              ))}
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">كل مربّع: كم واحد من {n} قيّمهم (ولا سجّلهم غايب) ذاك اليوم — اضغط على اليوم للتفاصيل.</p>
           <MonthGrid b={b} cell={cell} sel={sel} onSel={setSel} />
           {sel && (
             <div className="space-y-1">
@@ -330,7 +340,10 @@ function SelfBlock({ p, b, nameOf }: { p: Person; b: Board; nameOf: (id: string)
       })}
       {p.manager && started.length > 0 && (
         <p className="border-t pt-1.5 text-xs text-muted-foreground">
-          قيّم مشرفه ({p.manager.name}): {started.map((h) => `النص ${h.label} ${toMgr.some((e) => per(e) === h.key) ? "✅" : "❌"}`).join(" · ")}
+          قيّم مشرفه ({p.manager.name}): {started.map((h) => {
+            const e = toMgr.find((x) => per(x) === h.key);
+            return `النص ${h.label} ${e ? (b.samePhoneIds.has(e.id) ? "✅ 📱 من تليفون المشرف" : "✅") : "❌"}`;
+          }).join(" · ")}
         </p>
       )}
     </Card>
@@ -355,7 +368,7 @@ function BranchDetail({ br, b, open }: { br: Branch; b: Board; open: OpenFn }) {
       {br.managers.length > 0 && (
         <Card className="p-3">
           <h3 className="mb-1 font-bold">المشرف</h3>
-          {br.managers.map((m) => <PersonRow key={m.id} p={m} open={open} sub={`قيّم موظفينه ${m.daysRated} يوم من ${b.elapsed} · ${howRated(m)}`} />)}
+          {br.managers.map((m) => <PersonRow key={m.id} p={m} open={open} sub={howRated(m)} />)}
         </Card>
       )}
       {br.staff.length > 0 && (

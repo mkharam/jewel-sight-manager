@@ -85,3 +85,40 @@ describe("لوحة التقييم", () => {
     expect(t.indexOf("مهيمن")).toBeLessThan(t.indexOf("احمد"));
   });
 });
+
+describe("التزام المشرف بالتقييم اليومي، و📱 من تليفونه", () => {
+  it("يحسب الأيام اللي قيّم فيها كل موظفينه، واللي فوّتها", () => {
+    // عبدالله قيّم احمد ومهيمن يوم 1 و2، وما قيّمش سالم ولا مرة.
+    const b = buildBoard(staff, evals, "2026-11-01", "2026-11-03");
+    const d = b.byId.get("m1")!.duty!;
+    expect(d.n).toBe(3);
+    expect(d.closed).toBe(2); // 1 و2 خلصو، و3 هو اليوم (لسه مفتوح)
+    expect(d.full).toBe(0);
+    expect(d.part).toBe(2);
+    expect(d.skipped).toBe(2);
+    expect(d.level).toBe("ok"); // أقل من 3 أيام — بلا علامة
+    expect(d.perStaff[0]).toMatchObject({ name: "سالم", days: 0 });
+    expect(b.byId.get("e1")!.duty).toBeNull();
+
+    const later = buildBoard(staff, evals, "2026-11-01", "2026-11-10");
+    expect(later.byId.get("m1")!.duty).toMatchObject({ closed: 9, skipped: 9, none: 7, level: "red" });
+    expect(summaryText(later)).toContain("مشرفين فوّتوا التقييم اليومي: عبدالله (9 يوم)");
+  });
+
+  it("📱 تقييم الموظف لمشرفه اللي اتبعت من تليفون المشرف", () => {
+    const withDevices = evals.map((e) =>
+      e.evaluator_id === "m1" ? { ...e, device_id: "PHONE-M" }
+        : e.kind === "of_manager" && e.evaluator_id === "e2" ? { ...e, device_id: "PHONE-M" } // مهيمن من تليفون المشرف
+          : e.kind === "of_manager" && e.evaluator_id === "e1" ? { ...e, device_id: "PHONE-A" } : e);
+    const b = buildBoard(staff, withDevices, "2026-11-01", "2026-11-03");
+    const m = b.byId.get("m1")!;
+    expect(m.samePhone.map((e) => e.evaluator_id)).toEqual(["e2"]);
+    expect(m.phone?.level).toBe("red");
+    expect(m.final).toBe(3); // الدرجة ما تتغيّرش — العلامة بس
+    expect(m.finalClean).toBe(4); // بدون تقييم مهيمن (2) يبقى تقييم احمد (4)
+    expect(b.samePhoneIds.size).toBe(1);
+    // اللي سجّله المسؤول من التطبيق ما يتعلّمش.
+    const rec = withDevices.map((e) => (e.kind === "of_manager" && e.evaluator_id === "e2" ? { ...e, source: "recorder" as const } : e));
+    expect(buildBoard(staff, rec, "2026-11-01", "2026-11-03").byId.get("m1")!.samePhone).toEqual([]);
+  });
+});
