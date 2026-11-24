@@ -30,6 +30,8 @@ export default function BekamLink() {
   if (!isAdmin || error) return null; // قبل تشغيل ملف التحديث: ما نوريوش حاجة
 
   const stale = !data?.last_ok_at || Date.now() - new Date(data.last_ok_at).getTime() > 3 * 3600_000;
+  // شغال → ما نوريوش حاجة. الصندوق يطلع بس لو الربط وقف ولا ما تربطش بعد.
+  if (data?.connected && !stale && !data.last_error) return null;
   const save = async () => {
     // يقبل «PHPSESSID=…» ولا القيمة بروحها.
     const v = cookie.trim().includes("=") ? cookie.trim() : `PHPSESSID=${cookie.trim()}`;
