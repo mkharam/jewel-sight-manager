@@ -26,6 +26,8 @@ type Extra = {
 type Gold = { branch_code: string; sman: string; valued_grams: number; amount_lyd: number; gold_lyd: number; old_grams: number; old_amount_lyd: number; old_gold_lyd: number };
 /** تسجيل الزبون في فواتير البيع: اسم حقيقي، ورقم موبايل صحيح (amarsoft_customer_capture). */
 type Capture = { branch_code: string; sman: string; invoices: number; with_name: number; with_phone: number; with_both: number };
+/** استعمال بطاقة الولاء (loyalty_staff_report): فواتير لزبائن عندهم البطاقة. */
+type Loyal = { branch_code: string; sman: string; sales: number; with_phone: number; member_sales: number };
 
 /** كل المقاييس لشخص أو فرع — محسوبة من المجاميع بنفس الطريقة للجميع. */
 type M = {
@@ -34,6 +36,8 @@ type M = {
   phonePct: number; newCust: number; repeatCust: number; oldPieces: number; avgAge: number | null;
   /** % فواتير فيها اسم الزبون، وفيها الاسم والرقم مع بعض (null لو ملف التحديث ما تشغّلش). */
   namePct: number | null; custPct: number | null;
+  /** % فواتير لزبائن عندهم بطاقة الولاء (null لو ملف التحديث ما تشغّلش). */
+  cardPct: number | null; cardSales: number;
   untaggedPct: number; returns: number; returnPct: number; days: number;
   /** فوق سعر الذهب يوم البيع: د.ل لكل جرام، ونسبة مئوية — وللقطع القديمة (أكثر من 6 شهور) نسبة لحالها. */
   abovePerGram: number | null; abovePct: number | null; oldAbovePct: number | null;
@@ -42,7 +46,7 @@ type M = {
 const n = (v: unknown) => Number(v ?? 0);
 const pct = (a: number, b: number) => (b > 0 ? (a / b) * 100 : 0);
 
-function measure(rs: Raw[], xs: Extra[], gs: Gold[] = [], cs: Capture[] = []): M {
+function measure(rs: Raw[], xs: Extra[], gs: Gold[] = [], cs: Capture[] = [], ls: Loyal[] | null = null): M {
   const t = (k: keyof Raw) => rs.reduce((a, r) => a + n(r[k]), 0);
   const tx = (k: keyof Extra) => xs.reduce((a, r) => a + n(r[k]), 0);
   const g = t("grams"), inv = t("invoices"), lines = t("lines");
@@ -66,6 +70,11 @@ function measure(rs: Raw[], xs: Extra[], gs: Gold[] = [], cs: Capture[] = []): M
     untaggedPct: pct(t("untagged_lines"), lines), returns: t("returns"), returnPct: pct(t("returns"), inv + t("returns")),
     days: t("active_days"),
     ...(() => {
+      const ts = (ls ?? []).reduce((a, x) => a + n(x.sales), 0);
+      const ms = (ls ?? []).reduce((a, x) => a + n(x.member_sales), 0);
+      return { cardSales: ms, cardPct: ls === null || !ts ? null : pct(ms, ts) };
+    })(),
+    ...(() => {
       const vg = gs.reduce((a, x) => a + n(x.valued_grams), 0);
       const amt = gs.reduce((a, x) => a + n(x.amount_lyd), 0);
       const gold = gs.reduce((a, x) => a + n(x.gold_lyd), 0);
@@ -81,7 +90,7 @@ function measure(rs: Raw[], xs: Extra[], gs: Gold[] = [], cs: Capture[] = []): M
 }
 
 // ===== النقاط =====
-type ScoreKey = "grams" | "abovePct" | "priceIndex" | "avgInv" | "discountPct" | "lowPricePct" | "custPct" | "returnPct" | "untaggedPct";
+type ScoreKey = "grams" | "abovePct" | "priceIndex" | "avgInv" | "discountPct" | "lowPricePct" | "custPct" | "cardPct" | "returnPct" | "untaggedPct";
 const SCORE_PARTS: { key: ScoreKey; label: string; lowerBetter?: boolean; def: number }[] = [
   { key: "grams", label: "الوزن المباع", def: 30 },
   { key: "abovePct", label: "الربح فوق سعر الذهب", def: 10 },
@@ -90,6 +99,7 @@ const SCORE_PARTS: { key: ScoreKey; label: string; lowerBetter?: boolean; def: n
   { key: "lowPricePct", label: "قلة البيع تحت السعر", lowerBetter: true, def: 10 },
   { key: "discountPct", label: "قلة الخصم", lowerBetter: true, def: 10 },
   { key: "custPct", label: "تسجيل اسم ورقم الزبون", def: 5 },
+  { key: "cardPct", label: "استعمال بطاقة الولاء", def: 5 },
   { key: "returnPct", label: "قلة المرتجعات", lowerBetter: true, def: 5 },
   { key: "untaggedPct", label: "قلة البيع بلا باركود", lowerBetter: true, def: 5 },
 ];
@@ -168,6 +178,7 @@ const SECTIONS: { key: string; label: string; intro: string; cols: Col[] }[] = [
     key: "customers", label: "الزبائن", intro: "يسجّل اسم ورقم الزبون؟ وكم زبون جديد، وكم زبون رجع يشري.",
     cols: [
       { key: "custPct", label: "اسم ورقم الزبون", explain: "نسبة الفواتير اللي فيها اسم الزبون الحقيقي ورقم تلفونه مع بعض. هذا اللي يدخل في النقاط — باش نتواصلوا مع الزبون ونعرفوا مين يرجع.", get: (m) => m.custPct ?? m.phonePct, fmt: (m) => `${f(m.custPct ?? m.phonePct)}%` },
+      { key: "cardPct", label: "بطاقة الولاء", explain: "نسبة فواتيره اللي كانت لزبون عنده بطاقة الولاء (رقم الزبون في الفاتورة = رقم بطاقة). يعني يطلب البطاقة من الزبون ولا يطلّعله وحدة.", get: (m) => m.cardPct, fmt: (m) => (m.cardPct === null ? "—" : `${f(m.cardPct)}%`), sub: (m) => `(${m.cardSales})` },
       { key: "namePct", label: "اسم الزبون", explain: "نسبة الفواتير اللي فيها اسم الزبون (مش «ذهب مسبوك» ولا حرف واحد).", get: (m) => m.namePct, fmt: (m) => (m.namePct === null ? "—" : `${f(m.namePct)}%`) },
       { key: "phonePct", label: "رقم الزبون", explain: "نسبة الفواتير اللي فيها رقم موبايل صحيح للزبون.", get: (m) => m.phonePct, fmt: (m) => `${f(m.phonePct)}%` },
       { key: "newCust", label: "زبائن جدد", explain: "زبائن أول مرة يشروا من المحل (حسب رقم التلفون).", get: (m) => m.newCust, fmt: (m) => f(m.newCust) },
@@ -357,14 +368,15 @@ export default function StaffEval() {
     return { cur: daysToRange(from, to), prev: daysToRange(addDays(from, -len), addDays(from, -1)) };
   }, [period]);
   const fetchAll = async (r: { start: string; end: string }) => {
-    const [a, b, c, d] = await Promise.all([
+    const [a, b, c, d, e] = await Promise.all([
       sb.rpc("amarsoft_staff_eval", { p_start: r.start, p_end: r.end, p_branch: null }),
       sb.rpc("amarsoft_staff_eval_extra", { p_start: r.start, p_end: r.end, p_branch: null }),
       sb.rpc("amarsoft_staff_eval_gold", { p_start: r.start, p_end: r.end, p_branch: null }),
       sb.rpc("amarsoft_customer_capture", { p_start: r.start, p_end: r.end }),
+      sb.rpc("loyalty_staff_report", { p_start: r.start, p_end: r.end }),
     ]);
     if (a.error) throw a.error;
-    return { rows: (a.data ?? []) as Raw[], extra: (b.data ?? []) as Extra[], gold: (c.data ?? []) as Gold[], capture: (d.data ?? []) as Capture[] };
+    return { rows: (a.data ?? []) as Raw[], extra: (b.data ?? []) as Extra[], gold: (c.data ?? []) as Gold[], capture: (d.data ?? []) as Capture[], loyal: e.error ? null : ((e.data ?? []) as Loyal[]) };
   };
   const q = useQuery({ queryKey: ["staff-eval", period], queryFn: () => fetchAll(ranges.cur) });
   const qPrev = useQuery({ queryKey: ["staff-eval-prev", period], queryFn: () => fetchAll(ranges.prev) });
@@ -385,19 +397,19 @@ export default function StaffEval() {
   }, [q.data]);
 
   // الأشخاص أو الفروع، مع الفترة اللي قبلها، والنقاط محسوبة بين نفس المجموعة.
-  const build = (data: { rows: Raw[]; extra: Extra[]; gold: Gold[]; capture: Capture[] } | undefined): { id: string; name: string; sub: string; m: M }[] => {
+  const build = (data: { rows: Raw[]; extra: Extra[]; gold: Gold[]; capture: Capture[]; loyal: Loyal[] | null } | undefined): { id: string; name: string; sub: string; m: M }[] => {
     if (!data) return [];
     const key = (r: { branch_code: string; sman: string }) => `${r.branch_code}|${r.sman}`;
     if (level === "branches") {
       return [...new Set(data.rows.map((r) => r.branch_code))].map((code) => {
         const rs = data.rows.filter((r) => r.branch_code === code);
         const keys = new Set(rs.map(key));
-        return { id: code, name: rs[0].branch_name, sub: `${rs.length} بائع`, m: measure(rs, data.extra.filter((x) => x.branch_code === code), data.gold.filter((x) => x.branch_code === code), data.capture.filter((x) => keys.has(key(x)))) };
+        return { id: code, name: rs[0].branch_name, sub: `${rs.length} بائع`, m: measure(rs, data.extra.filter((x) => x.branch_code === code), data.gold.filter((x) => x.branch_code === code), data.capture.filter((x) => keys.has(key(x))), data.loyal && data.loyal.filter((x) => x.branch_code === code)) };
       });
     }
     return data.rows.filter((r) => branch === "all" || r.branch_code === branch).map((r) => ({
       id: key(r), name: r.salesman_name, sub: r.branch_name,
-      m: measure([r], data.extra.filter((x) => key(x) === key(r)), data.gold.filter((x) => key(x) === key(r)), data.capture.filter((x) => key(x) === key(r))),
+      m: measure([r], data.extra.filter((x) => key(x) === key(r)), data.gold.filter((x) => key(x) === key(r)), data.capture.filter((x) => key(x) === key(r)), data.loyal && data.loyal.filter((x) => key(x) === key(r))),
     }));
   };
   const who: Who[] = useMemo(() => {
