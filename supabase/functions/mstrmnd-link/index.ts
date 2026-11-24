@@ -57,10 +57,12 @@ async function accessToken(branch?: string, optional = false): Promise<{ token: 
   const id = branch ? 1000 + Number(branch) : 1;
   const secret = branch ? `MSTRMND_TOKEN_${branch}` : "MSTRMND_REFRESH_TOKEN";
   const seed = seedToken(Deno.env.get(secret) ?? "");
-  if (optional && !seed) return null;
   const seedHash = seed ? await sha256(seed) : null;
   const { data } = await db.from("mstrmnd_auth").select("*").eq("id", id).maybeSingle();
   let row = (data ?? { refresh_token: null, access_token: null, access_expires_at: null, seed_hash: null }) as Auth;
+  // فرع بلا سر ولا دخول محفوظ في الجدول → الحساب الرئيسي. (الدخول المحفوظ يكفي حتى بلا سر — مثلاً لما تصلّح
+  // دخول فرع اتحط تحت رقم غلط بنقله في الجدول.)
+  if (optional && !seed && !row.refresh_token) return null;
 
   // سر جديد (أول مرة، أو صاحب المحل دخل من جديد وحط رمز جديد) → نبداو منه.
   if (seedHash && seedHash !== row.seed_hash) {
