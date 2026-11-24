@@ -12,6 +12,7 @@ import {
   type Karat, type RateDay,
 } from "@/lib/goldMarket";
 import GoldCalculator from "./GoldCalculator";
+import BekamLink from "./BekamLink";
 
 /** التغيّر عن آخر سعر مختلف في آخر 7 أيام (الأونصة ما تتحركش في العطلة، والدولار مرات يثبت يومين). */
 function changeOf(series: RateDay[], pick: (x: RateDay) => number | null, d = 0) {
@@ -73,6 +74,8 @@ export default function MarketToday() {
   }));
   const masbook = [latestQuote(kasr.data, "masbook18"), latestQuote(kasr.data, "masbook24")];
   const k18 = rows[0];
+  // أسعار «بكم» (تتجمع وحدها كل 10 دقايق) لو حديثة — أقدم من يومين نرجعو للتقدير من الخام.
+  const fresh = (q: { at: string } | null) => !!q && Date.now() - new Date(q.at).getTime() < 48 * 3600_000;
   const gap = k18.kasr && k18.raw ? k18.kasr.value - k18.raw : null;
 
   return (
@@ -109,7 +112,8 @@ export default function MarketToday() {
               <tr>
                 <th className="px-1.5 py-2 text-right">العيار</th>
                 <th className="px-1.5 py-2 text-primary">خام (موازي)</th>
-                <th className="px-1.5 py-2">الكسر (تقريباً)</th>
+                <th className="px-1.5 py-2">الكسر</th>
+                <th className="px-1.5 py-2">خارجي</th>
               </tr>
             </thead>
             <tbody>
@@ -118,7 +122,10 @@ export default function MarketToday() {
                   <td className="px-1.5 py-2.5 text-right font-bold">{r.k}</td>
                   <td className="px-1.5 py-2.5 text-base font-extrabold text-primary">{fmt(r.raw)}</td>
                   {/* الكسر في سوق طرابلس يمشي مع الخام (فرق 1–3% حسب ساعة الدولار) — محسوب تلقائياً بدل تسجيله من «بكم». */}
-                  <td className="px-1.5 py-2.5 font-semibold">{r.raw ? `~${fmt(Math.round(r.raw * 0.99))}` : "—"}</td>
+                  <td className="px-1.5 py-2.5 font-semibold">
+                    {fresh(r.kasr) ? fmt(r.kasr!.value) : r.raw ? `~${fmt(Math.round(r.raw * 0.99))}` : "—"}
+                  </td>
+                  <td className="px-1.5 py-2.5 font-semibold">{fresh(r.kharji) ? fmt(r.kharji!.value) : "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -128,11 +135,17 @@ export default function MarketToday() {
           <Info className="mt-0.5 size-4 shrink-0 text-primary" />
           <div className="space-y-1">
             <p><b className="text-foreground">خام (موازي)</b>: قيمة الذهب الصافي بدولار السوق = الأونصة ÷ 31.1 × الدولار × العيار. هذا الأساس اللي نحسبو عليه الربح.</p>
-            <p><b className="text-foreground">الكسر (تقريباً)</b>: محسوب تلقائياً من الخام. قارنّاه بأسعار الكسر المنشورة في الأخبار: يطلع أقل من الخام بحوالي 1% (بين −3% و+3% حسب ساعة الدولار). ما يحتاجش تسجيل.</p>
+            <p>
+              <b className="text-foreground">الكسر والخارجي</b>: من «بكم» تلقائياً (يتقرا كل 10 دقايق بحساب المحل)
+              {fresh(k18.kasr) ? <> — آخر تحديث {formatTripoli(k18.kasr!.at)}.</> : <>. لو «بكم» ما وصلش من يومين، الكسر يبان تقريبي (~) محسوب من الخام: أقل منه بحوالي 1%.</>}
+              {fresh(masbook[0]) || fresh(masbook[1]) ? <> المسبوك: 18 = {fmt(masbook[0]?.value)} · 24 = {fmt(masbook[1]?.value)}.</> : null}
+            </p>
             <p>لو حسبنا الخام بدولار المصرف الرسمي: 18 = {fmt(rows[0].official)} · 21 = {fmt(rows[1].official)} · 24 = {fmt(rows[2].official)} — للمقارنة بس.</p>
           </div>
         </div>
       </Card>
+
+      <BekamLink />
 
       <Card className="space-y-2 p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
