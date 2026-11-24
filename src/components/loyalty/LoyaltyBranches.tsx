@@ -110,7 +110,7 @@ export default function LoyaltyBranches() {
               </Card>
             );
           })}
-          <StaffUsage days={days} />
+          <StaffUsage days={days} names={Object.fromEntries(branches.map((r) => [r.branch_code, name(r)]))} />
           {unknown && unknown.members > 0 && (
             <Card className="p-3 text-sm text-muted-foreground">
               {unknown.members} زبون عندهم بطاقة لكن ما نعرفوش فرعهم: ما شروش برقمهم في أمارسوفت وعمر بطاقتهم ما تمسحت.
@@ -138,7 +138,7 @@ function Line({ k, v }: { k: string; v: number }) {
 type StaffRow = { branch_code: string; sman: string | null; salesman_name: string | null; sales: number; with_phone: number; member_sales: number };
 
 /** كل بائع: كم فاتورة باعها لزبون عنده بطاقة — من رقم الزبون في فاتورة أمارسوفت. يدخل في تقييم البائعين. */
-function StaffUsage({ days }: { days: number }) {
+function StaffUsage({ days, names }: { days: number; names: Record<string, string> }) {
   const { data, error } = useQuery({
     queryKey: ["loyalty-staff-report", days],
     queryFn: async () => {
@@ -159,7 +159,7 @@ function StaffUsage({ days }: { days: number }) {
       {data.map((r) => (
         <div key={`${r.branch_code}|${r.sman}`}>
           <div className="flex justify-between gap-2 text-sm">
-            <span className="truncate">{r.salesman_name} <span className="text-xs text-muted-foreground">· فرع {r.branch_code}</span></span>
+            <span className="truncate">{r.salesman_name} <span className="text-xs text-muted-foreground">· {names[r.branch_code] ?? "فرع"} ({r.branch_code})</span></span>
             <span className="tabular-nums shrink-0">{r.member_sales} من {r.sales} ({pct(r.member_sales, r.sales)}%)</span>
           </div>
           <div className="h-1.5 rounded-full bg-muted overflow-hidden">
