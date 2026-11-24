@@ -221,13 +221,15 @@ function PieceInfo({ p }: { p: Piece }) {
   );
 }
 
+const BRANCH_NAMES: Record<string, string> = { "01": "حي الأندلس", "02": "القادسية", "03": "الجرابة", "04": "بن عاشور", "05": "النوفلين" };
+
 function CandidateInfo({ c, wide }: { c: Candidate; wide?: boolean }) {
   return (
     <div className={`${wide ? "flex-1 min-w-0" : "shrink-0 w-32 text-left"} text-xs leading-snug`}>
       <div className="font-bold font-mono text-sm" dir="ltr">{c.tag}</div>
       <div>{c.type ?? "—"} · {c.karat} · {formatGrams(c.grams)}</div>
       <div className="text-muted-foreground truncate">
-        {c.same_branch ? "" : `فرع ${c.branch_code} · `}دخلت {c.received_on ?? "—"}{wide && c.supplier ? ` · ${c.supplier}` : ""}
+        {c.same_branch ? "" : `${BRANCH_NAMES[c.branch_code] ?? "فرع"} (${c.branch_code}) · `}دخلت {c.received_on ?? "—"}{wide && c.supplier ? ` · ${c.supplier}` : ""}
       </div>
     </div>
   );
