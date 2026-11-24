@@ -13,6 +13,7 @@ import {
 } from "@/lib/goldMarket";
 import GoldCalculator from "./GoldCalculator";
 import BekamLink from "./BekamLink";
+import BekamRates from "./BekamRates";
 
 /** التغيّر عن آخر سعر مختلف في آخر 7 أيام (الأونصة ما تتحركش في العطلة، والدولار مرات يثبت يومين). */
 function changeOf(series: RateDay[], pick: (x: RateDay) => number | null, d = 0) {
@@ -145,6 +146,7 @@ export default function MarketToday() {
         </div>
       </Card>
 
+      <BekamRates />
       <BekamLink />
 
       <Card className="space-y-2 p-3">
