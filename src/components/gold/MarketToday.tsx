@@ -12,7 +12,6 @@ import {
   type Karat, type RateDay,
 } from "@/lib/goldMarket";
 import GoldCalculator from "./GoldCalculator";
-import BekamQuotes from "./BekamQuotes";
 
 /** التغيّر عن آخر سعر مختلف في آخر 7 أيام (الأونصة ما تتحركش في العطلة، والدولار مرات يثبت يومين). */
 function changeOf(series: RateDay[], pick: (x: RateDay) => number | null, d = 0) {
@@ -110,8 +109,7 @@ export default function MarketToday() {
               <tr>
                 <th className="px-1.5 py-2 text-right">العيار</th>
                 <th className="px-1.5 py-2 text-primary">خام (موازي)</th>
-                <th className="px-1.5 py-2">كسر طرابلس</th>
-                <th className="px-1.5 py-2">خارجي (السوق)</th>
+                <th className="px-1.5 py-2">الكسر (تقريباً)</th>
               </tr>
             </thead>
             <tbody>
@@ -119,8 +117,8 @@ export default function MarketToday() {
                 <tr key={r.k} className="border-t">
                   <td className="px-1.5 py-2.5 text-right font-bold">{r.k}</td>
                   <td className="px-1.5 py-2.5 text-base font-extrabold text-primary">{fmt(r.raw)}</td>
-                  <td className="px-1.5 py-2.5 font-semibold">{r.kasr ? fmt(r.kasr.value) : "—"}</td>
-                  <td className="px-1.5 py-2.5 font-semibold">{r.kharji ? fmt(r.kharji.value) : "—"}</td>
+                  {/* الكسر في سوق طرابلس يمشي مع الخام (فرق 1–3% حسب ساعة الدولار) — محسوب تلقائياً بدل تسجيله من «بكم». */}
+                  <td className="px-1.5 py-2.5 font-semibold">{r.raw ? `~${fmt(Math.round(r.raw * 0.99))}` : "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -130,20 +128,11 @@ export default function MarketToday() {
           <Info className="mt-0.5 size-4 shrink-0 text-primary" />
           <div className="space-y-1">
             <p><b className="text-foreground">خام (موازي)</b>: قيمة الذهب الصافي بدولار السوق = الأونصة ÷ 31.1 × الدولار × العيار. هذا الأساس اللي نحسبو عليه الربح.</p>
-            <p>
-              <b className="text-foreground">كسر طرابلس</b>: اللي يدفعوه التجار في جرام الذهب المستعمل (كاش) — من آخر أسعار سجّلتها من «بكم».
-              {k18.kasr && <> آخر سعر: {formatTripoli(k18.kasr.at)}.</>}
-              {gap !== null && k18.raw ? <> الكسر {gap < 0 ? "أقل" : "أعلى"} من الخام بـ {fmt(Math.abs(gap))} د.ل ({fmt(Math.abs(gap / k18.raw) * 100, 1)}%).</> : null}
-            </p>
-            {kasrMissing && <p className="text-amber-700 dark:text-amber-400">أسعار السوق تبدا تظهر بعد ما تشغّل ملف التحديث RUN_ONCE_2026-11-22.sql.</p>}
-            <p><b className="text-foreground">خارجي (السوق)</b>: سعر جرام الذهب المستورد المشغول في السوق — من تطبيق «بكم» (تسجّله تحت).
-              {masbook[0] || masbook[1] ? <> المسبوك: 18 = {fmt(masbook[0]?.value)} · 24 = {fmt(masbook[1]?.value)}.</> : null}</p>
+            <p><b className="text-foreground">الكسر (تقريباً)</b>: محسوب تلقائياً من الخام. قارنّاه بأسعار الكسر المنشورة في الأخبار: يطلع أقل من الخام بحوالي 1% (بين −3% و+3% حسب ساعة الدولار). ما يحتاجش تسجيل.</p>
             <p>لو حسبنا الخام بدولار المصرف الرسمي: 18 = {fmt(rows[0].official)} · 21 = {fmt(rows[1].official)} · 24 = {fmt(rows[2].official)} — للمقارنة بس.</p>
           </div>
         </div>
       </Card>
-
-      <BekamQuotes rows={kasr.data} g24={today.g24} error={kasr.error} />
 
       <Card className="space-y-2 p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
