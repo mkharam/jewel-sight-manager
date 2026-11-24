@@ -135,14 +135,18 @@ function DailyChart({ days, from, to }: { days: Day[]; from: string; to: string 
 }
 
 // المقاييس اللي نقارن بيها، نفسها في المقارنتين (فرع مع فرع، وفرع مع نفسه).
-type Metric = { label: string; get: (o: Overview) => number; show: (v: number) => string };
+// compact + unit: في جدول «مقارنة الفروع» الرقم بلا وحدة (الوحدة تحت اسم السطر) والمبالغ بالألف — باش كل
+// الفروع يساعوا عرض التلفون. «الفرع مع نفسه» عنده مكان، فيكتب الرقم كامل (show).
+type Metric = { label: string; get: (o: Overview) => number; show: (v: number) => string; compact?: (v: number) => string; unit?: string };
+/** درهم أمارسوفت ← ألف دينار: «3,948» ولا «52.3». */
+const kLD = (dirhams: number) => { const k = Number(dirhams) / 1e6; return k >= 100 ? n0(k) : k.toLocaleString("en-US", { maximumFractionDigits: 1 }); };
 const METRICS: Metric[] = [
-  { label: "المبيعات", get: (o) => Number(o.sales_dirhams), show: (v) => formatLD(v) },
+  { label: "المبيعات", get: (o) => Number(o.sales_dirhams), show: (v) => formatLD(v), compact: kLD, unit: "ألف د.ل" },
   { label: "الفواتير", get: (o) => Number(o.invoices), show: (v) => n0(v) },
-  { label: "الوزن", get: (o) => Number(o.grams), show: (v) => formatGrams(Math.round(v)) },
-  { label: "سعر الغرام", get: (o) => perGram(o.sales_dirhams, o.grams), show: (v) => `${n0(v)} د.ل` },
-  { label: "متوسط الفاتورة", get: (o) => (Number(o.invoices) ? Number(o.sales_dirhams) / Number(o.invoices) : 0), show: (v) => formatLD(v) },
-  { label: "المصنعية", get: (o) => Number(o.making_dirhams), show: (v) => formatLD(v) },
+  { label: "الوزن", get: (o) => Number(o.grams), show: (v) => formatGrams(Math.round(v)), compact: (v) => n0(v), unit: "جم" },
+  { label: "سعر الغرام", get: (o) => perGram(o.sales_dirhams, o.grams), show: (v) => `${n0(v)} د.ل`, compact: (v) => n0(v), unit: "د.ل" },
+  { label: "متوسط الفاتورة", get: (o) => (Number(o.invoices) ? Number(o.sales_dirhams) / Number(o.invoices) : 0), show: (v) => formatLD(v), compact: (v) => n0(v / 1000), unit: "د.ل" },
+  { label: "المصنعية", get: (o) => Number(o.making_dirhams), show: (v) => formatLD(v), compact: kLD, unit: "ألف د.ل" },
   { label: "الزبائن", get: (o) => Number(o.customers), show: (v) => n0(v) },
   { label: "ممسوحة", get: (o) => Number(o.deleted), show: (v) => n0(v) },
 ];
@@ -153,15 +157,15 @@ function BranchTable({ branches }: { branches: Overview[] }) {
   return (
     <Card className="p-3">
       <h2 className="text-lg font-bold">مقارنة الفروع</h2>
-      <Hint>كل فرع في عمود. الأحسن في كل سطر بالأخضر (في «ممسوحة» الأقل هو الأحسن). اسحب الجدول يمين ويسار لو ما بانش كامل.</Hint>
+      <Hint>كل فرع في عمود. الأحسن في كل سطر بالأخضر (في «ممسوحة» الأقل هو الأحسن).</Hint>
       <div className="overflow-x-auto -mx-3 px-3 mt-2">
-        <table className="w-full text-xs tabular-nums border-collapse min-w-[360px]">
+        <table className="w-full text-xs tabular-nums border-collapse">
           <thead>
             <tr>
               <th className="text-right py-1.5 pl-2 sticky right-0 bg-card" />
               {branches.map((b) => (
-                <th key={b.branch_code} className="py-1.5 px-1 font-bold text-center leading-tight">
-                  <Link to={`/branches/${b.branch_code}`} className="text-primary">{b.branch_name.replace(/^\d+\s*-\s*/, "")}</Link>
+                <th key={b.branch_code} className="py-1.5 px-0.5 font-bold text-center leading-tight">
+                  <Link to={`/branches/${b.branch_code}`} className="text-primary">{b.branch_name.replace(/^\d+\s*-\s*/, "").replace(/^حي\s+/, "")}</Link>
                   <div className="text-[10px] text-muted-foreground font-normal">{b.branch_code}</div>
                 </th>
               ))}
@@ -173,10 +177,13 @@ function BranchTable({ branches }: { branches: Overview[] }) {
               const target = m.label === "ممسوحة" ? Math.min(...vals) : Math.max(...vals);
               return (
                 <tr key={m.label} className="border-t">
-                  <td className="py-1.5 pl-2 text-muted-foreground whitespace-nowrap sticky right-0 bg-card">{m.label}</td>
+                  <td className="py-1.5 pl-1 text-muted-foreground leading-tight sticky right-0 bg-card">
+                    {m.label}
+                    {m.unit && <span className="block text-[10px]">{m.unit}</span>}
+                  </td>
                   {vals.map((x, i) => (
-                    <td key={branches[i].branch_code} className={`py-1.5 px-1 text-center whitespace-nowrap ${x === target && vals.some((y) => y !== x) ? "text-emerald-600 font-bold" : ""} ${m.label === "ممسوحة" && x > 0 ? "text-destructive" : ""}`}>
-                      {m.show(x)}
+                    <td key={branches[i].branch_code} className={`py-1.5 px-0.5 text-center whitespace-nowrap ${x === target && vals.some((y) => y !== x) ? "text-emerald-600 font-bold" : ""} ${m.label === "ممسوحة" && x > 0 ? "text-destructive" : ""}`}>
+                      {(m.compact ?? m.show)(x)}
                     </td>
                   ))}
                 </tr>

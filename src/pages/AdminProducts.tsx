@@ -245,10 +245,11 @@ export default function AdminProducts() {
                 <Checkbox checked={allSelected} onCheckedChange={toggleAll} aria-label="تحديد الكل" />
               </TableHead>
               <TableHead>القطعة</TableHead>
-              <TableHead>الفرع</TableHead>
-              <TableHead>الفئة</TableHead>
-              <TableHead>العيار</TableHead>
-              <TableHead>الوزن</TableHead>
+              {/* على التلفون الفرع والفئة والعيار والوزن تحت اسم القطعة — باش الجدول يساع الشاشة. */}
+              <TableHead className="max-sm:hidden">الفرع</TableHead>
+              <TableHead className="max-sm:hidden">الفئة</TableHead>
+              <TableHead className="max-sm:hidden">العيار</TableHead>
+              <TableHead className="max-sm:hidden">الوزن</TableHead>
               <TableHead>الحالة</TableHead>
               <TableHead className="w-10" />
             </TableRow>
@@ -279,13 +280,16 @@ export default function AdminProducts() {
                       <div className="min-w-0">
                         <div className="font-medium truncate max-w-[180px]">{p.name}</div>
                         <div className="text-xs text-muted-foreground truncate">{p.sku || "—"}</div>
+                        <div className="text-[11px] text-muted-foreground sm:hidden">
+                          {[p.branch?.name?.replace(/^\d+\s*-\s*/, ""), p.category?.name, p.karat, p.weight_grams ? formatWeight(p.weight_grams) : null].filter(Boolean).join(" · ") || "—"}
+                        </div>
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-sm">{p.branch?.name ?? "—"}</TableCell>
-                  <TableCell className="text-sm">{p.category?.name ?? "—"}</TableCell>
-                  <TableCell className="text-sm">{p.karat ?? "—"}</TableCell>
-                  <TableCell className="text-sm">{formatWeight(p.weight_grams)}</TableCell>
+                  <TableCell className="text-sm max-sm:hidden">{p.branch?.name ?? "—"}</TableCell>
+                  <TableCell className="text-sm max-sm:hidden">{p.category?.name ?? "—"}</TableCell>
+                  <TableCell className="text-sm max-sm:hidden">{p.karat ?? "—"}</TableCell>
+                  <TableCell className="text-sm max-sm:hidden">{formatWeight(p.weight_grams)}</TableCell>
                   <TableCell>
                     <Badge className={PRODUCT_STATUS[p.status]?.color}>{PRODUCT_STATUS[p.status]?.label ?? p.status}</Badge>
                   </TableCell>

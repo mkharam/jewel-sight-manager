@@ -310,7 +310,7 @@ export default function GoldPrice() {
 
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-base">سجل التسعير</CardTitle></CardHeader>
-        <CardContent className="overflow-x-auto">
+        <CardContent className="overflow-x-auto max-sm:px-3">
           <Table>
             <TableHeader>
               <TableRow>

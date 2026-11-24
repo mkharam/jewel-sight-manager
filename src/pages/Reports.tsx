@@ -326,22 +326,22 @@ export default function Reports() {
           </CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto px-3 sm:px-6">
-          <Table className="text-xs sm:text-sm [&_td]:whitespace-nowrap [&_td]:px-2 [&_th]:h-9 [&_th]:whitespace-nowrap [&_th]:px-2 [&_tr>*:first-child]:sticky [&_tr>*:first-child]:right-0 [&_tr>*:first-child]:bg-card">
+          <Table className="text-xs sm:text-sm [&_td]:whitespace-nowrap [&_td]:px-1 sm:[&_td]:px-2 [&_th]:h-auto [&_th]:py-1.5 [&_th]:leading-tight [&_th]:px-1 sm:[&_th]:px-2">
             <TableHeader>
               <TableRow>
                 <TableHead>الفرع</TableHead>
-                <TableHead className="text-center">إجمالي متوفر</TableHead>
+                <TableHead className="text-center">متوفر</TableHead>
                 <TableHead className="text-center">أقل من 60 يوم</TableHead>
-                <TableHead className="text-center">60 - 90</TableHead>
-                <TableHead className="text-center text-amber-600">90 - 180</TableHead>
+                <TableHead className="text-center">60-90 يوم</TableHead>
+                <TableHead className="text-center text-amber-600">90-180 يوم</TableHead>
                 <TableHead className="text-center text-destructive">أكثر من 180</TableHead>
-                <TableHead className="text-center">قيمة البيع (د.ل)</TableHead>
+                <TableHead className="text-center">قيمة البيع<span className="block text-[10px] font-normal">د.ل</span></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {inventoryByBranch.map((r) => (
                 <TableRow key={r.branch_id}>
-                  <TableCell className="font-semibold">{r.name}</TableCell>
+                  <TableCell className="font-semibold">{shortBranch(r.name)}</TableCell>
                   <TableCell className="text-center">{fmt(r.count)}</TableCell>
                   <TableCell className="text-center">{fmt(r.age60)}</TableCell>
                   <TableCell className="text-center">{fmt(r.age90)}</TableCell>
@@ -389,7 +389,32 @@ export default function Reports() {
 
       <Card>
         <CardHeader><CardTitle className="text-base">ملخص كل فرع</CardTitle></CardHeader>
-        <CardContent className="overflow-x-auto px-3 sm:px-6">
+        <CardContent className="px-3 sm:px-6">
+          {/* تسعة أرقام لكل فرع ما يساعوش عرض التلفون — على التلفون بطاقة لكل فرع، والجدول على الكمبيوتر. */}
+          <div className="space-y-2 sm:hidden">
+            {summary.map((r) => (
+              <div key={r.branch_id} className="rounded-xl border p-2.5">
+                <div className="mb-1.5 flex items-baseline justify-between gap-2">
+                  <span className="font-bold">{shortBranch(r.name)}</span>
+                  <span className="text-sm font-bold tabular-nums text-primary">{fmt(r.revenue)} د.ل</span>
+                </div>
+                <div className="grid grid-cols-4 gap-1 text-center">
+                  {([
+                    ["مبيعات", r.salesCount, ""], ["مُرجعة", r.returnsCount, r.returnsCount > 0 ? "text-destructive" : ""],
+                    ["عروض أسعار", r.quotes, ""], ["قطع جديدة", r.newProducts, ""],
+                    ["صادر", r.transfersOut, ""], ["وارد", r.transfersIn, ""], ["استُلم", r.transfersReceived, "text-primary"],
+                  ] as [string, number, string][]).map(([label, val, tone]) => (
+                    <div key={label} className="rounded-md bg-muted/40 py-1">
+                      <div className="text-[10px] text-muted-foreground leading-tight">{label}</div>
+                      <div className={`text-sm font-bold tabular-nums ${tone}`}>{fmt(val)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {summary.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">لا توجد فروع</p>}
+          </div>
+          <div className="max-sm:hidden">
           <Table className="text-xs sm:text-sm [&_td]:whitespace-nowrap [&_td]:px-2 [&_th]:h-9 [&_th]:whitespace-nowrap [&_th]:px-2 [&_tr>*:first-child]:sticky [&_tr>*:first-child]:right-0 [&_tr>*:first-child]:bg-card">
             <TableHeader>
               <TableRow>
@@ -425,6 +450,7 @@ export default function Reports() {
               )}
             </TableBody>
           </Table>
+          </div>
         </CardContent>
       </Card>
 
@@ -608,6 +634,9 @@ function ExpensesCard({
     </Card>
   );
 }
+
+/** «01 - حي الأندلس» ← «الأندلس». */
+const shortBranch = (name: string) => name.replace(/^\d+\s*-\s*/, "").replace(/^حي\s+/, "");
 
 function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (

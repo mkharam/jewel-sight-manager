@@ -136,41 +136,51 @@ function scoreAll(list: M[], w: Record<ScoreKey, number>): number[] {
 const f = (v: number | null | undefined, d = 0) => (v === null || v === undefined ? "—" : v.toLocaleString("en-US", { maximumFractionDigits: d }));
 
 // ===== أعمدة الجداول وشرحها =====
-type Col = { key: string; label: string; explain: string; get: (m: M) => number | null; fmt: (m: M) => string; lowerBetter?: boolean; neutral?: boolean };
+// الجدول لازم يساع عرض التلفون: القيمة في الخلية قصيرة (بلا وحدة)، الوحدة تحت اسم العمود (unit)،
+// والعدد الصغير «(3)» سطر ثاني تحت النسبة (sub).
+type Col = {
+  key: string; label: string; explain: string; get: (m: M) => number | null; fmt: (m: M) => string;
+  unit?: string; sub?: (m: M) => string | null; lowerBetter?: boolean; neutral?: boolean;
+};
 const SECTIONS: { key: string; label: string; intro: string; cols: Col[] }[] = [
   {
     key: "sales", label: "المبيعات", intro: "قدّاش باع كل واحد، وهل يبيع قطع ثقيلة ولا خفيفة.",
     cols: [
-      { key: "grams", label: "الوزن", explain: "مجموع جرامات الذهب اللي باعها. هذا أهم رقم لأن الوزن هو الربح.", get: (m) => m.grams, fmt: (m) => `${f(m.grams, 1)} جم` },
+      { key: "grams", label: "الوزن", unit: "جم", explain: "مجموع جرامات الذهب اللي باعها. هذا أهم رقم لأن الوزن هو الربح.", get: (m) => m.grams, fmt: (m) => f(m.grams, m.grams >= 100 ? 0 : 1) },
       { key: "invoices", label: "الفواتير", explain: "عدد الفواتير — يعني كم زبون خدم.", get: (m) => m.invoices, fmt: (m) => f(m.invoices) },
-      { key: "avgInv", label: "وزن الفاتورة", explain: "معدل الجرامات في الفاتورة الوحدة. الأعلى يعني يقنع الزبون بقطع أثقل.", get: (m) => m.avgInv, fmt: (m) => `${f(m.avgInv, 1)} جم` },
-      { key: "heavyPct", label: "فواتير ثقيلة", explain: "نسبة الفواتير اللي وزنها 20 جرام أو أكثر.", get: (m) => m.heavyPct, fmt: (m) => `${f(m.heavyPct)}% (${m.heavy})` },
-      { key: "lightPct", label: "فواتير خفيفة", explain: "نسبة الفواتير اللي وزنها أقل من 5 جرام (حلق، خواتم صغار…). مش عيب، لكن الكثير منها يعني ربح أقل.", get: (m) => m.lightPct, fmt: (m) => `${f(m.lightPct)}% (${m.light})`, lowerBetter: true },
+      { key: "avgInv", label: "وزن الفاتورة", unit: "جم", explain: "معدل الجرامات في الفاتورة الوحدة. الأعلى يعني يقنع الزبون بقطع أثقل.", get: (m) => m.avgInv, fmt: (m) => f(m.avgInv, 1) },
+      { key: "heavyPct", label: "فواتير ثقيلة", explain: "نسبة الفواتير اللي وزنها 20 جرام أو أكثر.", get: (m) => m.heavyPct, fmt: (m) => `${f(m.heavyPct)}%`, sub: (m) => `(${m.heavy})` },
+      { key: "lightPct", label: "فواتير خفيفة", explain: "نسبة الفواتير اللي وزنها أقل من 5 جرام (حلق، خواتم صغار…). مش عيب، لكن الكثير منها يعني ربح أقل.", get: (m) => m.lightPct, fmt: (m) => `${f(m.lightPct)}%`, sub: (m) => `(${m.light})`, lowerBetter: true },
     ],
   },
   {
     key: "price", label: "الأسعار", intro: "هل يبيع بالسعر الصحيح ولا يكسر السعر؟",
     cols: [
       { key: "priceIndex", label: "سعر البيع", explain: "يقارن سعر الجرام عنده بسعر نفس نوع القطعة في فرعه (خاتم بخاتم، طقم بطقم). 100 = نفس الفرع، 110 = يبيع أغلى بـ10%، 90 = أرخص بـ10%.", get: (m) => m.priceIndex, fmt: (m) => f(m.priceIndex) },
-      { key: "abovePerGram", label: "فوق الذهب للجرام", explain: "كم دينار ربح على كل جرام فوق قيمة الذهب الخام يوم البيع (سعر الأونصة العالمي × الدولار في السوق الموازي). هذا الربح الحقيقي: المصنعية + هامش المحل.", get: (m) => m.abovePerGram, fmt: (m) => (m.abovePerGram === null ? "—" : `${f(m.abovePerGram)} د.ل`) },
+      { key: "abovePerGram", label: "فوق الذهب للجرام", unit: "د.ل", explain: "كم دينار ربح على كل جرام فوق قيمة الذهب الخام يوم البيع (سعر الأونصة العالمي × الدولار في السوق الموازي). هذا الربح الحقيقي: المصنعية + هامش المحل.", get: (m) => m.abovePerGram, fmt: (m) => f(m.abovePerGram) },
       { key: "abovePct", label: "% فوق الذهب", explain: "نفس الشي كنسبة: 40% يعني باع بسعر أعلى من قيمة الذهب الخام بـ40%.", get: (m) => m.abovePct, fmt: (m) => (m.abovePct === null ? "—" : `${f(m.abovePct)}%`) },
-      { key: "pricePerGram", label: "سعر الجرام", explain: "قيمة المبيعات ÷ الوزن بالدينار. للمعلومة فقط — يتأثر بنوع البضاعة، فالمقارنة الصحيحة هي «سعر البيع».", get: (m) => m.pricePerGram, fmt: (m) => `${f(m.pricePerGram)} د.ل`, neutral: true },
-      { key: "lowPricePct", label: "تحت السعر", explain: "نسبة القطع اللي باعها بسعر جرام أقل من المعتاد في فرعه لنفس العيار (أقل من 95%). الأقل أحسن.", get: (m) => m.lowPricePct, fmt: (m) => `${f(m.lowPricePct)}% (${m.lowLines})`, lowerBetter: true },
+      { key: "pricePerGram", label: "سعر الجرام", unit: "د.ل", explain: "قيمة المبيعات ÷ الوزن بالدينار. للمعلومة فقط — يتأثر بنوع البضاعة، فالمقارنة الصحيحة هي «سعر البيع».", get: (m) => m.pricePerGram, fmt: (m) => f(m.pricePerGram), neutral: true },
+      { key: "lowPricePct", label: "تحت السعر", explain: "نسبة القطع اللي باعها بسعر جرام أقل من المعتاد في فرعه لنفس العيار (أقل من 95%). الأقل أحسن.", get: (m) => m.lowPricePct, fmt: (m) => `${f(m.lowPricePct)}%`, sub: (m) => `(${m.lowLines})`, lowerBetter: true },
       { key: "discountPct", label: "الخصم", explain: "نسبة الخصم المكتوب في الفواتير من قيمة البيع. الأقل أحسن.", get: (m) => m.discountPct, fmt: (m) => `${f(m.discountPct, 1)}%`, lowerBetter: true },
     ],
   },
   {
-    key: "care", label: "الزبائن والبضاعة", intro: "الاهتمام بالزبون، تصريف البضاعة القديمة، والالتزام بالنظام.",
+    key: "customers", label: "الزبائن", intro: "يسجّل اسم ورقم الزبون؟ وكم زبون جديد، وكم زبون رجع يشري.",
     cols: [
       { key: "custPct", label: "اسم ورقم الزبون", explain: "نسبة الفواتير اللي فيها اسم الزبون الحقيقي ورقم تلفونه مع بعض. هذا اللي يدخل في النقاط — باش نتواصلوا مع الزبون ونعرفوا مين يرجع.", get: (m) => m.custPct ?? m.phonePct, fmt: (m) => `${f(m.custPct ?? m.phonePct)}%` },
       { key: "namePct", label: "اسم الزبون", explain: "نسبة الفواتير اللي فيها اسم الزبون (مش «ذهب مسبوك» ولا حرف واحد).", get: (m) => m.namePct, fmt: (m) => (m.namePct === null ? "—" : `${f(m.namePct)}%`) },
       { key: "phonePct", label: "رقم الزبون", explain: "نسبة الفواتير اللي فيها رقم موبايل صحيح للزبون.", get: (m) => m.phonePct, fmt: (m) => `${f(m.phonePct)}%` },
       { key: "newCust", label: "زبائن جدد", explain: "زبائن أول مرة يشروا من المحل (حسب رقم التلفون).", get: (m) => m.newCust, fmt: (m) => f(m.newCust) },
       { key: "repeatCust", label: "زبائن رجعوا", explain: "زبائن شروا قبل ورجعوا يشروا.", get: (m) => m.repeatCust, fmt: (m) => f(m.repeatCust) },
+    ],
+  },
+  {
+    key: "goods", label: "البضاعة", intro: "تصريف البضاعة القديمة، والبيع بالباركود، والمرتجعات.",
+    cols: [
       { key: "oldAbovePct", label: "القديمة فوق الذهب", explain: "القطع اللي قعدت أكثر من 6 شهور: باعها بكم فوق قيمة الذهب يوم البيع. لو أقل بكثير من «% فوق الذهب» يعني باعها بسعرها القديم وما حسبش غلاء الذهب.", get: (m) => m.oldAbovePct, fmt: (m) => (m.oldAbovePct === null ? "—" : `${f(m.oldAbovePct)}%`) },
       { key: "oldPieces", label: "قطع قديمة باعها", explain: "قطع قعدت في المخزون أكثر من 6 شهور وهو باعها — شطارة في تصريف البضاعة.", get: (m) => m.oldPieces, fmt: (m) => f(m.oldPieces) },
       { key: "untaggedPct", label: "بلا باركود", explain: "نسبة البيع بالكود العام (18K GEN) بدل باركود القطعة. الأقل أحسن، لأن البيع بلا باركود يخرب الجرد.", get: (m) => m.untaggedPct, fmt: (m) => `${f(m.untaggedPct)}%`, lowerBetter: true },
-      { key: "returnPct", label: "المرتجعات", explain: "نسبة الفواتير اللي رجعت. الأقل أحسن.", get: (m) => m.returnPct, fmt: (m) => `${f(m.returnPct)}% (${m.returns})`, lowerBetter: true },
+      { key: "returnPct", label: "المرتجعات", explain: "نسبة الفواتير اللي رجعت. الأقل أحسن.", get: (m) => m.returnPct, fmt: (m) => `${f(m.returnPct)}%`, sub: (m) => `(${m.returns})`, lowerBetter: true },
     ],
   },
 ];
@@ -219,47 +229,57 @@ function Table({ rows, cols, showScore }: { rows: Who[]; cols: Col[]; showScore?
     const va = c.get(a.m) ?? -Infinity, vb = c.get(b.m) ?? -Infinity;
     return c.lowerBetter ? va - vb : vb - va;
   });
-  const th = "px-2 py-2 text-xs font-semibold whitespace-nowrap cursor-pointer select-none";
+  // يساع عرض التلفون: خط صغير، حشوة قليلة، واسم العمود يلتف على سطرين بدل ما يعرّض الجدول.
+  const th = "px-0.5 py-1.5 align-bottom text-[10px] sm:text-xs font-semibold leading-tight cursor-pointer select-none";
+  /** «01 - حي الأندلس» ← «الأندلس» (اسم الفرع تحت اسم البائع). */
+  const shortSub = (t: string) => t.replace(/^\d+\s*-\s*/, "").replace(/^حي\s+/, "");
   return (
     <div className="overflow-x-auto rounded-xl border bg-card">
-      <table className="w-full text-sm">
+      <table className="w-full text-[11px] sm:text-sm">
         <thead className="bg-muted/50">
           <tr>
-            <th className="sticky right-0 z-10 bg-muted px-2 py-2 text-right text-xs font-semibold">الاسم</th>
-            {showScore && <th className={`${th} ${sort === "score" ? "text-primary" : ""}`} onClick={() => setSort("score")}>النقاط {sort === "score" && "▼"}</th>}
+            <th className="sticky right-0 z-10 bg-muted px-1.5 py-1.5 align-bottom text-right text-[10px] sm:text-xs font-semibold">الاسم</th>
+            {showScore && <th className={`${th} ${sort === "score" ? "text-primary" : ""}`} onClick={() => setSort("score")}>النقاط{sort === "score" && " ▼"}</th>}
             {cols.map((c) => (
-              <th key={c.key} className={`${th} ${sort === c.key ? "text-primary" : ""}`} onClick={() => setSort(c.key)}>{c.label} {sort === c.key && "▼"}</th>
+              <th key={c.key} className={`${th} ${sort === c.key ? "text-primary" : ""}`} onClick={() => setSort(c.key)}>
+                {c.label}{sort === c.key && " ▼"}
+                {c.unit && <span className="block text-[9px] font-normal text-muted-foreground">{c.unit}</span>}
+              </th>
             ))}
           </tr>
         </thead>
         <tbody>
           {sorted.map((r, i) => (
             <tr key={r.id} className="border-t">
-              <td className="sticky right-0 z-10 bg-card px-2 py-2 min-w-[120px]">
+              <td className="sticky right-0 z-10 bg-card px-1.5 py-1.5 sm:min-w-[120px]">
                 <div className="font-semibold leading-tight">{i < 3 ? ["🥇", "🥈", "🥉"][i] : `${i + 1}.`} {r.name}</div>
-                <div className="text-[11px] text-muted-foreground">{r.sub}</div>
+                <div className="text-[10px] sm:text-[11px] text-muted-foreground leading-tight">{shortSub(r.sub)}</div>
               </td>
               {showScore && (
-                <td className="px-2 py-2 text-center">
-                  <div className={`text-lg font-black tabular-nums ${r.score >= 65 ? "text-green-700" : r.score < 35 ? "text-red-700" : ""}`}>{r.score}</div>
+                <td className="px-0.5 py-1.5 text-center">
+                  <div className={`text-base sm:text-lg font-black tabular-nums leading-none ${r.score >= 65 ? "text-green-700" : r.score < 35 ? "text-red-700" : ""}`}>{r.score}</div>
                   {r.prevScore !== undefined && (
-                    <div className={`text-[10px] tabular-nums ${r.score > r.prevScore ? "text-green-700" : r.score < r.prevScore ? "text-red-700" : "text-muted-foreground"}`}>
-                      {r.score === r.prevScore ? "نفس" : `${r.score > r.prevScore ? "▲" : "▼"} ${Math.abs(r.score - r.prevScore)}`}
+                    <div className={`mt-0.5 text-[9px] sm:text-[10px] tabular-nums ${r.score > r.prevScore ? "text-green-700" : r.score < r.prevScore ? "text-red-700" : "text-muted-foreground"}`}>
+                      {r.score === r.prevScore ? "نفس" : `${r.score > r.prevScore ? "▲" : "▼"}${Math.abs(r.score - r.prevScore)}`}
                     </div>
                   )}
                 </td>
               )}
-              {cols.map((c) => (
-                <td key={c.key} className={`px-2 py-2 text-center tabular-nums whitespace-nowrap ${tone(c.get(r.m), avgs[c.key], c.lowerBetter, c.neutral)}`}>
-                  {c.fmt(r.m)}
-                </td>
-              ))}
+              {cols.map((c) => {
+                const sub = c.sub?.(r.m);
+                return (
+                  <td key={c.key} className={`px-0.5 py-1.5 text-center tabular-nums whitespace-nowrap ${tone(c.get(r.m), avgs[c.key], c.lowerBetter, c.neutral)}`}>
+                    {c.fmt(r.m)}
+                    {sub && <span className="block text-[9px] opacity-70">{sub}</span>}
+                  </td>
+                );
+              })}
             </tr>
           ))}
-          <tr className="border-t bg-muted/30 text-xs text-muted-foreground">
-            <td className="sticky right-0 bg-muted px-2 py-2 font-semibold">المتوسط</td>
+          <tr className="border-t bg-muted/30 text-[10px] sm:text-xs text-muted-foreground">
+            <td className="sticky right-0 bg-muted px-1.5 py-1.5 font-semibold">المتوسط</td>
             {showScore && <td className="text-center">50</td>}
-            {cols.map((c) => <td key={c.key} className="px-2 py-2 text-center tabular-nums">{f(avgs[c.key], 1)}</td>)}
+            {cols.map((c) => <td key={c.key} className="px-0.5 py-1.5 text-center tabular-nums">{f(avgs[c.key], 1)}</td>)}
           </tr>
         </tbody>
       </table>
@@ -316,10 +336,11 @@ function Overview({ rows }: { rows: Who[] }) {
   );
 }
 
-type View = "overview" | "sales" | "price" | "care" | "hours" | "guide";
+type View = "overview" | "sales" | "price" | "customers" | "goods" | "hours" | "guide";
 const VIEWS: { key: View; label: string }[] = [
   { key: "overview", label: "النتيجة" }, { key: "sales", label: "المبيعات" }, { key: "price", label: "الأسعار" },
-  { key: "care", label: "الزبائن والبضاعة" }, { key: "hours", label: "أوقات البيع" }, { key: "guide", label: "كيف تنحسب النقاط" },
+  { key: "customers", label: "الزبائن" }, { key: "goods", label: "البضاعة" },
+  { key: "hours", label: "أوقات البيع" }, { key: "guide", label: "كيف تنحسب النقاط" },
 ];
 
 export default function StaffEval() {

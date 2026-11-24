@@ -230,7 +230,50 @@ export default function Staff() {
         </TabsList>
 
         <TabsContent value="list" className="mt-3">
-          <Card className="overflow-x-auto">
+          {/* على التلفون: بطاقة لكل موظف (الاسم، اسم المستخدم، الدور والفرع، والأزرار) — الجدول بقائمتين
+              منسدلتين وأزرار كان أعرض من الشاشة بمرتين تقريباً. الجدول يبقى على الكمبيوتر. */}
+          <div className="space-y-2 sm:hidden">
+            {users.length === 0 && (
+              <Card className="p-6 text-center text-sm text-muted-foreground">{busy ? "جارٍ التحميل..." : "لا يوجد موظفون"}</Card>
+            )}
+            {users.map((u) => (
+              <Card key={u.id} className="space-y-2 p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold leading-tight">
+                      {u.full_name || "—"}
+                      {u.id === user?.id && <Badge variant="secondary" className="mr-2">أنت</Badge>}
+                    </p>
+                    <p dir="ltr" className="truncate text-right text-xs text-muted-foreground">{u.email.replace(/@lamaa\.(local|com)$/, "")}</p>
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    <Button variant="ghost" size="icon" onClick={() => { setPwUser(u); setNewPw(""); }} title="تغيير كلمة المرور" aria-label="تغيير كلمة المرور">
+                      <KeyRound className="size-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => deleteUser(u)} disabled={u.id === user?.id} title="حذف" aria-label="حذف" className="text-destructive">
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Select value={u.role} onValueChange={(v) => changeRole(u, v as AppRole)} disabled={u.id === user?.id}>
+                    <SelectTrigger aria-label="الدور"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {ROLES.map((r) => <SelectItem key={r} value={r}>{ROLE_LABEL[r]}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Select value={u.branch_id ?? "none"} onValueChange={(v) => changeBranch(u, v)}>
+                    <SelectTrigger aria-label="الفرع"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">— بدون —</SelectItem>
+                      {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </Card>
+            ))}
+          </div>
+          <Card className="overflow-x-auto max-sm:hidden">
             <Table>
               <TableHeader>
                 <TableRow>
