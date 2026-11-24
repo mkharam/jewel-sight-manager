@@ -301,7 +301,7 @@ function PieceDetails({ p, branchName, isAdmin }: { p: Piece; branchName: string
       {!p.in_stock && isAdmin && (
         <div className="mt-3 rounded-lg border p-3 text-sm">
           {sale.isLoading ? <Loader2 className="size-4 animate-spin" /> : sale.data ? (
-            <Link to={`/amarsoft?tab=invoices&q=${encodeURIComponent(p.tag)}`} className="flex justify-between text-primary">
+            <Link to={`/shops?tab=invoices&q=${encodeURIComponent(p.tag)}`} className="flex justify-between text-primary">
               <span>فاتورة البيع #{sale.data.invoice_no} · {sale.data.invoice_date}{sale.data.details?.customer ? ` · ${sale.data.details.customer}` : ""}</span>
               <span className="font-bold">{formatLD(sale.data.net_dirhams)}</span>
             </Link>

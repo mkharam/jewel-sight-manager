@@ -99,9 +99,9 @@ export function describe(a: ActivityItem): { text: string; icon: any; href: stri
   }
 
   if (type === "sales") {
-    if (a.action === "sold") return { text: `${actor} باع «${d.product ?? "قطعة"}» بـ ${money(d.price)} د.ل 🎉`, icon: Receipt, href: "/sales" };
+    if (a.action === "sold") return { text: `${actor} باع «${d.product ?? "قطعة"}» بـ ${money(d.price)} د.ل 🎉`, icon: Receipt, href: "/shops?tab=appsales" };
     if (a.action === "sale_returned") {
-      const href = d.product_id ? `/products/${d.product_id}` : "/sales";
+      const href = d.product_id ? `/products/${d.product_id}` : "/shops?tab=appsales";
       return { text: `${actor} أرجع بيعة بقيمة ${money(d.final_price)} د.ل`, icon: Undo2, href };
     }
     return null;

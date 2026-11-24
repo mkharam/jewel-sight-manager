@@ -1,4 +1,6 @@
-// الفروع: شن دار كل فرع (مبيعات، وزن، سعر الغرام، مصنعية، مخزون، ممسوح ومعدّل)، وصفحة لكل فرع.
+// الفروع: شن دار كل فرع (مبيعات، وزن، سعر الغرام، مصنعية، مخزون، ممسوح ومعدّل)، وصفحة لكل فرع فيها كل شي
+// عليه في مكان واحد: الأرقام، يوم بيوم، موظفينه (المبيعات، فوق الذهب، تسجيل الزبون، التقييم، ومتابعة المشرف)،
+// المخزون حسب العيار، والفواتير الممسوحة والمعدّلة — بلا ما تدوّر في صفحات ثانية.
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -7,6 +9,9 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import InvoiceChanges from "@/components/amarsoft/InvoiceChanges";
+import { BranchCard } from "@/components/team/TeamCompare";
+import { useTeamBlocks } from "@/components/team/teamBlocks";
+import { monthLabel } from "@/lib/evaluation";
 import { sb, periodDays, daysToRange, formatLD, formatGrams, formatTripoli, tripoliToday, type Period } from "@/lib/amarsoft";
 
 type Overview = {
@@ -15,7 +20,6 @@ type Overview = {
   stock_pieces: number; stock_grams: number; salesmen: number; customers: number; deleted: number; edited: number; last_sale: string | null;
 };
 type Day = { day: string; invoices: number; grams: number; sales_dirhams: number };
-type Leader = { sman: string; salesman_name: string | null; invoices: number; grams: number; net_dirhams: number | null };
 type StockRow = { branch_code: string; karat: string | null; pieces: number; grams: number };
 
 // الفترة: وحدة من الجاهزين، ولا يوم معيّن يختاره المدير ("day:YYYY-MM-DD").
@@ -146,24 +150,27 @@ function Stat({ label, value, tone }: { label: string; value: React.ReactNode; t
 
 function BranchDetail({ code }: { code: string }) {
   const [period, setPeriod] = useState<Sel>("month");
+  const [openLine, setOpenLine] = useState<string | null>(null);
   const overview = useOverview(period);
   const o = overview.data?.find((x) => x.branch_code === code);
+  // موظفين الفرع بنفس حساب «الموظفين ← المقارنة»: المبيعات للفترة المختارة، والتقييم للشهر الحالي.
+  const { from, to } = bounds(period);
+  const team = useTeamBlocks(from, to);
+  const block = team.blocks.find((b) => b.code === code);
 
   const extra = useQuery({
     queryKey: ["amarsoft-branch-detail", code, period],
     queryFn: async () => {
-      const { start, end } = range(period);
+      const { start } = range(period);
       // يوم بيوم: السنة كاملة للسنة، والا آخر 30 يوم لين نهاية الفترة (ليوم معيّن: الشهر اللي قبله).
       const { to } = bounds(period);
       const daily = daysToRange(shiftDay(to, -29), to);
-      const [days, leaders, stock] = await Promise.all([
+      const [days, stock] = await Promise.all([
         sb.rpc("amarsoft_daily", { p_start: period === "year" ? start : daily.start, p_end: daily.end, p_branch: code }),
-        sb.rpc("amarsoft_leaderboard_v2", { p_start: start, p_end: end, p_branch: code }),
         sb.rpc("amarsoft_stock_summary"),
       ]);
       return {
         days: (days.data ?? []) as Day[],
-        leaders: ((leaders.data ?? []) as Leader[]).sort((a, b) => Number(b.grams) - Number(a.grams)),
         stock: ((stock.data ?? []) as StockRow[]).filter((s) => s.branch_code === code),
       };
     },
@@ -172,17 +179,21 @@ function BranchDetail({ code }: { code: string }) {
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
-      <Link to="/amarsoft?tab=branches" className="inline-flex items-center gap-1 text-sm text-primary"><ArrowRight className="size-4" /> كل الفروع</Link>
+      <Link to="/shops?tab=branches" className="inline-flex items-center gap-1 text-sm text-primary"><ArrowRight className="size-4" /> كل الفروع</Link>
       <div>
-        <h1 className="text-2xl font-bold">{o?.branch_name ?? code}</h1>
+        <h1 className="text-2xl font-bold">{o?.branch_name ?? block?.name ?? code}</h1>
         {o?.last_sale && <p className="text-xs text-muted-foreground">آخر بيعة: {formatTripoli(o.last_sale)}</p>}
       </div>
       <PeriodTabs period={period} setPeriod={setPeriod} />
 
-      {!o ? (
+      {/* فرع ما باعش في الفترة: الأرقام فاضية، لكن موظفينه ومخزونه وفواتيره تبان عادي (كانت تلف للأبد). */}
+      {overview.isLoading ? (
         <div className="flex justify-center py-16"><Loader2 className="size-6 animate-spin text-primary" /></div>
       ) : (
         <>
+          {!o ? (
+            <Card className="p-4 text-center text-sm text-muted-foreground">ما فيش مبيعات لهذا الفرع في الفترة هذي.</Card>
+          ) : (
           <div className="grid grid-cols-2 gap-2">
             <Stat label="المبيعات" value={formatLD(o.sales_dirhams)} tone="good" />
             <Stat label="الوزن المباع" value={formatGrams(o.grams)} />
@@ -195,10 +206,11 @@ function BranchDetail({ code }: { code: string }) {
             <Stat label="ممسوحة" value={o.deleted} tone={Number(o.deleted) ? "bad" : undefined} />
             <Stat label="فُتحت للتعديل" value={o.edited} />
           </div>
+          )}
 
           <div className="grid grid-cols-2 gap-2">
-            <Button asChild size="lg" variant="outline" className="h-14 text-base"><Link to={`/amarsoft?tab=invoices&branch=${code}`}>فواتير الفرع</Link></Button>
-            <Button asChild size="lg" variant="outline" className="h-14 text-base"><Link to={`/pos-stock?branch=${code}`}>مخزون الفرع</Link></Button>
+            <Button asChild size="lg" variant="outline" className="h-14 text-base"><Link to={`/shops?tab=invoices&branch=${code}`}>فواتير الفرع</Link></Button>
+            <Button asChild size="lg" variant="outline" className="h-14 text-base"><Link to={`/stock?tab=amarsoft&branch=${code}`}>مخزون الفرع</Link></Button>
           </div>
 
           {!!extra.data?.days.length && (
@@ -218,17 +230,20 @@ function BranchDetail({ code }: { code: string }) {
             </Card>
           )}
 
-          <Card className="p-3">
-            <h2 className="font-bold mb-2">الموظفون</h2>
-            {!extra.data?.leaders.length ? (
-              <p className="text-sm text-muted-foreground">{Number(o.salesmen) ? "لا مبيعات بأسماء البائعين في هذه الفترة." : "لا يوجد بائعون في أمارسوفت لهذا الفرع — أضفهم في «الناقلين»."}</p>
-            ) : extra.data.leaders.map((l, i) => (
-              <div key={l.sman} className="flex justify-between py-1.5 text-sm border-b last:border-0">
-                <span>{i + 1}. {l.salesman_name ?? l.sman}</span>
-                <span>{formatGrams(l.grams)} · {l.invoices} فاتورة{l.net_dirhams != null ? ` · ${formatLD(l.net_dirhams)}` : ""}</span>
-              </div>
-            ))}
-          </Card>
+          {/* الموظفين: كل واحد بمبيعاته وربحه فوق الذهب وتسجيله للزبون وتقييمه — الضغط يفتح تفاصيله. */}
+          {block ? (
+            <div className="space-y-1">
+              <BranchCard b={block} open={openLine} setOpen={setOpenLine} title="الموظفين" />
+              {block.duty && <p className="px-1 text-xs text-muted-foreground">المشرف: {block.duty.text}</p>}
+              <p className="px-1 text-[11px] text-muted-foreground">التقييم من تقييمهم لبعض في {monthLabel(team.month)}. اضغط على موظف تشوف تفاصيله.</p>
+            </div>
+          ) : team.isLoading ? (
+            <div className="flex justify-center py-6"><Loader2 className="size-5 animate-spin text-primary" /></div>
+          ) : (
+            <Card className="p-3 text-sm text-muted-foreground">
+              {team.isError ? "تعذّر جلب الموظفين — جرّب بعد شوي." : "ما فيش موظفين ولا مبيعات بأسماء بائعين لهذا الفرع في الفترة هذي."}
+            </Card>
+          )}
 
           {!!extra.data?.stock.length && (
             <Card className="p-3">

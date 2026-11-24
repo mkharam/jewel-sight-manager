@@ -5,7 +5,7 @@ import {
   Search, MessageCircle, MessagesSquare, Upload, Users, ArrowLeftRight, BarChart3, Coins, ClipboardCheck, PackagePlus,
   Receipt, ListChecks, Wrench, Landmark, BookmarkCheck, Recycle, Trophy, Boxes, Truck, UserCog, Watch, ClipboardList,
   Award, Layers, Scale, Building2, Wallet, TrendingUp, History, Link2, CalendarDays, CreditCard, ShoppingBag, Gem,
-  PieChart, Bell, Tags, ScanLine, Store, UserCheck, type LucideIcon,
+  Bell, Tags, ScanLine, Store, UserCheck, UsersRound, BriefcaseBusiness, type LucideIcon,
 } from "lucide-react";
 import { normalizeAr } from "@/lib/arabic-search";
 
@@ -24,7 +24,7 @@ export type NavItem = {
    *  واسمها يظهر في الرأس لما تكون فيها. */
   searchOnly?: boolean;
 };
-export type NavSectionKey = "sell" | "goods" | "money" | "team" | "more";
+export type NavSectionKey = "admin" | "sell" | "goods" | "team" | "more";
 export type NavSection = { key: NavSectionKey; title: string; hint: string; icon: LucideIcon; tone: string; items: NavItem[] };
 
 const ALL: Role[] | undefined = undefined;
@@ -33,10 +33,42 @@ const AS: Role[] = ["admin", "supervisor"];
 const AMS: Role[] = ["admin", "manager", "supervisor"];
 const AM: Role[] = ["admin", "manager"];
 
-// القائمة صارت أقصر: الصفحات اللي لها نفس الغرض صارت خانات في صفحة وحدة (الاستفسارات والحجوزات،
-// التحويلات وإعادة الطلب، المخزون والجرد، القطع وإدارتها، الفروع والفريق)، والولاء زر واحد بدل أربعة.
-// الخانات كلها تطلع في بحث القائمة (searchOnly)، والروابط القديمة تتحوّل لمكانها (راجع App.tsx).
+// الترتيب حسب الأهمية: «الإدارة» أول قسم — المحلات، الموظفين، الفلوس، والذهب — باش المدير العام يلقى
+// كل شي يخص المحلات والموظفين قدامه من أول نظرة. «أمارسوفت» ما عادتش صفحة لروحها: خاناتها تفرّقت على
+// المحلات والموظفين والفلوس (كل صفحة فيها كل شي على موضوعها)، والروابط القديمة تتحوّل لمكانها (App.tsx).
+// الصفحات اللي لها نفس الغرض خانات في صفحة وحدة، والخانات كلها تطلع في بحث القائمة (searchOnly).
 export const NAV: NavSection[] = [
+  {
+    key: "admin", title: "الإدارة", hint: "المحلات، الموظفين، الفلوس، والذهب", icon: BriefcaseBusiness,
+    tone: "bg-sky-500/15 text-sky-700 dark:text-sky-400",
+    items: [
+      { to: "/shops", label: "المحلات", hint: "اليوم في كل فرع، المقارنة، صفحة كل فرع، الفواتير، والممسوح", icon: Store, roles: A, keywords: "فروع فرع مبيعات امارسوفت تقارير ملخص" },
+      { to: "/shops?tab=today", label: "اليوم في المحلات", hint: "شن صار اليوم في كل الفروع", icon: CalendarDays, roles: A, searchOnly: true, keywords: "ملخص اليوم مبيعات اليوم" },
+      { to: "/shops?tab=overview", label: "مقارنة الفروع", hint: "الفروع مقارنة بالفترة اللي قبلها، والتنبيهات", icon: BarChart3, roles: A, searchOnly: true, keywords: "تقارير نظرة عامة" },
+      { to: "/shops?tab=branches", label: "كل فرع", hint: "صفحة كاملة لكل فرع: مبيعاته وموظفينه ومخزونه", icon: Building2, roles: A, searchOnly: true, keywords: "الفروع" },
+      { to: "/shops?tab=invoices", label: "الفواتير", hint: "كل فواتير البيع من أمارسوفت", icon: Receipt, roles: A, searchOnly: true, keywords: "فاتورة" },
+      { to: "/shops?tab=log", label: "الممسوح والمعدّل", hint: "الفواتير اللي انمسحت ولا تعدّلت", icon: History, roles: A, searchOnly: true, keywords: "محذوف ممسوح" },
+      { to: "/shops?tab=appsales", label: "البيع من التطبيق", hint: "المبيعات المسجّلة من التطبيق", icon: TrendingUp, roles: A, searchOnly: true },
+      { to: "/team", label: "الموظفين", hint: "قارنهم، أرقامهم، تسجيل الزبائن، التقييم، والحسابات", icon: UsersRound, roles: A, keywords: "موظف فريق بائعين مقارنة" },
+      { to: "/team?tab=numbers", label: "أرقام البائعين", hint: "الوزن، السعر فوق الذهب، الخصم، النقاط", icon: BarChart3, roles: A, searchOnly: true, keywords: "تقييم البائعين نقاط" },
+      { to: "/team?tab=customers", label: "تسجيل الزبائن", hint: "كل بائع يكتب اسم ورقم الزبون في الفاتورة ولا لا", icon: UserCheck, roles: A, searchOnly: true, keywords: "رقم الزبون اسم الزبون" },
+      { to: "/team?tab=evaluations", label: "تقييم الموظفين", hint: "المشرف كل يوم، والموظفين مرتين في الشهر", icon: ClipboardList, roles: A, searchOnly: true, keywords: "استمارة التقييم" },
+      { to: "/team?tab=leaderboard", label: "المتصدرون", hint: "ترتيب البائعين بالوزن", icon: Trophy, roles: A, searchOnly: true },
+      { to: "/team?tab=accounts", label: "حسابات الموظفين", hint: "الحسابات والصلاحيات والفروع والأجهزة", icon: UserCog, roles: A, searchOnly: true, keywords: "صلاحيات حساب جهاز" },
+      { to: "/money", label: "الفلوس", hint: "المحاسب، الأرباح، الموردون، وإقفال اليوم", icon: Wallet, roles: A, keywords: "نقدي مصرف خزينة" },
+      { to: "/money?tab=accountant", label: "المحاسب", hint: "نقدي ومصرف وبطاقة وآجل", icon: Wallet, roles: A, searchOnly: true, keywords: "نقدي مصرف آجل" },
+      { to: "/money?tab=profit", label: "الأرباح", hint: "سعر الجرام في كل فرع والربح فوق سعر الذهب", icon: Coins, roles: A, searchOnly: true, keywords: "ربح سعر الغرام" },
+      { to: "/money?tab=suppliers", label: "الموردون", hint: "شن دخل منهم وشن تباع وحساباتهم", icon: Truck, roles: A, searchOnly: true, keywords: "مورد" },
+      { to: "/money?tab=closing", label: "إقفال اليوم", hint: "تسليم الخزينة آخر اليوم في كل فرع", icon: Landmark, roles: A, searchOnly: true, keywords: "خزينة" },
+      { to: "/gold-price", label: "الذهب والسوق", hint: "سعر الذهب العالمي والدولار، تسعير المحل، المنافسين", icon: Coins, roles: AMS, keywords: "اونصة دولار موازي كسر حاسبة سعر الذهب اليوم" },
+      { to: "/gold-price?tab=price", label: "تسعير المحل", hint: "سعر الجرام اللي يبيع بيه المحل اليوم", icon: Coins, roles: AMS, searchOnly: true, keywords: "سعر الذهب اليوم مصنعية" },
+      { to: "/gold-price?tab=rivals", label: "أسعار المنافسين", hint: "سجّل سعر محل ثاني وشوف متوسطهم", icon: Store, roles: AMS, searchOnly: true, keywords: "منافس محلات سوق" },
+      { to: "/gold-price?tab=compare", label: "سعري مقارنة بالسوق", hint: "سعرك غالي ولا لا، وربحك فوق الذهب", icon: Scale, roles: A, searchOnly: true, keywords: "منافسين ربح غالي رخيص" },
+      // مدير الفرع يقفل خزينته من هنا؛ المدير العام عنده الإقفال داخل «الفلوس».
+      { to: "/closing", label: "إقفال اليوم", hint: "تسليم الخزينة آخر اليوم", icon: Landmark, roles: ["manager"], keywords: "خزينة" },
+      { to: "/evaluations", label: "تقييم الموظفين", hint: "المشرف كل يوم، والموظفين مرتين في الشهر", icon: ClipboardList, roles: ["evalRecorder"] },
+    ],
+  },
   {
     key: "sell", title: "البيع والزبائن", hint: "البحث عن قطعة، الاستفسارات، الزبائن، الولاء", icon: ShoppingBag,
     tone: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
@@ -67,45 +99,17 @@ export const NAV: NavSection[] = [
       { to: "/transfers?tab=reorders", label: "إعادة الطلب", hint: "طلب قطعة نفدت من المورد", icon: PackagePlus, roles: ALL, badgeKey: "reorders", searchOnly: true, keywords: "مورد نفدت" },
       { to: "/watches", label: "الساعات", hint: "مخزون الساعات", icon: Watch, roles: ALL },
       { to: "/admin/repairs", label: "الصيانة", hint: "قطع الزبائن عند الفني", icon: Wrench, roles: AMS, keywords: "تصليح" },
-      { to: "/stock", label: "المخزون والجرد", hint: "شن موجود في كل فرع، والجرد بالباركود", icon: Boxes, roles: AMS, keywords: "جرد مسح باركود" },
+      { to: "/stock", label: "المخزون والجرد", hint: "شن موجود في كل فرع، والجرد بالباركود", icon: Boxes, roles: AMS, keywords: "جرد مسح باركود امارسوفت" },
       { to: "/stock?tab=scan", label: "الجرد بالباركود", hint: "امسح القطع وقارن بمخزون أمارسوفت", icon: ScanLine, roles: AMS, searchOnly: true, keywords: "جرد مسح" },
       { to: "/stock?tab=appcount", label: "جرد قطع التطبيق", hint: "القطع المسجّلة في التطبيق", icon: ClipboardCheck, roles: AS, searchOnly: true },
       { to: "/stock?tab=app", label: "تقرير مخزون التطبيق", hint: "المخزون والحركة شهر بشهر", icon: ClipboardCheck, roles: A, searchOnly: true, keywords: "جرد شهري" },
     ],
   },
   {
-    key: "money", title: "الفلوس والسوق", hint: "أمارسوفت، سعر الذهب والمنافسين، والإقفال", icon: PieChart,
-    tone: "bg-sky-500/15 text-sky-700 dark:text-sky-400",
-    items: [
-      { to: "/amarsoft", label: "أمارسوفت", hint: "التقارير، الفروع، الفواتير، الأرباح، المحاسب، الموردون", icon: Boxes, roles: A },
-      { to: "/amarsoft?tab=overview", label: "نظرة عامة", hint: "كل الفروع ومقارنتها والتنبيهات", icon: BarChart3, roles: A, searchOnly: true, keywords: "تقارير" },
-      { to: "/amarsoft?tab=branches", label: "مبيعات الفروع", hint: "كل فرع بروحه، يوم بيوم", icon: Building2, roles: A, searchOnly: true },
-      { to: "/amarsoft?tab=invoices", label: "الفواتير", hint: "كل فواتير البيع من أمارسوفت", icon: Receipt, roles: A, searchOnly: true },
-      { to: "/amarsoft?tab=log", label: "الممسوح والمعدّل", hint: "شن تبدّل في الفواتير", icon: History, roles: A, searchOnly: true, keywords: "محذوف" },
-      { to: "/amarsoft?tab=customers", label: "تسجيل الزبائن", hint: "اسم ورقم الزبون في الفواتير", icon: UserCheck, roles: A, searchOnly: true },
-      { to: "/amarsoft?tab=gram", label: "الأسعار والأرباح", hint: "سعر الغرام والربح فوق سعر الذهب", icon: Coins, roles: A, searchOnly: true, keywords: "ربح" },
-      { to: "/amarsoft?tab=accountant", label: "المحاسب", hint: "نقدي ومصرف وآجل", icon: Wallet, roles: A, searchOnly: true, keywords: "فلوس نقدي مصرف" },
-      { to: "/amarsoft?tab=suppliers", label: "الموردون", hint: "شن دخل منهم وشن تباع وحساباتهم", icon: Truck, roles: A, searchOnly: true },
-      { to: "/amarsoft?tab=daily", label: "ملخّص اليوم", hint: "شن صار اليوم في كل الفروع", icon: CalendarDays, roles: A, searchOnly: true },
-      { to: "/amarsoft?tab=appsales", label: "البيع من التطبيق", hint: "المبيعات المسجّلة من التطبيق", icon: TrendingUp, roles: A, searchOnly: true },
-      { to: "/gold-price", label: "الذهب والسوق", hint: "سعر الذهب العالمي والدولار، تسعير المحل، المنافسين", icon: Coins, roles: AMS, keywords: "اونصة دولار موازي كسر حاسبة سعر الذهب اليوم" },
-      { to: "/gold-price?tab=price", label: "تسعير المحل", hint: "سعر الجرام اللي يبيع بيه المحل اليوم", icon: Coins, roles: AMS, searchOnly: true, keywords: "سعر الذهب اليوم مصنعية" },
-      { to: "/gold-price?tab=rivals", label: "أسعار المنافسين", hint: "سجّل سعر محل ثاني وشوف متوسطهم", icon: Store, roles: AMS, searchOnly: true, keywords: "منافس محلات سوق" },
-      { to: "/gold-price?tab=compare", label: "سعري مقارنة بالسوق", hint: "سعرك غالي ولا لا، وربحك فوق الذهب", icon: Scale, roles: A, searchOnly: true, keywords: "منافسين ربح غالي رخيص" },
-      { to: "/closing", label: "إقفال اليوم", hint: "تسليم الخزينة آخر اليوم", icon: Landmark, roles: AM, keywords: "خزينة" },
-    ],
-  },
-  {
-    key: "team", title: "الفريق", hint: "المحادثة، مقارنة الفروع والموظفين، التقييم", icon: UserCog,
+    key: "team", title: "الفريق", hint: "المحادثة والمتصدرون", icon: UserCog,
     tone: "bg-violet-500/15 text-violet-700 dark:text-violet-400",
     items: [
       { to: "/chat", label: "المحادثة", hint: "محادثة الفريق", icon: MessagesSquare, roles: ALL, badgeKey: "chat" },
-      { to: "/team", label: "الفروع والفريق", hint: "قارن الفروع والموظفين، الأرقام، التقييم، والحسابات", icon: Building2, roles: A, keywords: "مقارنة فروع موظفين بائعين" },
-      { to: "/team?tab=numbers", label: "أرقام البائعين", hint: "الوزن، السعر فوق الذهب، الخصم، النقاط", icon: BarChart3, roles: A, searchOnly: true, keywords: "تقييم البائعين نقاط" },
-      { to: "/team?tab=evaluations", label: "تقييم الموظفين", hint: "المشرف كل يوم، والموظفين مرتين في الشهر", icon: ClipboardList, roles: A, searchOnly: true, keywords: "استمارة التقييم" },
-      { to: "/team?tab=leaderboard", label: "المتصدرون", hint: "ترتيب البائعين بالوزن", icon: Trophy, roles: A, searchOnly: true },
-      { to: "/team?tab=accounts", label: "حسابات الموظفين", hint: "الحسابات والصلاحيات والفروع والأجهزة", icon: UserCog, roles: A, searchOnly: true, keywords: "الموظفون صلاحيات حساب جهاز" },
-      { to: "/evaluations", label: "تقييم الموظفين", hint: "المشرف كل يوم، والموظفين مرتين في الشهر", icon: ClipboardList, roles: ["evalRecorder"] },
       { to: "/leaderboard", label: "المتصدرون", hint: "ترتيب البائعين بالوزن", icon: Trophy, roles: ["supervisor", "manager", "staff"] },
     ],
   },
@@ -153,7 +157,7 @@ export function currentPage(sections: NavSection[], pathname: string, search: st
   if (pathname === "/products/new") return { label: "قطعة جديدة" }; // قبل /products/… وإلا تطلع «قطعة»
   if (pathname.startsWith("/products/")) return { label: pathname.endsWith("/edit") ? "تعديل قطعة" : "قطعة" };
   if (pathname === "/live-add") return { label: "إضافة مباشرة" };
-  if (pathname.startsWith("/branches/")) return { label: "فرع" };
+  if (pathname.startsWith("/branches/")) return { section: sections.find((s) => s.key === "admin"), label: "صفحة الفرع" };
   return null;
 }
 

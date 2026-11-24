@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, LogOut, MoreHorizontal } from "lucide-react";
+import { ArrowRight, House, LogOut, MoreHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import NavMenu from "@/components/NavMenu";
@@ -23,16 +23,17 @@ import { usePendingReorders, usePendingTransfers } from "@/hooks/usePendingCount
 import { CHAT_SEEN_KEY, NOTIFS_SEEN_KEY, SEEN_EVENT, readSeen, setIconBadge } from "@/lib/appBadge";
 
 // القائمة كلها من كتالوج واحد (src/lib/nav.ts): الأقسام والصلاحيات.
-// الشريط السفلي على الهاتف: أربع صفحات يومية + «المزيد» (كل الباقي في شبكة وحدة). الموظف عمله اليومي تسجيل استفسار
-// وطلب إعادة قطعة؛ المدير العام أمارسوفت أهم له من رفع القطع.
+// الشريط السفلي على الهاتف: الصفحات اليومية + «المزيد» (كل الباقي في شبكة وحدة). الموظف عمله اليومي تسجيل استفسار
+// وطلب إعادة قطعة؛ المدير العام أهم حاجة عنده المحلات والموظفين والفلوس — قدامه في الشريط من أول ضغطة.
 const MOBILE_BAR = ["/", "/chat", "/inquiries", "/upload"];
-const MOBILE_BAR_ADMIN = ["/", "/chat", "/inquiries", "/amarsoft"];
+const MOBILE_BAR_ADMIN = ["/", "/shops", "/team", "/money", "/chat"];
 // المشرف: أمارسوفت عنده هو المخزون.
 const MOBILE_BAR_SUPERVISOR = ["/", "/chat", "/inquiries", "/stock"];
 const MOBILE_BAR_STAFF = ["/", "/chat", "/inquiries", "/transfers?tab=reorders", "/upload"];
 // أسماء قصيرة للشريط السفلي (الاسم الكامل في القائمة).
 const BAR_LABEL: Record<string, string> = {
-  "/": "البحث", "/chat": "المحادثة", "/inquiries": "الاستفسارات", "/amarsoft": "أمارسوفت", "/stock": "المخزون",
+  "/": "البحث", "/chat": "المحادثة", "/inquiries": "الاستفسارات", "/stock": "المخزون",
+  "/shops": "المحلات", "/team": "الموظفين", "/money": "الفلوس",
   "/upload": "رفع قطع", "/transfers?tab=reorders": "إعادة الطلب",
 };
 
@@ -315,10 +316,11 @@ export default function AppLayout() {
               {({ isActive }) => (
                 <>
                   <div className={cn("relative flex items-center justify-center rounded-xl transition-colors h-8 w-12", isActive && "bg-primary/12")}>
-                    <item.icon className="size-[22px]" />
+                    {/* للمدير العام الرئيسية فيها ملخّص المحلات فوق البحث — «الرئيسية» ببيت بدل عدسة البحث. */}
+                    {isAdmin && item.to === "/" ? <House className="size-[22px]" /> : <item.icon className="size-[22px]" />}
                     <CountBadge count={countOf(item)} className="absolute -top-1 left-1" />
                   </div>
-                  <span className="leading-none">{BAR_LABEL[item.to] ?? item.label}</span>
+                  <span className="leading-none">{isAdmin && item.to === "/" ? "الرئيسية" : BAR_LABEL[item.to] ?? item.label}</span>
                 </>
               )}
             </NavLink>

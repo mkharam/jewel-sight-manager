@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams, useNavigationType } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -26,6 +26,8 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { expandQuery, matchScore } from "@/lib/arabic-search";
 import { clearResume, readResume, saveResume } from "@/lib/resume";
+// ملخّص المحلات للمدير العام بس — يتحمّل وقت الحاجة، فما يثقّلش الرئيسية على الموظفين.
+const OwnerToday = lazy(() => import("@/components/home/OwnerToday"));
 
 interface Filters {
   q: string;
@@ -122,6 +124,7 @@ export default function ProductSearch() {
   const [bulkBranch, setBulkBranch] = useState<string>("");
   const [bulkBusy, setBulkBusy] = useState(false);
   const isAdmin = isLead(roles);
+  const isOwner = roles.includes("admin");
   const isManager = roles.includes("manager");
   // التعديل الجماعي (حالة/فرع) للمدير العام والمشرف فقط — الموظف لا يعدّل شيئاً.
   const canBulkEdit = isAdmin || isManager;
@@ -810,8 +813,11 @@ export default function ProductSearch() {
         </div>
       </div>
 
+      {/* المدير العام: أهم حاجة أول حاجة — شن باعت المحلات اليوم، تحت البحث مباشرة. «مبيعاتي» (مبيعاته هو
+          من التطبيق) ما تعنيلهش، فمخفية عنده. */}
+      {isOwner && <Suspense fallback={null}><OwnerToday /></Suspense>}
       <MissingWeightsBanner />
-      <MySalesCard />
+      {!isOwner && <MySalesCard />}
       <MyWorkCard />
 
       {/* فلاتر سريعة Chips */}

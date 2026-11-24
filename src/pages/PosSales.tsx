@@ -32,7 +32,7 @@ type Invoice = {
 };
 type Salesman = { branch_code: string; sman: string; name: string | null; is_active: boolean; profile_id: string | null };
 
-// الأرباح وسعر الغرام انتقلوا لصفحة وحدة «الأسعار والأرباح» (/amarsoft?tab=gram) بسعر ذهب تلقائي.
+// الأرباح وسعر الغرام انتقلوا لصفحة وحدة «الأسعار والأرباح» (/money?tab=profit) بسعر ذهب تلقائي.
 const TABS = [
   { key: "invoices", label: "الفواتير" },
   { key: "log", label: "الممسوح والمعدّل" },

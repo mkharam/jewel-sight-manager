@@ -11,7 +11,7 @@ import RequireRole from "@/components/RequireRole";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import RedirectKeep from "@/components/RedirectKeep";
 import { ConfirmDialogProvider } from "@/components/ConfirmDialogProvider";
-import { AuthProvider } from "@/hooks/useAuth";
+import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import Auth from "@/pages/Auth";
 import ProductSearch from "@/pages/ProductSearch";
 
@@ -27,7 +27,8 @@ const TeamHub = lazy(() => import("@/pages/TeamHub"));
 const TransfersHub = lazy(() => import("@/pages/TransfersHub"));
 const RequestsHub = lazy(() => import("@/pages/RequestsHub"));
 const GoldHub = lazy(() => import("@/pages/GoldHub"));
-const AmarsoftHub = lazy(() => import("@/pages/AmarsoftHub"));
+const ShopsHub = lazy(() => import("@/pages/ShopsHub"));
+const MoneyHub = lazy(() => import("@/pages/MoneyHub"));
 const Branches = lazy(() => import("@/pages/Branches"));
 const Leaderboard = lazy(() => import("@/pages/Leaderboard"));
 const Repairs = lazy(() => import("@/pages/Repairs"));
@@ -66,16 +67,30 @@ const queryClient = new QueryClient({
   },
 });
 
-// التقارير والفواتير والموردين والمحاسب… كلها صارت خانات في صفحة «أمارسوفت». الروابط القديمة تفتح
-// على خانتها (ومعاها ?q= و?branch= و?sman= لو موجودين).
+// «أمارسوفت» تفرّقت حسب الموضوع: المحلات (/shops)، الموظفين (/team)، الفلوس (/money)، والمخزون (/stock).
+// الروابط القديمة (/amarsoft?tab=…، /reports، /pos-sales…) تفتح على مكانها الجديد، ومعاها ?q= و?branch= و?sman=.
+const AMARSOFT_TAB: Record<string, string> = {
+  daily: "/shops?tab=today", overview: "/shops?tab=overview", branches: "/shops?tab=branches",
+  invoices: "/shops?tab=invoices", log: "/shops?tab=log", appsales: "/shops?tab=appsales",
+  customers: "/team?tab=customers",
+  gram: "/money?tab=profit", accountant: "/money?tab=accountant", suppliers: "/money?tab=suppliers",
+  stock: "/stock?tab=amarsoft", count: "/stock?tab=scan",
+};
+function AmarsoftRedirect() {
+  const { roles } = useAuth();
+  const [params] = useSearchParams();
+  const tab = params.get("tab") ?? "";
+  // المشرف ومدير الفرع كانت «أمارسوفت» عندهم المخزون والجرد بس.
+  const to = roles.includes("admin") ? AMARSOFT_TAB[tab] ?? "/shops" : tab === "count" ? "/stock?tab=scan" : "/stock?tab=amarsoft";
+  return <RedirectKeep to={to} />;
+}
 const REPORTS_TAB: Record<string, string> = {
-  overview: "overview", daily: "daily", branches: "branches", gram: "gram", accountant: "accountant", sales: "appsales",
+  overview: "/shops?tab=overview", daily: "/shops?tab=today", branches: "/shops?tab=branches",
+  gram: "/money?tab=profit", accountant: "/money?tab=accountant", sales: "/shops?tab=appsales", stock: "/stock?tab=app",
 };
 function ReportsRedirect() {
   const [params] = useSearchParams();
-  const t = params.get("tab") ?? "overview";
-  if (t === "stock") return <Navigate to="/stock?tab=app" replace />;
-  return <Navigate to={`/amarsoft?tab=${REPORTS_TAB[t] ?? "overview"}`} replace />;
+  return <Navigate to={REPORTS_TAB[params.get("tab") ?? ""] ?? "/shops?tab=overview"} replace />;
 }
 // «الفروع والفريق» (/team) لمّ «التقييم» و«الموظفون»؛ و«المخزون والجرد» (/stock) لمّ «الجرد».
 const TEAM_TAB: Record<string, string> = { numbers: "numbers", monthly: "evaluations", evaluations: "evaluations", leaderboard: "leaderboard" };
@@ -96,7 +111,7 @@ function CountRedirect() {
 function PosSalesRedirect() {
   const [params] = useSearchParams();
   const t = params.get("tab");
-  return <RedirectKeep to={t === "log" ? "/amarsoft?tab=log" : t === "profit" ? "/amarsoft?tab=gram" : "/amarsoft?tab=invoices"} />;
+  return <RedirectKeep to={t === "log" ? "/shops?tab=log" : t === "profit" ? "/money?tab=profit" : "/shops?tab=invoices"} />;
 }
 
 const App = () => (
@@ -151,7 +166,7 @@ const App = () => (
                 <Route path="/staff" element={<StaffRedirect />} />
                 <Route path="/reports" element={<ReportsRedirect />} />
                 <Route path="/reports/app" element={<Navigate to="/stock?tab=app" replace />} />
-                <Route path="/daily-summary" element={<Navigate to="/amarsoft?tab=daily" replace />} />
+                <Route path="/daily-summary" element={<Navigate to="/shops?tab=today" replace />} />
                 <Route path="/transfers" element={<TransfersHub />} />
                 <Route path="/reorders" element={<RedirectKeep to="/transfers?tab=reorders" />} />
                 {/* «الذهب والسوق»: السوق اليوم، تسعير المحل، المنافسين، سعري والسوق (للمدير العام). */}
@@ -160,22 +175,25 @@ const App = () => (
                 <Route path="/count" element={<CountRedirect />} />
                 <Route path="/stock" element={<RequireRole allow={["admin", "manager", "supervisor"]}><StockHub /></RequireRole>} />
                 <Route path="/stock-take" element={<RedirectKeep to="/stock?tab=appcount" />} />
-                <Route path="/sales" element={<Navigate to="/amarsoft?tab=appsales" replace />} />
+                <Route path="/sales" element={<Navigate to="/shops?tab=appsales" replace />} />
                 <Route path="/pos-sales" element={<PosSalesRedirect />} />
                 <Route path="/pos-stock" element={<RedirectKeep to="/stock?tab=amarsoft" />} />
                 <Route path="/pos-count" element={<RedirectKeep to="/stock?tab=scan" />} />
-                <Route path="/amarsoft" element={<RequireRole allow={["admin", "manager", "supervisor"]}><AmarsoftHub /></RequireRole>} />
-                <Route path="/branches" element={<Navigate to="/amarsoft?tab=branches" replace />} />
+                {/* الإدارة: «المحلات» و«الفلوس» (و«الموظفين» فوق في /team) — كانت كلها خانات في «أمارسوفت». */}
+                <Route path="/shops" element={<RequireRole allow={["admin"]}><ShopsHub /></RequireRole>} />
+                <Route path="/money" element={<RequireRole allow={["admin"]}><MoneyHub /></RequireRole>} />
+                <Route path="/amarsoft" element={<AmarsoftRedirect />} />
+                <Route path="/branches" element={<Navigate to="/shops?tab=branches" replace />} />
                 <Route path="/branches/:code" element={<RequireRole allow={["admin"]}><Branches /></RequireRole>} />
-                <Route path="/suppliers" element={<Navigate to="/amarsoft?tab=suppliers" replace />} />
+                <Route path="/suppliers" element={<Navigate to="/money?tab=suppliers" replace />} />
                 <Route path="/leaderboard" element={<Leaderboard />} />
                 {/* «التقييم» للمدير العام: الأرقام، تقييم الموظفين، المتصدرون. */}
                 <Route path="/evaluation" element={<EvaluationRedirect />} />
                 <Route path="/staff-eval" element={<RedirectKeep to="/team?tab=numbers" />} />
                 <Route path="/reservations" element={<RedirectKeep to="/inquiries?tab=reservations" />} />
                 <Route path="/watches" element={<Watches />} />
-                <Route path="/gram-price" element={<Navigate to="/amarsoft?tab=gram" replace />} />
-                <Route path="/accountant" element={<Navigate to="/amarsoft?tab=accountant" replace />} />
+                <Route path="/gram-price" element={<Navigate to="/money?tab=profit" replace />} />
+                <Route path="/accountant" element={<Navigate to="/money?tab=accountant" replace />} />
                 {/* المدير العام ومسؤول التقييم (أيمن) — الصلاحية في قاعدة البيانات (is_eval_admin). */}
                 <Route path="/evaluations" element={<Evaluations />} />
                 <Route path="/buybacks" element={<RequireRole allow={["admin", "manager"]}><Buybacks /></RequireRole>} />

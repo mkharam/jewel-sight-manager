@@ -90,7 +90,7 @@ function ChangeCard({ c }: { c: Change }) {
     <Card className="p-3 space-y-2">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <Link to={`/amarsoft?tab=invoices&q=${encodeURIComponent(c.invoice_no)}`} className="font-bold text-base">فاتورة #{c.invoice_no}</Link>
+          <Link to={`/shops?tab=invoices&q=${encodeURIComponent(c.invoice_no)}`} className="font-bold text-base">فاتورة #{c.invoice_no}</Link>
           <div className="text-xs text-muted-foreground">
             <Link to={`/branches/${c.branch_code}`} className="underline underline-offset-2">{c.branch_name}</Link> · {c.invoice_date}{c.customer ? ` · ${c.customer}` : ""}
           </div>
@@ -107,7 +107,7 @@ function ChangeCard({ c }: { c: Change }) {
               {c.resold.map((r) => (
                 <div key={r.tag} dir="rtl">
                   <span dir="ltr" className="font-mono">{r.tag}</span>:{" "}
-                  {r.sold_on ? <>بيعت لاحقاً في <Link className="underline" to={`/amarsoft?tab=invoices&q=${r.sold_on}`}>#{r.sold_on}</Link> ({r.sold_date}) بـ {formatLD(r.sold_dirhams)}</>
+                  {r.sold_on ? <>بيعت لاحقاً في <Link className="underline" to={`/shops?tab=invoices&q=${r.sold_on}`}>#{r.sold_on}</Link> ({r.sold_date}) بـ {formatLD(r.sold_dirhams)}</>
                     : r.in_stock ? "رجعت للمخزون" : "غير موجودة في المخزون ولا في فاتورة أخرى ⚠️"}
                 </div>
               ))}

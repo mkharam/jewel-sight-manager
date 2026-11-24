@@ -236,8 +236,8 @@ function EmployeeStats({ row, isAdmin }: { row: Row; isAdmin: boolean }) {
             </Card>
           ))}
           {isAdmin && (
-            <Link to={`/amarsoft?tab=invoices&sman=${encodeURIComponent(`${row.branch_code}|${row.sman}`)}`} className="block text-center text-sm text-primary underline underline-offset-2 py-2">
-              كل فواتيره في مبيعات أمارسوفت
+            <Link to={`/shops?tab=invoices&sman=${encodeURIComponent(`${row.branch_code}|${row.sman}`)}`} className="block text-center text-sm text-primary underline underline-offset-2 py-2">
+              كل فواتيره في «المحلات»
             </Link>
           )}
         </div>
