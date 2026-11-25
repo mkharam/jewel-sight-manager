@@ -1,8 +1,8 @@
 -- الموظفين يقيّموا مشرفهم كل أسبوع (آخر الأسبوع) بدل مرتين في الشهر. التقييم الذاتي يبقى مرتين في الشهر.
--- الأسبوع من السبت للجمعة، مقصوص على الشهر: period = السبت ولا أول الشهر (لو الأسبوع بدا في الشهر اللي فات).
+-- 4 أسابيع في الشهر: 1–7، 8–14، 15–21، 22–آخر الشهر. period = أول يوم في الأسبوع.
 -- التقييمات القديمة (بالنص: 1 و16) تنحسب على أسبوعها بنفس الدالة.
 create or replace function public.eval_week(d date) returns date language sql immutable as $$
-  select greatest(d - ((extract(dow from d)::int + 1) % 7), date_trunc('month', d)::date)
+  select date_trunc('month', d)::date + 7 * least((extract(day from d)::int - 1) / 7, 3)
 $$;
 
 -- نفس الدالة (20261123100000_eval_device) — بس تقييم المشرف بالأسبوع.

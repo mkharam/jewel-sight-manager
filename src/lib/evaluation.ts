@@ -125,22 +125,19 @@ export function halfLabel(ymd: string) {
   const m = MONTHS[Number(ymd.slice(5, 7)) - 1];
   return first ? `النص الأول من ${m} (1–15)` : `النص الثاني من ${m} (16–${daysInMonth(ymd)})`;
 }
-/** أسبوع تقييم المشرف (من السبت للجمعة، مقصوص على الشهر): أول يوم فيه — السبت ولا أول الشهر. */
+/** أسابيع تقييم المشرف: 4 في الشهر — 1–7، 8–14، 15–21، 22–آخر الشهر. يرجّع أول يوم في أسبوع اليوم. */
 export function weekKey(d: string) {
-  const dow = new Date(`${d}T12:00:00Z`).getUTCDay(); // الأحد 0 … السبت 6
-  const sat = addDaysYmd(d, -((dow + 1) % 7));
-  const m1 = `${d.slice(0, 7)}-01`;
-  return sat < m1 ? m1 : sat;
+  const q = Math.min(Math.floor((Number(d.slice(8, 10)) - 1) / 7), 3);
+  return `${d.slice(0, 8)}${pad(q * 7 + 1)}`;
 }
-/** آخر يوم في أسبوع التقييم: الجمعة ولا آخر الشهر. */
+/** آخر يوم في أسبوع التقييم. */
 export function weekEnd(d: string) {
-  const k = weekKey(d);
-  const fri = addDaysYmd(k, 6 - ((new Date(`${k}T12:00:00Z`).getUTCDay() + 1) % 7));
-  const last = `${k.slice(0, 8)}${String(daysInMonth(k)).padStart(2, "0")}`;
-  return fri > last ? last : fri;
+  const k = Number(weekKey(d).slice(8, 10));
+  return `${d.slice(0, 8)}${pad(k === 22 ? daysInMonth(d) : k + 6)}`;
 }
-/** «أسبوع 22–28 نوفمبر». */
-export const weekLabel = (d: string) => `أسبوع ${Number(weekKey(d).slice(8, 10))}–${Number(weekEnd(d).slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]}`;
+/** «الأسبوع 4 من نوفمبر (22–30)». */
+export const weekLabel = (d: string) =>
+  `الأسبوع ${(Number(weekKey(d).slice(8, 10)) + 6) / 7} من ${MONTHS[Number(d.slice(5, 7)) - 1]} (${Number(weekKey(d).slice(8, 10))}–${Number(weekEnd(d).slice(8, 10))})`;
 /** آخر يوم في النص اللي قبل نص اليوم. */
 export const prevHalfDay = (ymd: string) => addDaysYmd(halfStart(ymd), -1);
 /** «اليوم» / «أمس» / «السبت 21 نوفمبر». */

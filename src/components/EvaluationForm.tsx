@@ -110,7 +110,7 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
     const d = Number(today.slice(8, 10));
     const out = [today];
     if (d <= 3 || (d >= 16 && d <= 18)) out.push(prevHalfDay(today));
-    // أول يومين في الأسبوع (السبت والأحد): يقدر يكمّل تقييم مشرفه للأسبوع اللي فات.
+    // أول يومين في الأسبوع: يقدر يكمّل تقييم مشرفه للأسبوع اللي فات.
     const lastWeek = addDaysYmd(weekKey(today), -1);
     if (addDaysYmd(today, -2) <= lastWeek && !out.some((x) => weekKey(x) === weekKey(lastWeek))) out.push(lastWeek);
     return out;
@@ -163,7 +163,7 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
         return {
           key: `of_manager:${s.id}`, kind: "of_manager" as Kind, subject: s, title: `قيّم مشرفك ${s.name}`, criteria: MANAGER_CRITERIA,
           required: !did && !recorder,
-          done: did, note: `${did ? `سلّمته — ${weekLabel(day)} — تقدر تعدّل` : `كل أسبوع — ${weekLabel(day)}`} · 🔒 سري — ما يشوفه إلا الإدارة`,
+          done: did, note: `${did ? `سلّمته — ${weekLabel(day)} — تقدر تعدّل` : `كل نهاية أسبوع — ${weekLabel(day)}`} · 🔒 سري — ما يشوفه إلا الإدارة`,
           secret: true, phoneWarn: !recorder && usedHere.includes(s.id),
         };
       }),
@@ -236,7 +236,7 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
         </div>
       ) : !me ? (
         <p className="rounded-xl bg-muted/50 p-3 text-sm leading-relaxed">
-          <b>المشرف</b>: يقيّم موظفينه <b>كل يوم</b>. <b>الموظف</b>: يقيّم مشرفه <b>كل أسبوع</b> (آخر الأسبوع، الخميس ولا الجمعة)،
+          <b>المشرف</b>: يقيّم موظفينه <b>كل يوم</b>. <b>الموظف</b>: يقيّم مشرفه <b>كل نهاية أسبوع — 4 مرات في الشهر</b> (يوم 7، 14، 21، وآخر الشهر)،
           ويقيّم نفسه <b>مرتين في الشهر</b> (من 1 لـ 15، ومن 16 لآخر الشهر) — وتقييمه لمشرفه <b>سري</b>، ما يشوفه إلا الإدارة.
         </p>
       ) : recorder ? (
