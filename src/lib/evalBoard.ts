@@ -4,7 +4,7 @@
 // للمقارنة، وعليه علامة لو عطى نفسه 5 في كل البنود (حمرا لو اللي يقيّموه عطوه أقل بوضوح).
 // والمشرف: التزامه بالتقييم اليومي لموظفينه (كم يوم قيّمهم كاملين وكم فوّت)، وعلامة 📱 لو تقييم
 // موظفينه ليه اتبعت من نفس التليفون اللي يقيّم منه هو (ممكن هو اللي عبّاه ولا شافه).
-import { ALL_CRITERIA, addDaysYmd, grade, monthLabel, shiftMonth, ymd, type EvalStaff, type Evaluation } from "@/lib/evaluation";
+import { weekKey, ALL_CRITERIA, addDaysYmd, grade, monthLabel, shiftMonth, ymd, type EvalStaff, type Evaluation } from "@/lib/evaluation";
 
 export const avg = (xs: (number | null | undefined)[]) => {
   const v = xs.filter((x): x is number => x != null).map(Number);
@@ -15,6 +15,8 @@ export const f1 = (v: number | null | undefined) => (v == null ? "—" : Number(
 export const signed1 = (v: number) => `${v >= 0.05 ? "+" : v <= -0.05 ? "−" : ""}${Math.abs(v).toFixed(1)}`;
 /** اليوم (للتقييم اليومي) ولا أول النص/الشهر. */
 export const per = (e: Evaluation) => e.period ?? e.month;
+/** أسبوع تقييم الموظف لمشرفه (التقييمات القديمة كانت بالنص — تنحسب على أسبوعها). */
+export const wk = (e: Evaluation) => weekKey(per(e));
 
 /** قيّم نفسه 5 في كل البنود (3 بنود على الأقل). */
 export const isAll5 = (e: Evaluation) => {
@@ -107,7 +109,13 @@ export function monthInfo(month: string, today: string) {
     { key: ymd(y, m, 16), label: `16–${dim}`, started: elapsed >= 16 },
   ];
   const days = Array.from({ length: dim }, (_, i) => ymd(y, m, i + 1));
-  return { dim, isCur, elapsed, halves, days };
+  // أسابيع تقييم المشرف: من أول الشهر، وكل سبت بعده (نفس weekKey).
+  const keys = [ymd(y, m, 1), ...Array.from({ length: dim - 1 }, (_, i) => ymd(y, m, i + 2)).filter((d) => new Date(`${d}T12:00:00Z`).getUTCDay() === 6)];
+  const weeks: Half[] = keys.map((k, i) => {
+    const end = i + 1 < keys.length ? Number(keys[i + 1].slice(8, 10)) - 1 : dim;
+    return { key: k, label: `${Number(k.slice(8, 10))}–${end}`, started: elapsed >= Number(k.slice(8, 10)) };
+  });
+  return { dim, isCur, elapsed, halves, weeks, days };
 }
 
 /** الأحمر أول، بعدين الأصفر؛ وداخل كل وحدة الأكبر فرق بين تقييمه لنفسه وتقييم غيره. */
@@ -279,7 +287,7 @@ export function buildBoard(staff: EvalStaff[], evals: Evaluation[], month: strin
   });
 
   return {
-    month, today, dim: info.dim, isCur: info.isCur, elapsed: info.elapsed, halves: info.halves,
+    month, today, dim: info.dim, isCur: info.isCur, elapsed: info.elapsed, halves: info.halves, weeks: info.weeks,
     /** كل أيام الشهر (YYYY-MM-DD). */
     allDays: info.days,
     /** الأيام اللي فاتت: كم موظف اتقيّم في كل يوم. */

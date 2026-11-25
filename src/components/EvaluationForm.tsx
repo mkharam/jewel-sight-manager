@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import {
   db, ABSENCE_REASONS, EMPLOYEE_CRITERIA, GM_CRITERIA, MANAGER_CRITERIA, SCALE, addDaysYmd, dayLabel, defaultMonth, halfLabel, halfStart, monthLabel,
-  prevHalfDay, shiftMonth, type EvalStaff, type Kind, type Role,
+  prevHalfDay, shiftMonth, weekKey, weekLabel, type EvalStaff, type Kind, type Role,
 } from "@/lib/evaluation";
 
 // آخر تقييم لكل (اللي يقيّم، النوع، اللي يتقيّم) على هذا الجهاز — لزر «نفس آخر تقييم».
@@ -108,7 +108,12 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
   const halfChoices = useMemo(() => {
     if (!today) return [];
     const d = Number(today.slice(8, 10));
-    return (d <= 3 || (d >= 16 && d <= 18)) ? [today, prevHalfDay(today)] : [today];
+    const out = [today];
+    if (d <= 3 || (d >= 16 && d <= 18)) out.push(prevHalfDay(today));
+    // أول يومين في الأسبوع (السبت والأحد): يقدر يكمّل تقييم مشرفه للأسبوع اللي فات.
+    const lastWeek = addDaysYmd(weekKey(today), -1);
+    if (addDaysYmd(today, -2) <= lastWeek && !out.some((x) => weekKey(x) === weekKey(lastWeek))) out.push(lastWeek);
+    return out;
   }, [today]);
 
   // شن سلّم قبل في نفس اليوم/النص (نعم/لا بس) — باش يعرف شن باقي.
@@ -124,7 +129,10 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
   const ratedToday = new Set(status.data?.rated_day ?? []);
   const absentToday = new Set(status.data?.absent_day ?? []);
   const halfDone = (kind: Kind, subject?: string) => (status.data?.half_done ?? []).some((h) => h.kind === kind && (!subject || h.subject === subject));
-  const periodText = gm ? `شهر ${monthLabel(curMonth ?? today)}` : isManager ? `يوم ${dayLabel(day, today)}` : halfLabel(day);
+  // زر الفترة للموظف: «توا» ولا النص/الأسبوع اللي فات.
+  const choiceLabel = (d: string) => d === today ? "الفترة الحالية"
+    : [halfStart(d) !== halfStart(today) ? halfLabel(d) : "", weekKey(d) !== weekKey(today) ? weekLabel(d) : ""].filter(Boolean).join(" · ");
+  const periodText = gm ? `شهر ${monthLabel(curMonth ?? today)}` : isManager ? `يوم ${dayLabel(day, today)}` : `${halfLabel(day)} · مشرفك: ${weekLabel(day)}`;
 
   // البطاقات حسب الدور: نفسه دايماً، وموظفين فرعه (للمشرف) ولا مشرف فرعه (للموظف).
   const cards = useMemo<Card_[]>(() => {
@@ -149,13 +157,13 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
     return [
       { key: "self", kind: "self", subject: null, title: "قيّم نفسك", criteria: EMPLOYEE_CRITERIA, required: !selfDone,
         done: selfDone, note: selfDone ? "سلّمته لهذا النص — تقدر تعدّل" : undefined },
-      // تقييم المشرف لازم مرتين في الشهر (إلا لو سلّمه في هذا النص) — هو اللي يتحاسب عليه المشرف.
+      // تقييم المشرف لازم كل أسبوع (إلا لو سلّمه في هذا الأسبوع) — هو اللي يتحاسب عليه المشرف.
       ...sameBranch.filter((s) => s.role === "manager").map((s) => {
         const did = halfDone("of_manager", s.id);
         return {
           key: `of_manager:${s.id}`, kind: "of_manager" as Kind, subject: s, title: `قيّم مشرفك ${s.name}`, criteria: MANAGER_CRITERIA,
           required: !did && !recorder,
-          done: did, note: `${did ? "سلّمته لهذا النص — تقدر تعدّل · " : ""}🔒 سري — ما يشوفه إلا الإدارة`,
+          done: did, note: `${did ? `سلّمته — ${weekLabel(day)} — تقدر تعدّل` : `كل أسبوع — ${weekLabel(day)}`} · 🔒 سري — ما يشوفه إلا الإدارة`,
           secret: true, phoneWarn: !recorder && usedHere.includes(s.id),
         };
       }),
@@ -228,12 +236,12 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
         </div>
       ) : !me ? (
         <p className="rounded-xl bg-muted/50 p-3 text-sm leading-relaxed">
-          <b>المشرف</b>: يقيّم موظفينه <b>كل يوم</b>. <b>الموظف</b>: يقيّم نفسه ومشرفه <b>مرتين في الشهر</b> (من 1 لـ 15، ومن 16 لآخر الشهر)
-          — وتقييمه لمشرفه <b>سري</b>، ما يشوفه إلا الإدارة.
+          <b>المشرف</b>: يقيّم موظفينه <b>كل يوم</b>. <b>الموظف</b>: يقيّم مشرفه <b>كل أسبوع</b> (آخر الأسبوع، الخميس ولا الجمعة)،
+          ويقيّم نفسه <b>مرتين في الشهر</b> (من 1 لـ 15، ومن 16 لآخر الشهر) — وتقييمه لمشرفه <b>سري</b>، ما يشوفه إلا الإدارة.
         </p>
       ) : recorder ? (
         <div>
-          <p className="text-sm font-semibold mb-1.5">{isManager ? "تقييم يوم" : "تقييم"}: <span className="text-primary">{isManager ? dayLabel(day, today) : halfLabel(day)}</span></p>
+          <p className="text-sm font-semibold mb-1.5">{isManager ? "تقييم يوم" : "تقييم"}: <span className="text-primary">{isManager ? dayLabel(day, today) : `${halfLabel(day)} · ${weekLabel(day)}`}</span></p>
           <Input type="date" dir="ltr" max={today} value={day} onChange={(e) => e.target.value && e.target.value <= today && setPickedDay(e.target.value)} className="h-11" />
         </div>
       ) : (
@@ -241,8 +249,8 @@ export default function EvaluationForm({ token, recorder, gm }: { token?: string
           <p className="text-sm font-semibold mb-1.5">{isManager ? "تقييم يوم:" : "التقييم لـ:"}</p>
           <div className="flex gap-1.5 flex-wrap">
             {(isManager ? dayChoices : halfChoices).map((d) => {
-              const on = isManager ? day === d : halfStart(day) === halfStart(d);
-              return <Button key={d} size="sm" variant={on ? "default" : "outline"} onClick={() => setPickedDay(d)}>{isManager ? dayLabel(d, today) : halfLabel(d)}</Button>;
+              const on = isManager ? day === d : (pickedDay ?? today) === d;
+              return <Button key={d} size="sm" variant={on ? "default" : "outline"} onClick={() => setPickedDay(d)}>{isManager ? dayLabel(d, today) : choiceLabel(d)}</Button>;
             })}
           </div>
         </div>

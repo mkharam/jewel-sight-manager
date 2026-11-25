@@ -1,6 +1,6 @@
 // قطع صغيرة مشتركة بين أقسام لوحة التقييم وشاشات التفاصيل.
 import type { ReactNode } from "react";
-import { ALL_CRITERIA, KIND_LABEL, dayLabel, grade, halfLabel, monthLabel, type Evaluation } from "@/lib/evaluation";
+import { ALL_CRITERIA, KIND_LABEL, dayLabel, grade, halfLabel, monthLabel, weekLabel, type Evaluation } from "@/lib/evaluation";
 import { f1, per, type Board, type Duty, type Flag } from "@/lib/evalBoard";
 
 /** شن يفتح لما تضغط: شخص، فرع، بند، قائمة، ولا الفروع كلها. */
@@ -68,7 +68,7 @@ export function FlagBanner({ flag }: { flag: Flag }) {
 
 /** «اليوم» / «أمس» / «السبت 21 نوفمبر» للتقييم اليومي، والنص ولا الشهر للباقي. */
 export const whenLabel = (e: Evaluation, today: string) =>
-  e.kind === "by_manager" ? dayLabel(per(e), today) : e.kind === "by_gm" ? monthLabel(e.month) : halfLabel(per(e));
+  e.kind === "by_manager" ? dayLabel(per(e), today) : e.kind === "by_gm" ? monthLabel(e.month) : e.kind === "of_manager" ? weekLabel(per(e)) : halfLabel(per(e));
 
 /** تقييم واحد بالتفصيل: مين، إمتى، كل بند بدرجته، والملاحظات. */
 export function EvalCard({ e, b, nameOf }: { e: Evaluation; b: Board; nameOf: (id: string) => string }) {

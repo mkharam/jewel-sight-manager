@@ -9,7 +9,7 @@ import {
   ALL_CRITERIA, EMPLOYEE_CRITERIA, GM_CRITERIA, MANAGER_CRITERIA, KIND_LABEL, dayLabel, grade, monthLabel, shiftMonth,
   type EvalStaff, type Evaluation,
 } from "@/lib/evaluation";
-import { avg, f1, isAll5, per, ratersWord, signed1, type Board, type Branch, type Person } from "@/lib/evalBoard";
+import { avg, f1, isAll5, per, wk, ratersWord, signed1, type Board, type Branch, type Person } from "@/lib/evalBoard";
 import { Badges, Bar, DAY_CLS, DutyBadge, EvalCard, FlagBanner, MonthGrid, roleLabel, whenLabel, type Detail, type ListKind, type OpenFn } from "./bits";
 
 export function EvalDetail({ d, b, staff, open }: { d: Detail; b: Board; staff: EvalStaff[]; open: OpenFn }) {
@@ -241,9 +241,9 @@ function ManagerBlocks({ p, b, nameOf }: { p: Person; b: Board; nameOf: (id: str
       <Card className="space-y-2 p-3">
         <h3 className="font-bold">موظفينه قيّموه</h3>
         {!n && <p className="text-sm text-muted-foreground">ما عندهش موظفين في فرعه.</p>}
-        {n > 0 && b.halves.map((h) => {
-          if (!h.started) return <p key={h.key} className="text-xs text-muted-foreground">النص {h.label}: ⏳ ما بداش</p>;
-          const es = ofm.filter((e) => per(e) === h.key);
+        {n > 0 && b.weeks.map((h) => {
+          if (!h.started) return <p key={h.key} className="text-xs text-muted-foreground">أسبوع {h.label}: ⏳ ما بداش</p>;
+          const es = ofm.filter((e) => wk(e) === h.key);
           const rows = [
             ...p.team.map((t) => ({ id: t.id, name: t.name, e: es.find((x) => x.evaluator_id === t.id) })),
             ...es.filter((e) => !p.team.some((t) => t.id === e.evaluator_id)).map((e) => ({ id: e.evaluator_id, name: nameOf(e.evaluator_id), e })),
@@ -251,7 +251,7 @@ function ManagerBlocks({ p, b, nameOf }: { p: Person; b: Board; nameOf: (id: str
           return (
             <div key={h.key} className="space-y-0.5">
               <p className="text-xs font-semibold text-muted-foreground">
-                النص {h.label}: قيّموه {es.length} من {n}{es.length ? ` · المتوسط ${f1(avg(es.map((e) => e.overall)))}` : ""}
+                أسبوع {h.label}: قيّموه {es.length} من {n}{es.length ? ` · المتوسط ${f1(avg(es.map((e) => e.overall)))}` : ""}
               </p>
               {rows.map(({ id, name, e }) => e ? (
                 <div key={id}>
@@ -338,11 +338,11 @@ function SelfBlock({ p, b, nameOf }: { p: Person; b: Board; nameOf: (id: string)
           </div>
         );
       })}
-      {p.manager && started.length > 0 && (
+      {p.manager && b.weeks.some((h) => h.started) && (
         <p className="border-t pt-1.5 text-xs text-muted-foreground">
-          قيّم مشرفه ({p.manager.name}): {started.map((h) => {
-            const e = toMgr.find((x) => per(x) === h.key);
-            return `النص ${h.label} ${e ? (b.samePhoneIds.has(e.id) ? "✅ 📱 من تليفون المشرف" : "✅") : "❌"}`;
+          قيّم مشرفه ({p.manager.name}): {b.weeks.filter((h) => h.started).map((h) => {
+            const e = toMgr.find((x) => wk(x) === h.key);
+            return `أسبوع ${h.label} ${e ? (b.samePhoneIds.has(e.id) ? "✅ 📱 من تليفون المشرف" : "✅") : "❌"}`;
           }).join(" · ")}
         </p>
       )}

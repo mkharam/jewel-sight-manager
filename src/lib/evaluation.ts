@@ -1,5 +1,5 @@
 // تقييم الموظفين: البنود، والدرجات، وأدوات الفترات. مشتركة بين الاستمارة (الرابط) واللوحة.
-// الإيقاع: المشرف يقيّم موظفينه كل يوم؛ الموظف يقيّم نفسه ومشرفه مرتين في الشهر (1–15، 16–آخر الشهر)؛
+// الإيقاع: المشرف يقيّم موظفينه كل يوم؛ الموظف يقيّم مشرفه كل أسبوع (آخر الأسبوع) ونفسه مرتين في الشهر (1–15، 16–آخر الشهر)؛
 // المشرف يقيّم نفسه برضو مرتين في الشهر. اللوحة تجمع كل شي شهر بشهر.
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -81,7 +81,7 @@ export const SCALE = [
 export const KIND_LABEL: Record<Kind, string> = {
   self: "تقييم ذاتي",
   by_manager: "تقييم المشرف",
-  of_manager: "تقييم الموظفين لمشرفهم",
+  of_manager: "تقييم الموظفين لمشرفهم (كل أسبوع)",
   by_gm: "تقييم المدير العام",
 };
 
@@ -125,6 +125,22 @@ export function halfLabel(ymd: string) {
   const m = MONTHS[Number(ymd.slice(5, 7)) - 1];
   return first ? `النص الأول من ${m} (1–15)` : `النص الثاني من ${m} (16–${daysInMonth(ymd)})`;
 }
+/** أسبوع تقييم المشرف (من السبت للجمعة، مقصوص على الشهر): أول يوم فيه — السبت ولا أول الشهر. */
+export function weekKey(d: string) {
+  const dow = new Date(`${d}T12:00:00Z`).getUTCDay(); // الأحد 0 … السبت 6
+  const sat = addDaysYmd(d, -((dow + 1) % 7));
+  const m1 = `${d.slice(0, 7)}-01`;
+  return sat < m1 ? m1 : sat;
+}
+/** آخر يوم في أسبوع التقييم: الجمعة ولا آخر الشهر. */
+export function weekEnd(d: string) {
+  const k = weekKey(d);
+  const fri = addDaysYmd(k, 6 - ((new Date(`${k}T12:00:00Z`).getUTCDay() + 1) % 7));
+  const last = `${k.slice(0, 8)}${String(daysInMonth(k)).padStart(2, "0")}`;
+  return fri > last ? last : fri;
+}
+/** «أسبوع 22–28 نوفمبر». */
+export const weekLabel = (d: string) => `أسبوع ${Number(weekKey(d).slice(8, 10))}–${Number(weekEnd(d).slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]}`;
 /** آخر يوم في النص اللي قبل نص اليوم. */
 export const prevHalfDay = (ymd: string) => addDaysYmd(halfStart(ymd), -1);
 /** «اليوم» / «أمس» / «السبت 21 نوفمبر». */

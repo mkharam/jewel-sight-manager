@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { GM_EVAL_ENABLED, dayLabel, grade, monthLabel } from "@/lib/evaluation";
-import { avg, f1, per, signed1, summaryText, type Board, type Person } from "@/lib/evalBoard";
+import { avg, f1, per, wk, signed1, summaryText, type Board, type Person } from "@/lib/evalBoard";
 import { Badges, Bar, DAY_CLS, FlagBadge, roleLabel, weekdayOf, type Detail, type OpenFn } from "./bits";
 
 /** الأرقام الكبيرة — كل وحدة تفتح قائمتها. */
@@ -209,9 +209,9 @@ export function WhoEvaluated({ b, open, onRecord }: { b: Board; open: OpenFn; on
                           {m.duty.skipped > 0 && <span className="block text-[10px] text-red-600">فوّت {m.duty.skipped} يوم</span>}
                         </>
                       ) : <span className="block text-muted-foreground">—</span>}
-                      {n > 0 && b.halves.some((h) => h.started) && (
+                      {n > 0 && b.weeks.some((h) => h.started) && (
                         <span className="block text-[10px] text-muted-foreground">
-                          موظفينه قيّموه: {b.halves.filter((h) => h.started).map((h) => `${new Set(m.others.filter((e) => e.kind === "of_manager" && per(e) === h.key).map((e) => e.evaluator_id)).size}/${n}`).join(" · ")}
+                          موظفينه قيّموه كل أسبوع: {b.weeks.filter((h) => h.started).map((h) => `${new Set(m.others.filter((e) => e.kind === "of_manager" && wk(e) === h.key).map((e) => e.evaluator_id)).size}/${n}`).join(" · ")}
                         </span>
                       )}
                     </td>
