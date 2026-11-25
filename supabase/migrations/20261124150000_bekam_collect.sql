@@ -82,7 +82,8 @@ begin
     end if;
   end if;
   -- الدولار الموازي نقداً من «بكم» (أحدث من باقي المصادر) — لحساب الخام وسعر المحل. ما يغطيش سعر كتبه المدير بيده.
-  select sell into usd from bekam_prices where page = 'cash' and item = 'دولار أمريكي' and bekam_at > now() - interval '2 days';
+  select sell into usd from bekam_prices where page = 'cash' and item = 'دولار أمريكي' and bekam_at > now() - interval '2 days'
+    and fetched_at > now() - interval '1 hour'; -- الجلسة لو انتهت ما نعاودوش سعر قديم كأنه سعر اليوم
   if usd between 4 and 30 then
     insert into market_rates (day, usd_lyd_market, market_source) values ((now() at time zone 'Africa/Tripoli')::date, usd, 'bekam')
     on conflict (day) do update set usd_lyd_market = excluded.usd_lyd_market, market_source = 'bekam', updated_at = now()
