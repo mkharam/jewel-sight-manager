@@ -242,7 +242,7 @@ function ManagerBlocks({ p, b, nameOf }: { p: Person; b: Board; nameOf: (id: str
         <h3 className="font-bold">موظفينه قيّموه</h3>
         {!n && <p className="text-sm text-muted-foreground">ما عندهش موظفين في فرعه.</p>}
         {n > 0 && b.weeks.map((h) => {
-          if (!h.started) return <p key={h.key} className="text-xs text-muted-foreground">أسبوع {h.label}: ⏳ ما بداش</p>;
+          if (!h.started) return <p key={h.key} className="text-xs text-muted-foreground">{h.label}: ⏳ ما جاش</p>;
           const es = ofm.filter((e) => wk(e) === h.key);
           const rows = [
             ...p.team.map((t) => ({ id: t.id, name: t.name, e: es.find((x) => x.evaluator_id === t.id) })),
@@ -251,7 +251,7 @@ function ManagerBlocks({ p, b, nameOf }: { p: Person; b: Board; nameOf: (id: str
           return (
             <div key={h.key} className="space-y-0.5">
               <p className="text-xs font-semibold text-muted-foreground">
-                أسبوع {h.label}: قيّموه {es.length} من {n}{es.length ? ` · المتوسط ${f1(avg(es.map((e) => e.overall)))}` : ""}
+                {h.label}: قيّموه {es.length} من {n}{es.length ? ` · المتوسط ${f1(avg(es.map((e) => e.overall)))}` : ""}
               </p>
               {rows.map(({ id, name, e }) => e ? (
                 <div key={id}>
@@ -342,7 +342,7 @@ function SelfBlock({ p, b, nameOf }: { p: Person; b: Board; nameOf: (id: string)
         <p className="border-t pt-1.5 text-xs text-muted-foreground">
           قيّم مشرفه ({p.manager.name}): {b.weeks.filter((h) => h.started).map((h) => {
             const e = toMgr.find((x) => wk(x) === h.key);
-            return `أسبوع ${h.label} ${e ? (b.samePhoneIds.has(e.id) ? "✅ 📱 من تليفون المشرف" : "✅") : "❌"}`;
+            return `${h.label} ${e ? (b.samePhoneIds.has(e.id) ? "✅ 📱 من تليفون المشرف" : "✅") : "❌"}`;
           }).join(" · ")}
         </p>
       )}

@@ -109,12 +109,10 @@ export function monthInfo(month: string, today: string) {
     { key: ymd(y, m, 16), label: `16–${dim}`, started: elapsed >= 16 },
   ];
   const days = Array.from({ length: dim }, (_, i) => ymd(y, m, i + 1));
-  // أسابيع تقييم المشرف: 4 في الشهر (نفس weekKey).
-  const keys = [1, 8, 15, 22].map((d) => ymd(y, m, d));
-  const weeks: Half[] = keys.map((k, i) => {
-    const end = i + 1 < keys.length ? Number(keys[i + 1].slice(8, 10)) - 1 : dim;
-    return { key: k, label: `${Number(k.slice(8, 10))}–${end}`, started: elapsed >= Number(k.slice(8, 10)) };
-  });
+  // تقييم المشرف: كل خميس في الشهر (نفس weekKey).
+  const weeks: Half[] = Array.from({ length: dim }, (_, i) => ymd(y, m, i + 1))
+    .filter((d) => new Date(`${d}T12:00:00Z`).getUTCDay() === 4)
+    .map((k) => ({ key: k, label: `الخميس ${Number(k.slice(8, 10))}`, started: elapsed >= Number(k.slice(8, 10)) }));
   return { dim, isCur, elapsed, halves, weeks, days };
 }
 

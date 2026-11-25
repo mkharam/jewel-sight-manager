@@ -125,19 +125,15 @@ export function halfLabel(ymd: string) {
   const m = MONTHS[Number(ymd.slice(5, 7)) - 1];
   return first ? `النص الأول من ${m} (1–15)` : `النص الثاني من ${m} (16–${daysInMonth(ymd)})`;
 }
-/** أسابيع تقييم المشرف: 4 في الشهر — 1–7، 8–14، 15–21، 22–آخر الشهر. يرجّع أول يوم في أسبوع اليوم. */
+/** تقييم المشرف كل خميس: الخميس اللي قبل اليوم ولا اليوم نفسه (التقييم يتسلّم الخميس، ولا الجمعة/السبت لو فات). */
 export function weekKey(d: string) {
-  const q = Math.min(Math.floor((Number(d.slice(8, 10)) - 1) / 7), 3);
-  return `${d.slice(0, 8)}${pad(q * 7 + 1)}`;
+  const dow = new Date(`${d}T12:00:00Z`).getUTCDay(); // الأحد 0 … الخميس 4
+  return addDaysYmd(d, -((dow - 4 + 7) % 7));
 }
-/** آخر يوم في أسبوع التقييم. */
-export function weekEnd(d: string) {
-  const k = Number(weekKey(d).slice(8, 10));
-  return `${d.slice(0, 8)}${pad(k === 22 ? daysInMonth(d) : k + 6)}`;
-}
-/** «الأسبوع 4 من نوفمبر (22–30)». */
-export const weekLabel = (d: string) =>
-  `الأسبوع ${(Number(weekKey(d).slice(8, 10)) + 6) / 7} من ${MONTHS[Number(d.slice(5, 7)) - 1]} (${Number(weekKey(d).slice(8, 10))}–${Number(weekEnd(d).slice(8, 10))})`;
+/** مفتوح تقييم المشرف في اليوم هذا؟ الخميس، والجمعة والسبت للي فاته. */
+export const weekOpen = (d: string) => addDaysYmd(weekKey(d), 2) >= d;
+/** «خميس 26 نوفمبر». */
+export const weekLabel = (d: string) => `خميس ${Number(weekKey(d).slice(8, 10))} ${MONTHS[Number(weekKey(d).slice(5, 7)) - 1]}`;
 /** آخر يوم في النص اللي قبل نص اليوم. */
 export const prevHalfDay = (ymd: string) => addDaysYmd(halfStart(ymd), -1);
 /** «اليوم» / «أمس» / «السبت 21 نوفمبر». */

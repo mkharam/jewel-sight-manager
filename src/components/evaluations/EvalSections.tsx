@@ -211,7 +211,7 @@ export function WhoEvaluated({ b, open, onRecord }: { b: Board; open: OpenFn; on
                       ) : <span className="block text-muted-foreground">—</span>}
                       {n > 0 && b.weeks.some((h) => h.started) && (
                         <span className="block text-[10px] text-muted-foreground">
-                          موظفينه قيّموه كل أسبوع: {b.weeks.filter((h) => h.started).map((h) => `${new Set(m.others.filter((e) => e.kind === "of_manager" && wk(e) === h.key).map((e) => e.evaluator_id)).size}/${n}`).join(" · ")}
+                          موظفينه قيّموه كل خميس: {b.weeks.filter((h) => h.started).map((h) => `${new Set(m.others.filter((e) => e.kind === "of_manager" && wk(e) === h.key).map((e) => e.evaluator_id)).size}/${n}`).join(" · ")}
                         </span>
                       )}
                     </td>
